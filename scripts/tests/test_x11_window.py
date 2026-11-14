@@ -107,6 +107,10 @@ class WindowManager:
             time.sleep(0.02)
 
 
+# The helper reads who has the focus as it starts, so the viewer maps only after a loaded host has started it.
+FOCUS_READ_S = 2.0
+
+
 def _helper(*args: str) -> subprocess.Popen:
     return subprocess.Popen([sys.executable, str(HELPER), "rerun", *args, "--wait", "5"])
 
@@ -114,7 +118,7 @@ def _helper(*args: str) -> subprocess.Popen:
 def test_a_new_viewer_goes_fullscreen_behind_the_window_that_had_the_focus(display):
     wm = WindowManager()
     wm.manage([wm.terminal], wm.terminal)
-    assert wm.serve(_helper("fullscreen", "--keep-focus"), map_after_s=0.3) == 0
+    assert wm.serve(_helper("fullscreen", "--keep-focus"), map_after_s=FOCUS_READ_S) == 0
     full = wm.x.atom("_NET_WM_STATE_FULLSCREEN")
     assert wm.requests == [("state", wm.viewer, [xw.ADD, full, 0, xw.PAGER, 0]),
                            ("activate", wm.terminal, [xw.PAGER, 0, 0, 0, 0])]
@@ -129,7 +133,7 @@ def test_a_viewer_that_restored_its_own_fullscreen_still_gives_the_focus_back(di
     wm = WindowManager()
     wm.manage([wm.terminal], wm.terminal)
     wm.set(wm.viewer, "_NET_WM_STATE", XA_ATOM, [wm.x.atom("_NET_WM_STATE_FULLSCREEN")])
-    assert wm.serve(_helper("fullscreen", "--keep-focus"), map_after_s=0.3) == 0
+    assert wm.serve(_helper("fullscreen", "--keep-focus"), map_after_s=FOCUS_READ_S) == 0
     assert [r[:2] for r in wm.requests] == [("activate", wm.terminal)] and wm.x.active() == wm.terminal
 
 

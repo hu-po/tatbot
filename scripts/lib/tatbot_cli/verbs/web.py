@@ -157,7 +157,8 @@ def inkmap_deploy(ctx, ns, rest):
 # first; `ctl` does not, so `stop` works on a diverged tree.
 GEN_DOC = "docs/inkmap.md"
 GEN_INV = ("Runs on the node with role inkgen — the CLI hops there; `serve` fast-forwards its checkout first.",
-           "First run there creates ~/.cache/tatbot/inkgen/venv with uv and downloads the model (~31 GB); needs a 16 GB+ GPU.")
+           "First run creates ~/.cache/tatbot/inkgen/venv with uv; the default local model downloads ~31 GB and needs a 16 GB+ GPU.",
+           "An explicit INKGEN_PROVIDER=fal|gemini|openai on the serving node uses API-only dependencies and skips loading local weights.")
 
 
 def _port_arg(p):

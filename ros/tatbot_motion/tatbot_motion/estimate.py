@@ -27,8 +27,11 @@ def _workflow_kind(op):
     return "pen_change" if op["op"] == "tool_change" else op["op"]
 
 
-def estimate_duration(ops, speed_m_s, travel_m, motion, *, resources=None):
+def estimate_duration(ops, speed_m_s, travel_m, motion, *, resources=None, drawing_s=None):
     """Known subtotal plus explicit unknown costs; total_s is null when workflow costs are absent.
+
+    `drawing_s`, {stroke op id: s}, gives the drawing law's seconds where a caller has already run it (the dose,
+    tatbot_motion.dose.StrokeDose.drawing_s); else each stroke's law is run here.
 
     Optional duration_estimate.<kind>_s values are measured additional workflow costs,
     including dip travel/dwell/return or pen-swap waiting, excluding the stroke lift/descent/settle
@@ -45,7 +48,8 @@ def estimate_duration(ops, speed_m_s, travel_m, motion, *, resources=None):
                                     motion['pen']['mode']]['settle_s'])
                  for op in strokes if not op.get('continues', False))
     components = {
-        "drawing": sum(drawing_seconds(op, speed_m_s, motion) for op in strokes),
+        "drawing": sum(drawing_seconds(op, speed_m_s, motion) if drawing_s is None else drawing_s[op["id"]]
+                       for op in strokes),
         "descent": touches * ((standoff - final) / approach["descend_m_s"] + final / approach["final_m_s"]),
         "settle": settle,
         "lift": touches * standoff / approach["lift_m_s"],
@@ -62,6 +66,10 @@ def estimate_duration(ops, speed_m_s, travel_m, motion, *, resources=None):
         if not math.isfinite(float(value)) or float(value) < 0:
             raise ValueError(f"duration_estimate.{kind}_s must be finite and nonnegative")
         components[kind] = count * float(value)
+    drain = sum(float((table[op["resource_id"]].get("dip") or {}).get("drain_s", 0.0))
+                for op in ops if op["op"] == "dip") if table is not None else 0.0
+    if drain:   # a draining dip's hold over its cap, beyond the measured dip; absent for programs that do not drain
+        components["drain"] = drain
     total = sum(components.values())
     return {"model": "tatbot-duration/2", "modeled_s": round(total, 4),
             "total_s": None if unknown else round(total, 4),

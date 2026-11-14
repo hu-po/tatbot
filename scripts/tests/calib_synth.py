@@ -145,9 +145,9 @@ def vector_to_rotation(vector):
 
 
 def pose_joint_values(pose, arm_prefix):
-    """A recorded pose's joints keyed by one arm's driver joint names."""
-    from urdf_kinematics import driver_joint_names
+    """A recorded WXAI pose's joints keyed by one arm's joint names, in controller order."""
+    import arm_model
 
     joints = pose["joints"]
-    names = pose.get("joint_names") or driver_joint_names(arm_prefix, len(joints))
+    names = pose.get("joint_names") or arm_model.load("trossen-wxai").joint_names(arm_prefix)[:len(joints)]
     return dict(zip(names, joints, strict=True))

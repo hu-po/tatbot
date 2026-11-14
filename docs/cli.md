@@ -101,6 +101,37 @@ CLI-owned exit codes are below. Executed backends and SSH retain their own exit 
 | `profile list` | `offline` | this checkout | `scripts/lib/tatbot_profile.py` | the profiles this checkout carries |
 | `profile check` | `offline` | this checkout | `scripts/lib/tatbot_profile.py` | can the resolved profile drive hardware? (exit 3 if not) |
 
+### `tatbot art` — palette-aware design: ink gamut, predicted appearance and minutes
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `art swatch` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/gamut.py`, `python/tatbot_art/src/tatbot_art/swatch.py` | the achievable-palette sheet: every tint and two-ink hatch mix a palette load can draw |
+| `art render` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/render.py`, `python/tatbot_art/src/tatbot_art/raster.py`, `python/tatbot_art/src/tatbot_art/timing.py` | predicted appearance of a program as ink on a substrate, with dips, rinses and minutes |
+| `art profile` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/profile.py`, `python/tatbot_art/src/tatbot_art/timing.py` | drawing, descent, lift, travel, dipping and rinse time from a saved compiled program |
+| `art separate` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/separate.py`, `python/tatbot_art/src/tatbot_art/acquire.py`, `python/tatbot_art/src/tatbot_art/offset.py`, `python/tatbot_art/src/tatbot_art/pipeline.py`, `python/tatbot_art/src/tatbot_art/brief.py` | a flat-colour image into per-ink DBV3 layers, a compiled program and a predicted render |
+| `art tiles` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/tiles.py`, `python/tatbot_art/src/tatbot_art/pipeline.py`, `python/tatbot_art/src/tatbot_art/loop.py` | a round composed for a stencil tile, each design separated at its size and compiled onto the print |
+| `art stock-renders` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/brief.py`, `python/tatbot_art/src/tatbot_art/pipeline.py` | Inkmap's robot renders of its stock designs, each through DBV3 at its width |
+| `art tone` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/tone.py` | measure the hatch fill's grey-to-coverage response with a DBV3 step wedge |
+| `art shade` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/shade.py`, `python/tatbot_art/src/tatbot_art/cartridge.py`, `python/tatbot_art/src/tatbot_art/render.py`, `ros/tatbot_motion/tatbot_motion/estimate.py` | a tone image as whip strokes or pendulum zigzags whose deposition fades with the tone, rendered |
+| `art wall` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/loop.py` | a round's designs as voting-wall documents: genes, views, minutes and fidelity |
+| `art propose` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/loop.py` | the next round's Flow prompts from the wall's votes: the best genes, plus some untried ones |
+| `art map` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/atlas.py`, `python/tatbot_art/src/tatbot_art/pyramid.py` | the voting wall's map: designs placed by genes and look, clustered, linked to their nearest |
+| `art promote` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/pyramid.py`, `python/tatbot_art/src/tatbot_art/pipeline.py` | the design pyramid's next pass: draw kept sketches, study kept drawings in every fill |
+| `art bundle` | `offline` | this checkout | `scripts/art.sh`, `scripts/art.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_art/src/tatbot_art/cli.py`, `python/tatbot_art/src/tatbot_art/inks.py`, `python/tatbot_art/src/tatbot_art/bundle.py`, `python/tatbot_art/src/tatbot_art/acquire.py` | drawn designs as reviewable bundles: the acquired layers, their ink loads, program and render |
+
+### `tatbot lab` — studies of what the rig can tattoo: trials, cells, plans and camera readings
+
+| verb | tier | runs on | wraps | summary |
+| --- | --- | --- | --- | --- |
+| `lab new` | `offline` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py`, `python/tatbot_lab/src/tatbot_lab/tile.py` | a study: its question, print, cartridges, inks, caps and the bounds of each setting |
+| `lab propose` | `offline` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py`, `python/tatbot_lab/src/tatbot_lab/propose.py`, `python/tatbot_lab/src/tatbot_lab/space.py`, `python/tatbot_lab/src/tatbot_lab/search.py` | trials from a JSON-lines file, a cartridge's characterization card, or the search |
+| `lab map` | `offline` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py`, `python/tatbot_lab/src/tatbot_lab/search.py` | each archive's bins of darkness and its second descriptor, and the elite trial of each |
+| `lab plan` | `offline` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py`, `python/tatbot_lab/src/tatbot_lab/plan.py`, `python/tatbot_lab/src/tatbot_lab/patterns.py`, `python/tatbot_lab/src/tatbot_lab/tile.py`, `ros/tatbot_ink/tatbot_ink/program.py` | proposed trials into runs on a sheet: programs, the draw commands and cell manifests |
+| `lab status` | `offline` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py` | each study's trials by status, its plans and the cells used on each sheet |
+| `lab capture` | `motion-auto` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py`, `scripts/lib/tatbot_cli/tatbot_ros.py`, `ros/tatbot_session/tatbot_session/views.py` | a run's cells photographed by the overhead and every wrist camera from a hold over each (tatbot ros views) |
+| `lab run` | `motion-auto` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py`, `scripts/lib/tatbot_cli/tatbot_ros.py`, `ros/tatbot_session/tatbot_session/views.py` | one planned run on the rig: its cells photographed before, drawn, photographed after, and read |
+| `lab read` | `offline` | this checkout | `scripts/lab.sh`, `scripts/lab.py`, `scripts/lib/drawing_python.sh`, `scripts/lib/drawing_python.py`, `python/tatbot_lab/src/tatbot_lab/cli.py`, `python/tatbot_lab/src/tatbot_lab/store.py`, `python/tatbot_contracts/src/tatbot_contracts/lab.py`, `python/tatbot_lab/src/tatbot_lab/read/__init__.py`, `python/tatbot_lab/src/tatbot_lab/read/frames.py`, `python/tatbot_lab/src/tatbot_lab/read/diff.py`, `python/tatbot_lab/src/tatbot_lab/read/measure.py`, `scripts/vision/fiducials/stencil.py` | a drawn run's cells from before and after frames: darkening, carry, fade, bands, speckle |
+
 ## Bash completion
 
 Generate and source completion explicitly (Bash 4+):
@@ -137,4 +168,25 @@ tatbot inkmap resolve --prompt 'left upper inner forearm'
 tatbot profile show
 tatbot profile list
 tatbot profile check
+tatbot art swatch --inks golden_yellow,bright_red,light_green,light_purple,true_black --out '<path>'
+tatbot art render '<path>' --substrate skin-3 --out '<path>'
+tatbot art profile '<path>' --out '<path>'
+tatbot art separate flash.png --inks golden_yellow,bright_red,light_green,blue_sky,true_black --width-mm 60 --out '<path>' --app '<path>'
+tatbot art tiles --plan '<path>' --corpus '<path>' --stencil '<path>' --out '<path>' --app '<path>'
+tatbot art stock-renders --app '<path>' --out '<path>'
+tatbot art tone --app '<path>' --out '<path>'
+tatbot art shade '<path>' --width-mm 30 --technique pendulum --tool '<tool-id>' --out '<path>'
+tatbot art wall --round 1 --plan '<path>' --corpus '<path>' --assets '<path>' --out '<path>'
+tatbot art propose --designs '<path>' --votes '<path>' --round 2 --out '<path>'
+tatbot art map --designs '<path>' --corpus '<path>' --out '<path>'
+tatbot art promote --designs '<path>' --votes '<path>' --corpus '<path>' --out '<path>'
+tatbot art bundle --votes '<path>' --corpus '<path>' --out '<path>'
+tatbot lab new --id card-3rl --question 'What does the 3RL lay at each depth?' --stencil '<path>' --cartridges '<tool-id>' --inks true_black,bright_red --palette true_black=inkcap_large_2,bright_red=inkcap_medium_1,water=inkcap_large_1 --bound trim_mm=-2.5:-1.0 --bound speed_mm_s=2.5:6
+tatbot lab propose card-3rl --card '<tool-id>'
+tatbot lab map card-3rl
+tatbot lab plan card-3rl --stencil '<path>' --sheet bef888-a
+tatbot lab status card-3rl
+tatbot lab capture card-3rl --plan p0001 --run run-01 --side before
+tatbot lab run card-3rl --plan p0001 --run run-01 --stencil '<path>' --sheet-at=400,-100
+tatbot lab read card-3rl --plan p0001 --run run-01 --stencil '<path>'
 ```

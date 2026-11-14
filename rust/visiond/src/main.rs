@@ -246,11 +246,11 @@ enum Command {
         /// frame by the MEASURED world_from_base, overriding the anchor guess.
         #[arg(long, value_name = "JSON")]
         robot_world: Option<PathBuf>,
-        /// A wxai_teleop flight log (.wxtl) to replay: animates the URDF arms
+        /// A wxai_teleop flight log (.wxtl) to replay: animates the URDF's arm
         /// and logs teleop timing/tracking time series.
         #[arg(long, value_name = "WXTL")]
         teleop_log: Option<PathBuf>,
-        /// Which URDF arm the teleop leader drove ("left" or "right").
+        /// Which arm the teleop leader drove ("left" or "right").
         #[arg(long, default_value = "left")]
         teleop_leader: String,
         /// Rate at which animated link transforms are logged; scalar series

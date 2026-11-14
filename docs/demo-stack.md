@@ -1,7 +1,7 @@
 ---
 summary: The demo stack, the portable subset of the rig - its hardware, network, e-stops, what runs where and the demo viewer
 tags: [demo, hardware, network, fleet, viewer]
-updated: 2026-10-22
+updated: 2026-11-02
 audience: [operator, dev]
 ---
 
@@ -31,7 +31,7 @@ private.
 | A direct 10 GbE cable from the station to the ros node | the demo viewer's stream, off the rig wire |
 
 The fitted tool is the one `config/workspace.yaml` records. A needle cartridge
-dips in the palette's ink caps; a ballpoint never does.
+dips in the palette's ink caps.
 
 ## Network
 
@@ -104,8 +104,8 @@ two. Top to bottom:
 |---|---|
 | Status board | run, op, phase (with the arc along a stroke being drawn), the pen trim and ink over e-stop, probe, machine, latch and wrist: one bar each, green when fine, yellow when stale or warning, red on STOP or a latch, grey when not applicable or the run has ended. Outside an ink op the ink bar lists the caps loaded and available to dip, with their recorded fill while two lines hold them, else their names. The trim bar is the depth keys' trim of the cartridge on the arm and its limit (`trim -1.5 of ±4.0 mm`), yellow at the limit, and yellow with the depth a needle stroke holds it at while keys pressed past that are held back (`trim -4.0 · held -2.65 mm`: deeper than 2.5 mm reaches only skin the wrist read sunk) |
 | Scene | in the arm base's frame, z up, so the table reads level however the D555 is tilted, from a fixed eye: the D555's RGB depth cloud out to 0.85 m (faintly tinted blue), the robot, the page or its fitted surface, the strokes planned, done and being drawn, the tip trail, the palette in the arm's black with its tag and its caps by state, each marked over its rim (loaded and available to dip in green, empty or no cap grey, unknown yellow, the next dip cyan) and labelled in a column beside it: a loaded cap's ink, recorded level and fill and the run's dips, the others grouped by state, the wrist tags on the end effector's cube, and the wrist D405's RGB cloud (faintly tinted amber) |
-| Design, Wrist | the design map in the print's millimetres, centred on the design, each drawn stroke on the print where the design has it (less the correction stencil tracking drew it with), over that print's markers in faint violet; beside it the wrist D405's colour image upright in a 9:16 pane, with its age, the print's markers each reading decoded in that frame (green used, amber in a rejected fit, red left out) |
-| D555, load | the D555's colour image with its age and the fiducials the trackers read in it outlined where they read them: the wrist cube's tags (blue those the pose was solved from, grey the others, with their ids) and the print's markers the stencil observer kept (amber), beside CPU % for the palette Pi, the station and the ros node, and TEMP for them and the robot (its hottest motor), each labelled with its host's platform and keyed by one legend, over the last ten minutes |
+| Design, Wrist | the design map in the print's millimetres (blank between draws), centred on the design, each drawn stroke on the print where the design has it (less the correction stencil tracking drew it with), over that print's markers in faint violet; beside it the wrist D405's colour image upright in a 9:16 pane, with its age (between readings both D405s come from the session's idle feed, once nothing has used them for 30 s), the print's markers each reading decoded in that frame (green used, amber in a rejected fit, red left out) |
+| D555, load | the D555's colour image with its age and the fiducials the trackers read in it outlined where they read them: the wrist cube's tags (blue those the pose was solved from, grey the others, with their ids), the print's markers the stencil observer kept (amber), and in green the tags the cockpit reads itself: the palette's and the xArm cube's (which trackd follows only once its layout is calibrated), beside CPU % for the palette Pi, the station and the ros node, and TEMP for them and the robot (its hottest motor), each labelled with its host's platform and keyed by one legend, over the last ten minutes |
 
 | Producer | Runs on | Sends |
 |---|---|---|
@@ -142,9 +142,9 @@ Details: [Vision](vision.md) (the viewer, the Demo tab and the cockpit) and
 ```bash
 tatbot status --fleet                  # every node, both arms reachable, e-stop state
 tatbot ros deploy --units              # the drawing stack on the ros node
-tatbot ros up --hardware real --estop udp --arms right
+tatbot ros up --hardware real --estop udp   # the drawing arm: stack.yaml arms
 tatbot ros status                      # units, arm safety state, what the stack runs with
-tatbot ros setup --arm right           # register, station probe, gauge, then the page
+tatbot ros setup                       # register, station probe, gauge, then the page
 ```
 
 The demo viewer follows its install order above.

@@ -1,0 +1,55 @@
+# The xArm 7's own kinematics: each joint's origin (m, rad) as UFACTORY calibrated this arm at the factory, read from
+# its control box by xarm_ros2's xarm_description/config/kinematics/gen_kinematics_params.py (a read on port 502) on
+# 2026-11-09. scripts/gen_arm_urdf.py builds urdf/xarm7.urdf from it in place of the model's nominal kinematics: against
+# them joint 6 sits 3.0 mm off and rolled 0.9 deg, joint 7 rolled 0.7 deg and joint 1 2.4 mm low, which put the tool
+# ~1 mm off the pivot it was tilted 12 deg about (2026-11-08). Read it again for another arm.
+kinematics:
+  joint1:
+    x: -0.0016234794165939093
+    y: 0.0005445693386718631
+    z: 0.2646161615848541
+    roll: -0.0018690373981371522
+    pitch: -0.0022730401251465082
+    yaw: 2.1242001366772456e-06
+  joint2:
+    x: -0.00022344298486132175
+    y: -0.000604456989094615
+    z: -4.5072147258906625e-07
+    roll: -1.5700464248657227
+    pitch: 0.0022713125217705965
+    yaw: 0.0013215490616858006
+  joint3:
+    x: 0.000470972154289484
+    y: -0.29274171590805054
+    z: 0.00021903926972299814
+    roll: 1.570048213005066
+    pitch: 0.001319469534792006
+    yaw: -0.00025124565581791103
+  joint4:
+    x: 0.05245351791381836
+    y: -3.272377580287866e-05
+    z: 1.3338667770312895e-07
+    roll: 1.572507619857788
+    pitch: 0.0002557480474933982
+    yaw: -0.002100959187373519
+  joint5:
+    x: 0.07670735567808151
+    y: -0.342731237411499
+    z: 0.0010796980932354927
+    roll: 1.5676497220993042
+    pitch: 0.0021083070896565914
+    yaw: 0.004757624585181475
+  joint6:
+    x: 0.00020719185704365373
+    y: -0.003021418582648039
+    z: -4.719017306342721e-05
+    roll: 1.5864139795303345
+    pitch: -0.00475388765335083
+    yaw: -0.00038387704989872873
+  joint7:
+    x: 0.07668187469244003
+    y: 0.09666599333286285
+    z: -0.0011910833418369293
+    roll: -1.5831764936447144
+    pitch: 3.70322959497571e-05
+    yaw: 8.386345871258527e-05

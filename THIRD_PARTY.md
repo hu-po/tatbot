@@ -6,15 +6,18 @@ licenses. Package dependencies are declared in their respective lockfiles.
 | Bundled content | Source and license |
 | --- | --- |
 | `urdf/meshes/wxai/`, `urdf/meshes/cameras/d405.stl` | [Trossen arm description](https://github.com/TrossenRobotics/trossen_arm_description/tree/21d8b360c211c2ad8a065d8f462cbec0207626e7), BSD-3-Clause. Eleven meshes match upstream bytes; `link_6.stl` is a simplified derivative. |
+| `urdf/xarm7.urdf`, `urdf/meshes/xarm7_1305/` | [UFACTORY xarm_ros2 description](https://github.com/xArm-Developer/xarm_ros2/tree/d837f2e17f7f36043103b367fca3af8172626245/xarm_description), BSD-3-Clause. The xArm 7 (1305 series) xacro expanded by `scripts/gen_arm_urdf.py`, with its collision and visual meshes byte-identical; the mount, tool block and frame names are Tatbot's. |
 | `urdf/meshes/tags/` | Generated AprilTag 16h5 and 36h11 imagery, [AprilRobotics/apriltag](https://github.com/AprilRobotics/apriltag), BSD-2-Clause. |
 | `web/inkmap/public/bodies/mhr-soma-v1.*` | Derived nominal geometry, poses and region data from [SOMA-X v0.3.0](https://github.com/NVlabs/SOMA-X/tree/v0.3.0) and [MHR v1.0.1](https://github.com/facebookresearch/MHR/tree/v1.0.1), Apache-2.0. Exported by `web/inkmap/tools/export-soma.py`; topology and UVs are retained, nominal identity and browser buffers are generated. Source revisions and hashes: [model specification](config/body-models/mhr-soma-v1.json). |
 | `ros/tatbot_hardware/src/sdk_backend.cpp` | Adapted from Trossen Robotics' arm driver code, BSD-3-Clause; its notice is retained in the file and below. |
 | `rust/vendor/realsense-rust/` | [realsense-rust](https://gitlab.com/tangram-vision/oss/realsense-rust), Apache-2.0; [license](rust/vendor/realsense-rust/LICENSE) and [upstream record](rust/vendor/realsense-rust/UPSTREAM.md) in that directory. |
-| `web/inkmap/src/vendor/vectortracer/` | vectortracer 0.1.2 / vtracer, MIT; [existing license and attribution](web/inkmap/src/vendor/vectortracer/LICENSE.txt). |
-| Three `dbv3-acquired-v1` examples | Original Tatbot raster sources and native acquired outputs, CC0-1.0; [dedication](web/inkmap/public/designs/LICENSE.txt), recipes and per-design source metadata. |
+| Three `dbv3-acquired-v1` examples | Original Tatbot raster sources and native acquired outputs, CC0-1.0; [dedication](config/sim2/acquired/LICENSE.txt), recipes and per-design source metadata. |
+| Three `flash-art-v1` images in `web/inkmap/public/designs/` | Generated with Google Flow (Nano Banana Pro) from Tatbot prompts; not dedicated to the public domain and no licence granted ([notice](web/inkmap/public/designs/LICENSE.txt)). |
 
-The Trossen arm SDK (v1.11.0, BSD-3-Clause) is fetched at CMake configure time,
-not vendored. DrawingBotV3 is not bundled; its acquisition tools expect a
+The Trossen arm SDK (v1.11.0, BSD-3-Clause) and UFACTORY's
+[xArm-CPLUS-SDK](https://github.com/xArm-Developer/xArm-CPLUS-SDK/tree/f36794320a285c0b4bf1cd8ef181cbff6e3b794a)
+(1.18.2, BSD-3-Clause, notice below) are fetched at CMake configure time and linked
+into `tatbot_hardware`, not vendored. DrawingBotV3 is not bundled; its acquisition tools expect a
 licensed installation supplied by the user. Other end-effector, frame and camera meshes are Tatbot's MIT work.
 The nominal body is synthetic, not a participant scan; model weights are not
 bundled in this repository.
@@ -51,6 +54,38 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## UFACTORY — BSD-3-Clause
+
+```text
+Copyright (c) 2018, UFACTORY Inc.
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+    * Neither the name of the copyright holder nor the names of its contributors
+      may be used to endorse or promote products derived from this software
+      without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 ## AprilTag — BSD-2-Clause

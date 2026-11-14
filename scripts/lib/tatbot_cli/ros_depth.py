@@ -26,10 +26,10 @@ def base_points(cam, depths, base_from_depth):
     return pts @ base_from_depth[:3, :3].T + base_from_depth[:3, 3], median
 
 
-def retain(cam, images, depths, kin, q, page, out, arm, *, reference=None, overhead=None):
-    """Keep all paired native frames, optical calibration and the exact FK/reference used by the fit."""
+def retain(cam, images, depths, kin, q, page, out, *, depth_frame, color_frame, reference=None, overhead=None):
+    """Keep all paired native frames, optical calibration and the exact FK/reference used by the fit. `depth_frame` and
+    `color_frame` are the camera's optical frames on its arm (tatbot_session.inspect.camera_frame)."""
     evaluated = (reference or {}).get('captured_at_monotonic_s', time.monotonic())
-    depth_frame = f'{arm}/realsense_depth_optical_frame'
     base_from_depth = kin.frame(q, depth_frame)
     base_from_tcp = kin.fk(q)
     stack = np.asarray(depths, float)
@@ -56,7 +56,7 @@ def retain(cam, images, depths, kin, q, page, out, arm, *, reference=None, overh
     arrays = {'depth_m': np.asarray(depths), 'depth_raw': np.asarray(cam.raw_depth), 'rgb_bgr': np.asarray(images),
               'q': q, 'base_from_depth': base_from_depth, 'base_from_tcp': base_from_tcp,
               'base_from_page': page, 'k_depth': cam.k_depth,
-              'base_from_color': kin.frame(q, f'{arm}/realsense_color_optical_frame')}
+              'base_from_color': kin.frame(q, color_frame)}
     samples = [t['joints']['q'] for t in times if t.get('joints')]
     if samples:
         arrays.update(q_frames=np.asarray(samples),
@@ -117,8 +117,9 @@ def stationary(node, io, kin, page, out_dir, args):
         except (RuntimeError, ValueError, OSError) as error:
             reference['overhead_fallback'] = str(error)
         stem = out_dir/'depth'
-        _, _, result = retain(camera, images, depths, kin, q, np.asarray(page['used']), stem, args.arm,
-                              reference=reference, overhead=overhead)
+        _, _, result = retain(camera, images, depths, kin, q, np.asarray(page['used']), stem,
+                              depth_frame=inspect.camera_frame(args.arm, 'depth'),
+                              color_frame=inspect.camera_frame(args.arm), reference=reference, overhead=overhead)
         print(json.dumps({'ok': True, 'capture': str(stem.with_suffix('.npz')), 'clearance': result}))
     finally:
         for subscription in subscriptions:

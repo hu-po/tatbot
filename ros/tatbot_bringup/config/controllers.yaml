@@ -1,5 +1,7 @@
-# controller_manager and the pink arm's controllers (names.ARMS); stack.launch.py spawns the configured arms'.
-# Names: ros/README.md "Names". JTC holds with the command interfaces' values on activation, which
+# controller_manager and, under per_arm, the two controllers every driven arm gets. Arm-neutral: the launch renders
+# it for stack.yaml's arms with tatbot_description.controllers (each arm's controllers under its names, its model's
+# joints, its safety GPIO's interfaces from the names module) and hands controller_manager the rendered file, which
+# the run keeps. Names: ros/README.md "Names". JTC holds with the command interfaces' values on activation, which
 # the driver sets to the measured pose.
 #
 # JTC tolerances. Jazzy's defaults (joint_trajectory_controller 4.42 parameters) are
@@ -16,36 +18,23 @@ controller_manager:
     update_rate: 400
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
-    right_arm_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-    right_safety_controller:
-      type: gpio_controllers/GpioCommandController
 
-right_arm_controller:
-  ros__parameters:
-    joints: [right/joint_0, right/joint_1, right/joint_2, right/joint_3, right/joint_4, right/joint_5, right/left_carriage_joint]
-    command_interfaces: [position, velocity]
-    state_interfaces: [position, velocity]
-    interpolation_method: splines
-    allow_partial_joints_goal: false
-    allow_nonzero_velocity_at_trajectory_end: false
-    set_last_command_interface_value_as_state_on_activation: true
-    open_loop_control: false
-    action_monitor_rate: 20.0
-    constraints:                  # tracking is the driver's stall guard, not JTC's (see the top)
-      stopped_velocity_tolerance: 0.0
-      goal_time: 0.0
-
-right_safety_controller:
-  ros__parameters:
-    update_rate: 100
-    gpios: [right_safety]
-    command_interfaces:
-      right_safety:
-        interfaces: [guard_mode, unlatch, land]
-    state_interfaces:
-      right_safety:
-        interfaces: [estop_source, estop_ok, estop_age_s, probe_triggered, latched, latch_reason, guard_mode,
-                     guard_tripped, trip_q0, trip_q1, trip_q2, trip_q3, trip_q4, trip_q5, trip_q6,
-                     unlatch_ack, land_ack, landing, landed, controller_error, rt_period_max_ms]
-
+per_arm:
+  arm_controller:                 # <arm>_arm_controller; `joints` is the arm's model's, in controller order
+    type: joint_trajectory_controller/JointTrajectoryController
+    ros__parameters:
+      command_interfaces: [position, velocity]
+      state_interfaces: [position, velocity]
+      interpolation_method: splines
+      allow_partial_joints_goal: false
+      allow_nonzero_velocity_at_trajectory_end: false
+      set_last_command_interface_value_as_state_on_activation: true
+      open_loop_control: false
+      action_monitor_rate: 20.0
+      constraints:                # tracking is the driver's stall guard, not JTC's (see the top)
+        stopped_velocity_tolerance: 0.0
+        goal_time: 0.0
+  safety_controller:              # <arm>_safety_controller over <arm>_safety: `gpios` and both interface lists
+    type: gpio_controllers/GpioCommandController
+    ros__parameters:
+      update_rate: 100

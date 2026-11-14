@@ -1,8 +1,10 @@
 /** Browser session orchestration; no hidden writes from store constructors. */
-import { loadProject, saveProject } from "./core/project-db.ts";
+import { loadProject, loadRenders, saveProject } from "./core/project-db.ts";
 import { useStore, type State } from "./store.ts";
 
-const fields = (s: State) => [s.placements, s.past, s.future, s.editBefore, s.selected, s.poseId, s.skinTone, s.showAtlas, s.cameraSnapshot, s.projectName, s.designs, s.chart, s.chartParked];
+/** Which art the library holds, by content: a refreshed thumbnail is not an edit to save. */
+const artKey = (s: State) => s.designs.map(d => `${d.id}:${d.embedded?.content_sha256 ?? ""}`).join("|");
+const fields = (s: State) => [s.placements, s.past, s.future, s.editBefore, s.selected, s.poseId, s.skinTone, s.showAtlas, s.cameraSnapshot, s.projectName, artKey(s)];
 
 export function startProjectSession(): () => void {
   let stopped = false, initializing = false, initialized = false, saving = false, dirty = false, failed = false;
@@ -35,11 +37,15 @@ export function startProjectSession(): () => void {
     if (!initialized) {
       if (!initializing && state.body && state.atlas) {
         initializing = true;
+        void loadRenders().then(renders => { if (!stopped) useStore.setState({ renders }); })
+          .catch(error => console.warn("[inkmap] saved renders:", error));
         void loadProject().then(saved => {
           if (stopped) return;
-          if (saved) { revision = saved.revision; useStore.getState().restoreProject(saved.project); }
-          initialized = true; previous = fields(useStore.getState()); dirty = !saved;
-          useStore.setState({ projectReady: true, saveStatus: saved ? "saved" : "saving" });
+          // Nothing to restore, or another version's project: the revision still lets the next save replace it.
+          if (saved) revision = saved.revision;
+          if (saved?.project) useStore.getState().restoreProject(saved.project);
+          initialized = true; previous = fields(useStore.getState()); dirty = !saved?.project;
+          useStore.setState({ projectReady: true, saveStatus: saved?.project ? "saved" : "saving" });
           if (dirty) timer = setTimeout(persist, 500);
         }).catch(fail);
       }

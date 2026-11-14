@@ -14,28 +14,28 @@ from tatbot_motion.station import POST_RADIUS_M, Post, overhead_post  # noqa: F4
 
 from tatbot_calib import halo
 
-# The wrist's bodies as (frame suffix, sphere radius, m): each face of the wrist tag cube (tags of 47 mm on a cube
-# about 40 mm across, off the finger carriage), each wrist D405 and its bracket (the lower one under the wrist since
-# 2026-10-23), the wrist flange and the forearm.
-WRIST_BODIES = (("wrist_tag", 0.035), ("realsense_color_optical_frame", 0.040),
-                ("realsense_lower_color_optical_frame", 0.040), ("link_6", 0.045), ("link_5", 0.045), ("link_4", 0.050))
-CLEARANCE_M = 0.015          # a wrist body's surface keeps this far from the post's
+# The wrist's bodies as spheres (wrist_bodies): each face of the wrist tag cube (tags of 47 mm on a cube about 40 mm
+# across), each wrist D405 with its case, and the wrist's links as its arm model states them (wrist_spheres).
+TAG_RADIUS_M = 0.035
+CAMERA_RADIUS_M = 0.040
+CLEARANCE_M = 0.011          # a wrist body's surface keeps this far from the post's (15 mm until 2026-11-02: at the
+                             # warehouse layout every S1 +d pass stood 14 mm off the 60 mm column, none close by eye)
 APPROACH_OVER_M = 0.030      # S1 checks the way to the tool upright this far over the ball before it touches
-REST = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.5708, 0.0])   # the arm landed: where each goal's joint path starts
+
+
+def rest(kin) -> np.ndarray:
+    """The arm landed, where each goal's joint path starts: its model's rest pose."""
+    return np.array(kin.arm_model.rest, float)
 
 
 def wrist_bodies(kin, arm: str) -> list[tuple[str, float]]:
-    """(frame, radius) for each of the wrist's bodies the arm's kinematics has."""
-    out = []
-    for suffix, radius in WRIST_BODIES:
-        names = ([f"{arm}/{suffix}{i}" for i in range(16)] if suffix == "wrist_tag" else [f"{arm}/{suffix}"])
-        for name in names:
-            try:
-                kin.frame(REST, name)
-            except (KeyError, ValueError, IndexError, RuntimeError):
-                continue
-            out.append((name, radius))
-    return out
+    """(frame, radius) for each of the wrist's bodies: the tag cube's faces and the wrist cameras its description
+    has (tatbot_session.inspect), and the links its model names."""
+    from tatbot_session import inspect
+
+    return ([(name, TAG_RADIUS_M) for name in inspect.cube_frames(kin)]
+            + [(name, CAMERA_RADIUS_M) for name in inspect.camera_links(kin)]
+            + [(f"{arm}/{link}", radius) for link, radius in kin.arm_model.wrist_spheres])
 
 
 def wrist_clearance(kin, q, bodies, posts) -> float:
@@ -94,7 +94,7 @@ def _turn(kin, pose: np.ndarray, q: np.ndarray) -> float:
     from tatbot_session import ready
 
     try:
-        return float(np.max(np.abs(ready.solve_ik_seeded(kin, pose, q)[:6] - q[:6])))
+        return float(np.max(np.abs(ready.solve_ik_seeded(kin, pose, q)[kin.revolute] - q[kin.revolute])))
     except ValueError:
         return math.inf
 
@@ -115,14 +115,15 @@ def _margin(kin, pose: np.ndarray, bodies, posts, station=None) -> float:
     from tatbot_session import ready
 
     try:
-        q = ready.solve_ik_seeded(kin, pose, REST)
+        q = ready.solve_ik_seeded(kin, pose, rest(kin))
     except ValueError:
         return -1.0
     if wrist_clearance(kin, q, bodies, posts) < CLEARANCE_M:
         return -1.0
     if station is not None and not station(q):
         return -1.0
-    return float(np.min(np.minimum(q[:6] - np.asarray(kin.lower)[:6], np.asarray(kin.upper)[:6] - q[:6])))
+    r = kin.revolute
+    return float(np.min(np.minimum(q[r] - np.asarray(kin.lower)[r], np.asarray(kin.upper)[r] - q[r])))
 
 
 def choose_heading(kin, arm: str, ball: np.ndarray, attitudes, margin_rad: float, posts=(),

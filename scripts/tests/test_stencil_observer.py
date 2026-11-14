@@ -89,6 +89,70 @@ def test_a_small_marker_tile_is_read_in_a_window_about_its_last_placement(monkey
     assert surface.windows[pattern]['overhead_depth_color'] != first
 
 
+def pose_at(x, y=0.0, z=0.75):
+    pose = np.eye(4)
+    pose[:3, 3] = [x, y, z]
+    return pose
+
+
+def sheets_in_view(layout, poses, **view):
+    """One overhead view of a sheet at each of `poses` along x: each column of the frame is its nearest sheet's."""
+    views = [overhead_view(layout, pose, **view) for pose in poses]
+    rays = views[0][2]
+    along = np.array([pose[0, 3] for pose in poses])
+    nearest = np.argmin(np.abs(rays[0, :, 0] * poses[0][2, 3] - along[:, None]), axis=0)
+    columns = np.arange(rays.shape[1])
+    image = np.stack([v[0] for v in views])[nearest, :, columns].transpose(1, 0, 2)
+    depth = np.stack([v[1] for v in views])[nearest, :, columns].T
+    return image, depth, rays
+
+
+def observed_sheets(monkeypatch, surface, image, depth, rays):
+    frame = {'image': image, 'depth_m': depth, 'timestamp_ns': 1_000_000_000}
+    monkeypatch.setattr(stencil_observer, 'rgbd_frame', lambda f: ({'depth_m': f['depth_m'], 'rays': rays}, []))
+    surface.capture_reader = lambda path, calibration, robot: {'overhead_depth_color': (frame, np.eye(4))}
+    return surface.request({'captures': {'overhead-depth': 'capture'}, 'errors': {}})
+
+
+def test_every_sheet_of_the_print_in_view_is_placed(monkeypatch, tile_reference):
+    """Two sheets read the same codes: the target is the one that reads the most, and the other rides in its support
+    with a pose and marker corners of its own, whole enough to stand in for it."""
+    left, right = pose_at(-0.25), pose_at(0.25)
+    image, depth, rays = sheets_in_view('silicone', [left, right])
+    image[:, 800:845] = 128                          # the arm over part of the right-hand sheet: the left reads more
+    surface = stencil_observer.LiveSurface({'references': [str(tile_reference)], 'calibration': CALIBRATION,
+                                            'robot_world': ROBOT})
+    [target] = observed_sheets(monkeypatch, surface, image, depth, rays)['targets']
+    assert np.linalg.norm(np.asarray(target['world_from_target'])[:3, 3] - left[:3, 3]) < 0.002
+    [copy] = target['support']['copies']
+    assert np.linalg.norm(np.asarray(copy['world_from_target'])[:3, 3] - right[:3, 3]) < 0.002
+    support = copy['support']
+    assert 2 <= support['markers']['read'] < target['support']['markers']['read']
+    assert len(support['anchor_points_m']) == 4 * support['markers']['read'] == len(support['anchor_pixels'])
+    assert copy['translation_sigma_m'] >= stencil_observer.TRANSLATION_SIGMA_M and copy['rotation_sigma_rad'] > 0
+    json.dumps(target, allow_nan=False)
+
+
+def test_a_lone_sheet_has_no_copies(monkeypatch, tile_reference):
+    reply = observed(monkeypatch, tile_reference, pose_at(0.0), np.eye(4))
+    assert reply['targets'][0]['support']['copies'] == []
+
+
+def test_a_turn_that_reads_copies_keeps_no_window(monkeypatch, tmp_path, capsys):
+    """A window about one sheet would hide the others, so the small-marker tile goes on reading the whole frame."""
+    assert stencil_generate.main(['--preset', 'forearm', '--seed', '0', '--output', str(tmp_path / 'tile')]) == 0
+    capsys.readouterr()
+    surface = stencil_observer.LiveSurface({'references': [str(tmp_path / 'tile' / 'tracking.json')],
+                                            'calibration': CALIBRATION, 'robot_world': ROBOT})
+    [pattern] = surface.windows
+    left, right = forearm_pose(0, z=0.5), forearm_pose(0, z=0.5)
+    left[0, 3], right[0, 3] = -0.15, 0.15
+    image, depth, rays = sheets_in_view('forearm', [left, right], look='transfer')
+    [target] = observed_sheets(monkeypatch, surface, image, depth, rays)['targets']
+    assert target['source'] == 'measured' and len(target['support']['copies']) == 1
+    assert surface.windows[pattern] == {}
+
+
 def test_no_view_is_a_lost_target_with_the_reason(tile_reference):
     surface = stencil_observer.LiveSurface({'references': [str(tile_reference)], 'calibration': CALIBRATION,
                                             'robot_world': ROBOT})
@@ -117,7 +181,7 @@ def test_a_reference_that_is_not_a_tile_is_refused_by_name(tmp_path, tile_refere
 def test_the_worker_answers_stencild(tmp_path):
     binding = tmp_path / 'binding.json'
     binding.write_text(json.dumps({'references': [], 'calibration': CALIBRATION, 'robot_world': ROBOT,
-                                   'observer_epoch': 'e', 'evidence_kind': 'live-rgbd', 'publish_targets_only': True}))
+                                   'observer_epoch': 'e', 'evidence_kind': 'live-rgbd'}))
     worker = subprocess.run([sys.executable, str(OBSERVER), str(binding), str(tmp_path)], text=True, timeout=60,
                             input=json.dumps({'captures': {}, 'errors': {}}) + '\n'
                             + json.dumps({'kind': 'support'}) + '\n', capture_output=True, check=True)

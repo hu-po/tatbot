@@ -202,13 +202,13 @@ test("unknown fields, units, frames, topology, and hashes are refused by name", 
   }
 })
 
-test("only the SOMA placement v5 contract is readable", () => {
+test("only the SOMA placement v7 contract is readable", () => {
   const current = JSON.parse(readFileSync(
-    new URL("../../../config/inkmap/examples/forearm-placement-v6.json", import.meta.url),
+    new URL("../../../config/inkmap/examples/forearm-placement-v7.json", import.meta.url),
     "utf8",
   ))
   assert.doesNotThrow(() => validatePlacementFile(current))
-  for (const version of [1, 2, 3, 4]) {
+  for (const version of [1, 2, 3, 4, 5, 6]) {
     assert.throws(
       () => validatePlacementFile({ schema_version: version }),
       /unsupported schema\/model/,

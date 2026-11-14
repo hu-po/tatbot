@@ -1,7 +1,7 @@
-// The placement file: the contract between this app and the robot pipeline.
+// The placement file: where on the body each design goes, with the source art it places.
 // Mirrors config/inkmap/placement.schema.json. Bump SCHEMA_VERSION
 // on any breaking change and keep the JSON Schema in the same commit.
-import { validateArtworkShape, type ArtworkRecord } from "./artwork-record.ts";
+import { validateArtShape, type ArtRecord } from "./art.ts";
 import type { Anchor } from "./anchor.ts";
 import type { InkLangIntent, InkLangResolution } from "./inklang/index.ts";
 import {
@@ -14,33 +14,27 @@ import {
   TOPOLOGY_SHA256,
 } from "./body.ts";
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export interface DesignMeta {
   id: string;
   name: string;
-  /** Relative to the site root (public/), or a data: URL for a design made in the session. */
+  /** A thumbnail: a data: URL of the art's ink on transparency. */
   path: string;
-  /** Natural size when first placed, mm. Aspect matches the frozen program canvas. */
+  /** Size when first placed, mm: the default width at the art's aspect. */
   default_size_mm: [number, number];
-  /** Frozen shared artwork; previews are derived from its program. */
+  /** The source art this entry places. */
   embedded?: EmbeddedDesign;
-  /** Runtime asset provenance. Portable simulation/project envelopes retain it. */
+  /** The stock collection's image path, for an entry the collection supplies. */
   sourcePath?: string;
-  sourceSha256?: string;
-  /** Collection identity is checked against the frozen SVG bytes. */
-  sha256?: string;
-  usage?: "artwork" | "preview";
-  /** False keeps a stock design out of the picker: the simulator's artwork
-   *  collection and the showcase still draw on it by id. */
+  /** The robot renders the collection ships for it. */
+  renderPaths?: string[];
+  /** False keeps an entry out of the picker. */
   library?: boolean;
-  family?: string;
-  split?: "train" | "validation" | "test";
-  source?: import("./artwork-record.ts").ArtworkSource;
 }
 
-/** Artwork carried inside the placement file so it stays self-contained. */
-export type EmbeddedDesign = ArtworkRecord;
+/** Art carried inside the placement file so it stays self-contained. */
+export type EmbeddedDesign = ArtRecord;
 
 export interface Placement {
   id: string;
@@ -111,7 +105,7 @@ export function validatePlacementFile(x: unknown): asserts x is PlacementFile {
     "asset_path", "asset_sha256", "identity_sha256", "model_spec_id",
     "model_spec_sha256", "rest_surface_sha256", "topology_sha256",
   ];
-  if (Object.keys(b).sort().join("|") !== bodyKeys.sort().join("|")) fail("body binding fields differ from v6");
+  if (Object.keys(b).sort().join("|") !== bodyKeys.sort().join("|")) fail("body binding fields differ from the placement file's");
   if (
     b.model_spec_id !== MODEL_SPEC_ID
     || b.model_spec_sha256 !== MODEL_SPEC_SHA256
@@ -185,8 +179,8 @@ export function validatePlacementFile(x: unknown): asserts x is PlacementFile {
   if (f.designs !== undefined) {
     if (typeof f.designs !== "object" || f.designs === null || Array.isArray(f.designs)) return fail("designs must be an object keyed by design id");
     for (const [id, d0] of Object.entries(f.designs as Record<string, unknown>)) {
-      if (!id) fail("artwork IDs must be nonempty");
-      validateArtworkShape(d0);
+      if (!id) fail("art IDs must be nonempty");
+      validateArtShape(d0);
     }
     for (const p of f.placements as Placement[]) {
       if (p.design_id.startsWith("gen-") && !(p.design_id in (f.designs as object))) fail(`placement ${p.id} references generated design ${p.design_id} that is not embedded`);

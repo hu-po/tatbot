@@ -1,81 +1,121 @@
 {
-  "schema": "tatbot.artwork-collection/1",
-  "id": "dbv3-acquired-v1",
+  "schema": "tatbot.inkmap-art-collection/1",
+  "id": "flash-art-v1",
   "designs": [
     {
-      "id": "dbv3-orbit",
-      "name": "dbv3-orbit",
-      "path": "designs/dbv3-orbit/artwork.json",
-      "default_size_mm": [
-        30,
-        30
+      "id": "swallow-poppies",
+      "name": "Swallow and poppies",
+      "image": "designs/swallow-poppies.jpg",
+      "sha256": "a33818deb476d0e78874cf1b8ba64bc183ca6f887c5cef50553199ee031e864a",
+      "width_px": 1024,
+      "height_px": 1024,
+      "art_px": [
+        85,
+        39,
+        865,
+        888
       ],
-      "sha256": "11687fbf9c5ce9b199019bc26a5ca328a7436c75f0e1849889b505964112413b",
-      "family": "orbital",
-      "split": "train",
-      "usage": "artwork",
-      "size_range_mm": [
-        30,
-        30
-      ],
-      "planning_width_mm": 0.3,
+      "palette": {
+        "inks": [
+          "golden_yellow",
+          "bright_red",
+          "light_green",
+          "blue_sky",
+          "true_black"
+        ],
+        "style": "flash"
+      },
       "source": {
-        "attribution": "Original Tatbot raster source, 2026",
-        "generation": null,
-        "identifier": "dbv3-orbit-source",
         "kind": "stock",
-        "license": "CC0-1.0"
-      }
+        "identifier": "trad-poppy-1",
+        "license": null,
+        "attribution": "Generated with Google Flow (Nano Banana Pro) from a Tatbot prompt; kept on the Tatbot art wall",
+        "generation": {
+          "prompt": "American traditional tattoo flash of a swallow flying over three California poppies. Bold, even black outlines of a single weight, flat solid colour fills with no gradients, no blending and no soft shading; shadows are solid black shapes. Use only five inks: black, bright red, golden yellow, mid green and sky blue. Large simple shapes with generous gaps between lines, no tiny details. Isolated on a plain white background, centered, no text, no lettering, no border.",
+          "model": "Nano Banana Pro",
+          "generator": "flow-ui"
+        }
+      },
+      "renders": [
+        "designs/renders/swallow-poppies-45.json",
+        "designs/renders/swallow-poppies-60.json"
+      ]
     },
     {
-      "id": "dbv3-sprout",
-      "name": "dbv3-sprout",
-      "path": "designs/dbv3-sprout/artwork.json",
-      "default_size_mm": [
-        30,
-        30
+      "id": "sun-and-moon",
+      "name": "Sun and moon",
+      "image": "designs/sun-and-moon.jpg",
+      "sha256": "85d1166096cb01801667fba36d9017854d084b90f481dc567c65783af5dbef4d",
+      "width_px": 1024,
+      "height_px": 1024,
+      "art_px": [
+        55,
+        59,
+        914,
+        913
       ],
-      "sha256": "bfabd962df059dc4dbe38c38cb76ba932ceb8e0c2d31ae9894380c743ff4db21",
-      "family": "botanical",
-      "split": "validation",
-      "usage": "artwork",
-      "size_range_mm": [
-        30,
-        30
-      ],
-      "planning_width_mm": 0.3,
+      "palette": {
+        "inks": [
+          "golden_yellow",
+          "bright_red",
+          "light_green",
+          "blue_sky",
+          "true_black"
+        ],
+        "style": "flash"
+      },
       "source": {
-        "attribution": "Original Tatbot raster source, 2026",
-        "generation": null,
-        "identifier": "dbv3-sprout-source",
         "kind": "stock",
-        "license": "CC0-1.0"
-      }
+        "identifier": "r3-11-stained-gl-a-sun-and-moon-f-3",
+        "license": null,
+        "attribution": "Generated with Google Flow (Nano Banana Pro) from a Tatbot prompt; kept on the Tatbot art wall",
+        "generation": {
+          "prompt": "Stained-glass window design of a sun and moon face: thick black leading lines dividing the picture into flat colour panes, each pane one solid colour from #FDC949 golden yellow, #FA5032 bright red, #3B9560 light green, #79C7FB blue sky, #000000 black, bold simple shapes. No gradients, no texture. Flat digital artwork, pure white background, centered, isolated, no text.",
+          "model": "Nano Banana Pro",
+          "generator": "flow-ui"
+        }
+      },
+      "renders": [
+        "designs/renders/sun-and-moon-45.json",
+        "designs/renders/sun-and-moon-60.json"
+      ]
     },
     {
-      "id": "dbv3-ridges",
-      "name": "dbv3-ridges",
-      "path": "designs/dbv3-ridges/artwork.json",
-      "default_size_mm": [
+      "id": "snake-and-dagger",
+      "name": "Snake and dagger",
+      "image": "designs/snake-and-dagger.jpg",
+      "sha256": "1ef6e331f92e8b4520666f3fb2c0ad21ea6d536f82f01b9f303ad5ef2e401d56",
+      "width_px": 1024,
+      "height_px": 1024,
+      "art_px": [
+        86,
         30,
-        30
+        852,
+        964
       ],
-      "sha256": "e16ac8b41c8139ae762f215a5df15afab167f5df770373199972d1187acdee67",
-      "family": "landscape",
-      "split": "test",
-      "usage": "artwork",
-      "size_range_mm": [
-        30,
-        30
-      ],
-      "planning_width_mm": 0.3,
+      "palette": {
+        "inks": [
+          "blue_sky",
+          "golden_yellow",
+          "true_black"
+        ],
+        "style": "flash"
+      },
       "source": {
-        "attribution": "Original Tatbot raster source, 2026",
-        "generation": null,
-        "identifier": "dbv3-ridges-source",
         "kind": "stock",
-        "license": "CC0-1.0"
-      }
+        "identifier": "r3-03-comic-a-snake-coiled-a-2",
+        "license": null,
+        "attribution": "Generated with Google Flow (Nano Banana Pro) from a Tatbot prompt; kept on the Tatbot art wall",
+        "generation": {
+          "prompt": "Bold comic-book style tattoo of a snake coiled around a dagger: thick black ink outlines, dynamic shapes, flat cel colours from #79C7FB blue sky, #FDC949 golden yellow, #000000 black, solid black shadows. No halftone dots, no gradients, no speech bubbles. Flat digital artwork, pure white background, centered, isolated, no text.",
+          "model": "Nano Banana Pro",
+          "generator": "flow-ui"
+        }
+      },
+      "renders": [
+        "designs/renders/snake-and-dagger-45.json",
+        "designs/renders/snake-and-dagger-60.json"
+      ]
     }
   ]
 }

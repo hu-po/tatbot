@@ -1,0 +1,99 @@
+{
+  "revision": "xarm-dual-d405-bracket-v5",
+  "units": "mm",
+  "representation": "The camera-and-cube bracket that carries both wrist D405s (complete Trossen cases) and R7's fiducial cube on R7's retained wrist adapter and pen cradle: the end effector the xArm carries for the merged rig. A PLA fit prototype; datums nominal.",
+  "frame": "Frozen R7 assembly: +X towards cameras, +Y up in review, -Z robot-left; origin at flange centre (R7's CAD frame: CAD X, Y, Z are link 7's X, -Z, Y)",
+  "source": "xarm-dual-d405-bracket-v5 (camera-cube-bracket-ASSEMBLY.stl), 2026-11-07",
+  "source_sha256": "6c8cb138c719d7412ae0536561fb3f6c64c007837f80600f03711a99ee406238",
+  "decimation": "quadric, 59964 -> 20000 faces, sampled deviation 0.007 mm",
+  "files_sha256": {
+    "camera-cube-bracket": "2b624949941c2bea08631aa3a23b4f60310d393959becfff660f9f52c78554dc"
+  },
+  "retained_r7_parts": [
+    "wrist-adapter",
+    "pen-bracket",
+    "pen-cap"
+  ],
+  "camera_case_mesh": "urdf/meshes/wxai/camera_mount_d405.stl (metres), the stock Trossen D405 case",
+  "camera_carrier_poses": [
+    [
+      [
+        -0.70710678,
+        -0.70710678,
+        -0.0,
+        142.49474433
+      ],
+      [
+        -0.70710678,
+        0.70710678,
+        -0.0,
+        -33.43901315
+      ],
+      [
+        0.0,
+        0.0,
+        -1.0,
+        -0.564
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    [
+      [
+        -0.70710678,
+        0.70710678,
+        0.0,
+        142.49474433
+      ],
+      [
+        -0.70710678,
+        -0.70710678,
+        0.0,
+        -33.43901315
+      ],
+      [
+        0.0,
+        -0.0,
+        1.0,
+        -0.564
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ]
+  ],
+  "cube_mesh": "urdf/meshes/ee/r7/fiducial-cube.stl (mm), R7's printed cube, re-posed",
+  "cube_mesh_to_assembly": [
+    [
+      0.5299989400031799,
+      0.8479983040050879,
+      0.0,
+      -22.599872440601004
+    ],
+    [
+      0.8479983040050879,
+      -0.5299989400031799,
+      0.0,
+      -51.287947620508795
+    ],
+    [
+      0.0,
+      0.0,
+      -1.0,
+      1.936
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ]
+}

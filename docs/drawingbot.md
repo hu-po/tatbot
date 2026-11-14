@@ -51,7 +51,7 @@ single-black job, change its schema to version 3 and add the pen-table template;
 existing frozen artwork remains valid input to ROS preparation. A historical
 recipe needs a new acquisition rather than silently adding missing pen evidence.
 
-## Prepare and review
+## Prepare
 
 ```sh
 tatbot drawingbot generate /path/to/job.json --out /path/to/new-acquisition --app /path/to/drawingbotv3
@@ -62,8 +62,9 @@ Install and activate Premium 1.6.22 normally. The version-specific bridge uses
 Java 21, JavaFX and Xvfb; it is not an official headless API. Application and
 activation remain private. Native acquisition needs `javac`, `java` and
 `xvfb-run`. The Premium jar carries x86-64 JavaFX and OpenCV natives only, so on an aarch64 node the installation holds its own JDK with JavaFX at `<installation>/jdk` (the bridge prefers it to the system Java) and the bytedeco `linux-arm64` jars of the bundled OpenCV, OpenBLAS and JavaCPP versions beside the Premium jar. Install `uv` for the drawing commands: `tatbot drawingbot`,
-`tatbot research` and local ROS artwork preparation resolve the same locked
-Python 3.12.14 environment with NumPy 2.5.3 and PyYAML 6.0.3. The first command
+`tatbot art`, `tatbot lab` and local ROS artwork preparation
+resolve the same locked Python 3.12.14 environment with NumPy 2.5.3, PyYAML 6.0.3,
+SciPy, Pillow and OpenCV (headless, for the lab's camera readers). The first command
 downloads missing runtime dependencies into uv's cache; subsequent commands
 reuse them. The repository and an unrelated active virtual environment do not
 supply those dependencies. Neither route requires Inkmap's Node dependencies
@@ -76,8 +77,8 @@ a stale lock refuses execution. The launcher resolves the interpreter first,
 then executes Python directly so uv is absent from the cancellation path.
 ROS node processes retain their deployed ROS environment.
 
-Open `artwork.json` in Inkmap, or inspect the acquired `preview.svg` and the
-prepared `preview.svg`. Preparation preserves DBV3 order and physical size;
+Inspect the acquired `preview.svg` and the prepared `preview.svg`.
+Preparation preserves DBV3 order and physical size;
 `--width` is an assertion, and changing size requires regeneration. Multiple
 pens require explicit ink bindings. It drops a dot-sized path that lies on a
 line of its own ink (`--min-stroke-mm`, default 1; 0 keeps every path), and the
@@ -86,12 +87,10 @@ counted at the tool's line width, else the path's generation width
 (`--mark-width-mm` gives another). See ROS
 preparation in `ros/README.md`, section 4.2.
 
-Study comparisons use **File → Review study…** in Inkmap. Build a portable
-review with `tatbot research review`, then import downloaded human observations
-with `tatbot research feedback`; see [research](research.md). Both review and
-ordinary placement render the shared acquired artwork. The separate gallery
-server and its CLI have been removed. Original experiment galleries and their
-preferences remain historical files, without a maintained legacy review route.
+Inkmap neither imports nor reviews `artwork.json`. It places source art on
+the body and exports the size it is drawn at, which `tatbot art separate`
+takes ([art](art.md)); taste is voted on the art wall. The separate gallery
+server and its CLI have been removed.
 
 ## Native replay and container
 
@@ -105,6 +104,13 @@ bridge hashes, Java identity and rendering flags. Replay verifies these
 inputs and reports exact normalized-export matches separately from identity.
 It does not compile a robot program or transfer appearance preferences.
 `--migrate-runtime` explicitly records a new native runtime baseline.
+
+A recipe hash identifies the work that was asked for, not the output: save and
+hash the acquired paths, and never carry a vote on old output over to a new
+generation. A source that was already rated belongs in training data, never in
+a newly labelled held-out set. A failed generation is a failure: there is no
+backend registry, legacy selector or fallback to another tracer. The DBV3
+window is for finding settings; the saved job is the record of a recipe.
 
 `tatbot drawingbot container build|smoke|export --out DIRECTORY` retains the
 private mounted-application container workflow. Use `--app`, `--recipe` and
@@ -120,21 +126,22 @@ readback, including disabled and zero-path pens. Size, seed and native PFM setti
 No stock source count, fixed 50 × 75 mm size or 24-variant requirement remains
 in acquisition/preparation. Unknown image-model versions and seeds stay null.
 
-Ballpoints use cartridge ink and never dip. A 3RL designation supplies no
-measured deposited width or replenishment budget. Future dip/lift policies
-need measurements and an implementation in the existing ROS executor.
+A needle cartridge's mark on skin is not measured: its datasheet's line
+width is an assumption, and it dips by its datasheet's `mm_per_dip`
+(`ros/README.md`, section 6).
 
-Paired robot trials use [DBV3 research](research.md): frozen candidates, both
-prepared sides, persistent slot ownership and the existing ROS draw/inspect
-workflow. The legacy compiler-selection runner is not part of that route.
+Comparisons on the robot are lab studies ([the lab](lab.md)): trials in cells
+on a tag print, each read from the rig's own frames, a change counted only
+past its A/A spread.
 
 ## Bundled acquired examples
 
-Inkmap's default catalogue is `dbv3-acquired-v1`: three public-safe original
+The simulator's collection is `dbv3-acquired-v1`: three public-safe original
 raster sources acquired with the installed Premium 1.6.22 native worker. Each
 30 × 30 mm acquisition uses a 0.3 mm black pen and retains the unmodified
 `InkmapArtwork/2`, version 3 job/recipe, effective pen table, raw export,
-normalized export and decoding receipt under `web/inkmap/public/designs/`.
+normalized export and decoding receipt under `config/sim2/acquired/`. Inkmap's
+catalogue (`web/inkmap/public/designs/`) holds source images, not acquisitions.
 Application and activation data are excluded. Regenerate the included job into
 a new directory to change physical dimensions or pen settings; previews cannot
-serve as acquisition input to Inkmap or ROS preparation.
+serve as acquisition input to ROS preparation.

@@ -103,18 +103,6 @@ impl Worker {
         self.stdin.flush()?;
         self.receive(stop, limit)
     }
-
-    pub fn request(
-        &mut self,
-        request: &serde_json::Value,
-        stop: &AtomicBool,
-    ) -> Result<serde_json::Value> {
-        self.request_within(request, stop, Duration::from_secs(8))
-    }
-
-    pub fn pid(&self) -> u32 {
-        self.child.id()
-    }
 }
 
 impl Drop for Worker {
@@ -159,7 +147,7 @@ mod tests {
             &stop,
         )
         .unwrap();
-        let pid = worker.pid();
+        let pid = worker.child.id();
         let stopped = stop.clone();
         let signal = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(150));
@@ -168,7 +156,11 @@ mod tests {
         let started = Instant::now();
         assert!(
             worker
-                .request(&serde_json::json!({"captures":{}}), &stop)
+                .request_within(
+                    &serde_json::json!({"captures":{}}),
+                    &stop,
+                    Duration::from_secs(8)
+                )
                 .is_err()
         );
         drop(worker);

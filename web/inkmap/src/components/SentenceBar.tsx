@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { intentFromSite, parsePlacement, resolveIntent, type InkLangIntent } from "../core/inklang/index.ts";
-import { parseSentence, type TattooProgram } from "../core/lang.ts";
+import { parseSentence, takeWidth, type TattooProgram } from "../core/lang.ts";
 import { findDesignForMotif, useStore } from "../store.ts";
 
 /** Resolve placement-only InkLang. A legacy full tattoo sentence is accepted
@@ -29,7 +29,7 @@ export function SentenceBar({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!pending || pending.resolution.status !== "resolved" || !pending.resolution.anchor) return;
     if (autoPlaced.current === pending.resolution) return;
-    const design = pending.program ? findDesignForMotif(designs, pending.program.motif) : placing ? designs.find((d) => d.id === placing) : undefined;
+    const design = (pending.program && findDesignForMotif(designs, pending.program.motif)) ?? designs.find((d) => d.id === placing);
     if (!design) return;
     autoPlaced.current = pending.resolution;
     placeAt(design.id, pending.resolution.anchor, pending);
@@ -41,20 +41,22 @@ export function SentenceBar({ compact = false }: { compact?: boolean }) {
       setErr("this body has no region atlas — sites cannot be grounded");
       return;
     }
-    let intent: InkLangIntent = parsePlacement(text);
+    const { text: place, widthMm } = takeWidth(text);
+    let intent: InkLangIntent = parsePlacement(place);
     let program: TattooProgram | null = null;
     if (!intent.site) {
       try {
-        program = parseSentence(text);
-        intent = intentFromSite(text, program.site);
+        program = parseSentence(place);
+        intent = intentFromSite(place, program.site);
       } catch (error) {
         setErr((error as Error).message);
         setPending(null);
         return;
       }
     }
+    intent = { ...intent, description: text };
     const resolution = resolveIntent(intent, atlas, { id: "interactive", seed: null });
-    const next = { program, intent, resolution };
+    const next = { program, intent, resolution, widthMm };
     setPending(next);
     setText("");
     if (resolution.status === "rejected") {
@@ -67,7 +69,7 @@ export function SentenceBar({ compact = false }: { compact?: boolean }) {
     if (!program) {
       if (!placing) setToast("location resolved — choose artwork");
     } else if (!findDesignForMotif(designs, program.motif)) {
-      setToast(`Generate “${program.motif}” with DrawingBot V3, then import artwork.json.`);
+      setToast(`Import art for “${program.motif}” (a PNG or JPEG), then place it.`);
     }
   };
 

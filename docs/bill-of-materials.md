@@ -1,14 +1,14 @@
 ---
 summary: Sanitized minimal and full replacement-cost bills of materials for Tatbot
 tags: [hardware, bom, reference]
-updated: 2026-09-29
+updated: 2026-11-02
 audience: [dev, artist, contributor]
 ---
 
 # Bills of materials
 
 These are sanitized planning BOMs for the current Tatbot hardware class. They
-answer “what is the minimum useful paper-development cell?” and “what replaces
+answer “what is the minimum useful development cell?” and “what replaces
 the full current system?” without publishing private asset identities, network
 topology, calibration, live state, or safety-acceptance evidence.
 
@@ -30,8 +30,8 @@ have not been re-priced for the demo stack.
 
 ## Minimal BOM — $7,507.65
 
-The minimal build supports guarded single-arm, non-needle ballpoint work on
-paper with two wrist D405s and three PoE scene cameras. One D405, the arm
+The minimal build supports guarded single-arm needle-cartridge work on
+practice skin with two wrist D405s and three PoE scene cameras. One D405, the arm
 controller, standard gripper, and arm power supply are included in the follower
 package.
 
@@ -42,16 +42,16 @@ package.
 | Scene cameras | $203.97 | Three matching 5 MP PoE cameras |
 | Scene-camera mounts and data cabling | $120.00 | Three mounts and Cat6 runs |
 | Headless control computer | $1,499.00 | Arm control and sensor attachment |
-| Ballpoint tool and second-camera mount | $169.98 | One custom tool/second-D405 mount, one rotary machine/battery kit, and one ballpoint-cartridge pack |
+| Needle tool and second-camera mount | $169.98 | One custom tool/second-D405 mount, one rotary machine/battery kit, and one needle-cartridge pack |
 | Hardware E-stop | $45.00 | Latching stop assembly and controller |
 | PoE network and USB attachment | $135.00 | TP-Link TL-SG1210MP (eight PoE+ ports), powered hub, and short cables |
 | Basic power distribution | $50.00 | Power strip and cell leads |
-| **Minimal BOM total** | **$7,507.65** | Single-arm paper-development and capture cell |
+| **Minimal BOM total** | **$7,507.65** | Single-arm development and capture cell |
 
 This assumes an existing operator computer/display, table, room uplink, and
-ordinary paper supplies. It excludes the physical leader arm, two of the full
+a practice skin and inks on hand. It excludes the physical leader arm, two of the full
 system's five scene cameras, reconstruction computer, dedicated viewer, audio,
-backup batteries, tattoo-practice materials, and local training systems.
+backup batteries, further practice materials, and local training systems.
 
 The PoE switch model is TP-Link TL-SG1210MP: eight gigabit PoE+ ports,
 123 W power budget, two gigabit uplinks (one RJ45/SFP combo), and 16 KB
@@ -76,7 +76,7 @@ replacement cost; deduct $649.99 when that shared resource is already present.
 | Cell compute, viewer, display, and connectivity | $6,167.00 | Control/vision computers, viewer computer and touchscreen, PoE/data switches, and USB attachment |
 | Hardware E-stop and process audio | $259.00 | Latching E-stop assembly, USB audio interface, piezo pickup, and leads |
 | Dedicated arm backup power | $849.99 | Portable power station with solar panel plus cell power distribution |
-| Practice tooling and on-hand material families | $441.96 | Two rotary machines, ballpoint and needle cartridges, inks, caps, and three practice-skin forms |
+| Practice tooling and on-hand material families | $441.96 | Two rotary machines, needle cartridges, inks, caps, and three practice-skin forms |
 | **Operating-cell subtotal** | **$18,273.55** | Complete current cell |
 
 ### Full reconciliation
@@ -91,9 +91,8 @@ replacement cost; deduct $649.99 when that shared resource is already present.
 Shared lab networking, storage, control-plane services, operator/development
 computers, fabrication tools, and facilities remain excluded from both BOMs.
 
-The current non-needle paper tool is an
-[Inlumino ballpoint cartridge](https://inluminoheartink.com/products/10-ballpoint-pen-cartridges?variant=46567418921240)
-in an [Ambition Lutin](https://www.ambition-tattoo.com/collections/ambition-rotary-tattoo-pen-series).
+The tattoo machine is an
+[Ambition Lutin](https://www.ambition-tattoo.com/collections/ambition-rotary-tattoo-pen-series).
 Consumable quantities are product-family placeholders, not a shelf-verified
 stock count. The identified but unqualified handheld laser product is excluded
 from this BOM and is not a procurement or use recommendation.

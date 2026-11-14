@@ -23,7 +23,7 @@ from tatbot_cli import gates, nodes  # noqa: E402
 
 ARM = nodes.example_node("arm")
 VIEWER = nodes.example_node("operator")
-TOOL = "lutin-ballpoint-dot"
+TOOL = "lutin-3rl-bugpin"
 LASER = "picosecond-laser-pen"
 
 
@@ -58,11 +58,11 @@ def test_a_missing_or_unknown_configured_pointer_says_exactly_what_to_do(monkeyp
     (tmp_path / "config" / "tools").mkdir(parents=True)
     (tmp_path / "config" / "tools" / f"{TOOL}.yaml").write_text("id: x\n")
 
-    monkeypatch.setattr(gates, "configured_tool", lambda repo, arm: (None, None))
+    monkeypatch.setattr(gates, "configured_tool", lambda repo: (None, None))
     tool, source, error = gates.resolve_tool(tmp_path, None)
     assert tool is None and source == "configured" and "--ee-tool <id>" in error
 
-    monkeypatch.setattr(gates, "configured_tool", lambda repo, arm: ("gone-tool", None))
+    monkeypatch.setattr(gates, "configured_tool", lambda repo: ("gone-tool", None))
     tool, _, error = gates.resolve_tool(tmp_path, None)
     assert tool is None and "gone-tool" in error and "no datasheet" in error
 

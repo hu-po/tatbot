@@ -101,13 +101,16 @@ def work_sweep(ctx, ns, rest):
 
 def _init_args(p):
     p.add_argument("--no-timer", action="store_true", help="do not install the user systemd sweeper timer")
+    p.add_argument("--pinned", action="store_true",
+                   help="a deploy checkout advanced by hand (the station's): the sweeper never fast-forwards it")
 
 
 @verb(effects=("read_files", "write_files", "start_process"), noun="work", verb="init", tier=OFFLINE, output="json",
       args=_init_args, wraps=(BACKEND,), example=("--no-timer",), doc=DOC,
       summary="make this checkout the mirror: refuse commits here, arm the hooks, install the hourly sweeper timer")
 def work_init(ctx, ns, rest):
-    return _backend(ctx, "init", *(["--no-timer"] if ns.no_timer else []), *rest)
+    flags = [f for f, on in (("--no-timer", ns.no_timer), ("--pinned", ns.pinned)) if on]
+    return _backend(ctx, "init", *flags, *rest)
 
 
 def _hook_args(p):

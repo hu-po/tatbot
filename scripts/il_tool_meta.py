@@ -24,7 +24,7 @@ disagrees by construction — it was made under a tool that has since been
 swapped — so --recorded-with-past-tool lifts that check. It also refuses to
 borrow TODAY's geometry for it: the measured tip offset either comes from an
 era-correct --workspace or is recorded as null. Writing the laser's 136 mm tip
-onto a dataset drawn with a 63.7 mm ballpoint would be worse than leaving it
+onto a dataset drawn with a 62 mm needle cartridge would be worse than leaving it
 unstamped, and the file records that the tool was asserted, not verified.
 
 Nothing here moves the arm; it is safe to re-run on an existing dataset.

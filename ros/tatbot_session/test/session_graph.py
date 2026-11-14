@@ -62,12 +62,15 @@ def mock_urdf() -> str:
 
 
 def base_stack(**changes) -> dict:
+    """The committed stack for this harness: the WXAI follower's (`right`, as mock_urdf and the controllers here
+    are), whichever arm stack.yaml draws with."""
     stack = yaml.safe_load(bringup_config("stack.yaml").read_text())
-    stack.update(registration={}, **changes)
+    stack.update(registration={}, arms=["right"], **changes)
     stack["page"]["source"] = "fixed"
     stack["touch"]["enabled"] = False
     stack["page"].setdefault("locate", {})["wrist"] = False
     stack["machine"]["switch"] = "sim"   # the committed stack switches the real arm's machine through the Pi
+    stack["session"]["estop_release"] = "decide"   # these tests drive the decisions; release's land has its own
     return stack
 
 
@@ -89,7 +92,7 @@ def fast_motion(*, mock: bool = False) -> dict:
 class Graph:
     def __init__(self, tmp: Path):
         self.tmp = tmp
-        # The session's runtime record, which research evidence reads: never beside $TATBOT_REPO, where a
+        # The session's runtime record, which each run's meta.json copies: never beside $TATBOT_REPO, where a
         # deployed workspace keeps its live stack's.
         self.runtime_record = tmp / "runtime.json"
         self.procs: list[subprocess.Popen] = []
@@ -105,11 +108,13 @@ class Graph:
         """robot_state_publisher, ros2_control_node, the spawners and tatbot_session; waits for /tatbot/safety."""
         (self.tmp / "rsp.yaml").write_text(yaml.safe_dump(
             {"robot_state_publisher": {"ros__parameters": {"robot_description": urdf}}}))
+        from tatbot_description import controllers as controller_config
+        from tatbot_description import names
         from tatbot_session.runtime import configuration_digest, record_controller
 
         stack['controller_process_file'] = str(self.tmp / 'controller-process.json')
         stack['runtime_record'] = str(self.runtime_record)
-        controller_bytes = bringup_config('controllers.yaml').read_bytes()
+        controller_bytes = controller_config.render_text(bringup_config('controllers.yaml'), ("right",)).encode()
         controller_file = self.tmp / 'controllers.yaml'
         controller_file.write_bytes(controller_bytes)
         stack['runtime_configuration_sha256'] = configuration_digest(stack, urdf, controller_bytes)
@@ -124,7 +129,7 @@ class Graph:
         self.start([executable("robot_state_publisher", "robot_state_publisher"), "--ros-args",
                     "--params-file", str(self.tmp / "rsp.yaml")], "rsp")
         spawn = self.run([executable("controller_manager", "spawner"), "joint_state_broadcaster",
-                          "right_arm_controller", "right_safety_controller", "--param-file", controllers,
+                          names.arm_controller("right"), names.safety_controller("right"), "--param-file", controllers,
                           "--controller-manager-timeout", "60"], timeout=90)
         assert spawn.returncode == 0, spawn.stdout + spawn.stderr
         session = [executable("tatbot_session", "session")]
@@ -176,10 +181,19 @@ class Graph:
                 proc.kill()
                 proc.communicate()
 
-    def evidence(self, page: str, slot: str) -> subprocess.CompletedProcess:
-        """`tatbot ros evidence`'s reader on this graph's logs and runtime record."""
-        return self.run([sys.executable, "-m", "tatbot_session.research", "--page", page, "--slot", slot,
-                         "--runtime-record", str(self.runtime_record)])
+    def runtime(self) -> tuple[dict | None, bool]:
+        """The stack's runtime record as the session reads it now, and whether the process it names still runs."""
+        from tatbot_contracts.canonical import parse_json
+        from tatbot_session import runtime
+
+        if not self.runtime_record.exists():
+            return None, False
+        identity = runtime.current(parse_json(self.runtime_record.read_bytes()))
+        return identity, runtime.alive(identity)
+
+    def runs(self) -> list[Path]:
+        """This graph's ros-draw run directories, oldest first."""
+        return sorted((self.tmp / "logs" / "ros-draw").glob("*"))
 
     def client_bg(self, *args, log: str) -> subprocess.Popen:
         stream = open(self.tmp / log, "w")  # noqa: SIM115 - closed by the OS with the client
@@ -244,8 +258,8 @@ def square_program(tmp: Path, *, name: str, sides=(0.010,), pause: bool = False,
         identity = f"p{index}"
         artwork_path = directory / (identity + ".json")
         artwork_path.write_text(json.dumps(artwork(side)))
-        # Preparation binds the same temporary tuning that the fixture node reloads; keep the research
-        # configuration digest check live rather than editing the prepared digest after compilation.
+        # Preparation binds the same temporary tuning that the fixture node reloads, so the program's motion
+        # digest is the one the node draws with.
         from unittest.mock import patch
 
         motion = tmp / "motion.yaml"

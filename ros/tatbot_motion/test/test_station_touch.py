@@ -54,11 +54,12 @@ def test_the_overheads_registration_places_its_views_by_a_touch_whatever_its_hei
 
 def test_a_camera_measured_height_is_held_only_to_a_gross_bound(fix):
     """2026-10-16: the overhead hung lower read the ball 5.2 mm over the palette camera's height, which matched 10-14's;
-    a touch-only height that far off is still refused."""
+    on the xArm rig it read it 8.9 mm under (2026-11-09). A touch-only height 5.4 mm off is still refused."""
     camera = "the palette camera, a calib height run"
     place(touch(fix, 0.0054, height_source=camera), fix)
-    with pytest.raises(station.StaleStationError, match=r"at most 8\.0"):
-        place(touch(fix, 0.0085, height_source=camera), fix)
+    place(touch(fix, 0.0089, height_source=camera), fix)
+    with pytest.raises(station.StaleStationError, match=r"at most 12\.0"):
+        place(touch(fix, 0.0125, height_source=camera), fix)
     with pytest.raises(station.StaleStationError, match=r"at most 4\.0"):
         place(touch(fix, 0.0054), fix)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The bench M0 numbers from a driver flight ring (<run>/<arm>-flight.bin, ros/README.md "Flight log").
 
-    python3 flight_summary.py RUN_DIR [--arm right] [--no-tip]
+    python3 flight_summary.py RUN_DIR [--arm ARM] [--no-tip]
 
 RUN_DIR is a ros-stack run (`tatbot ros logs last --workflow ros-stack`). Prints one JSON line:
   records, seconds         what the ring holds
@@ -19,6 +19,8 @@ RUN_DIR is a ros-stack run (`tatbot ros logs last --workflow ros-stack`). Prints
                            tool axis (p50, p95, p99), per-joint |error| in encoder counts (p95), how much
                            larger it is in the 0.3 s after a joint reverses, and the seconds measured.
                            --since/--until (Unix s, version 2 rings) narrow it to one draw or wave.
+Both compare each measurement with the command it answers, the arm model's command_delay_s before it, as the
+driver's guards do: the same instant on the WXAI, 85 ms earlier on the xArm.
 """
 from __future__ import annotations
 
@@ -40,7 +42,7 @@ DTYPES = {
 }
 DTYPE = DTYPES[2]
 RUNNING = 1
-ENCODER_RAD = 2 * np.pi / 16471   # one count of an arm joint's reported position (2026-10-13 draw)
+ENCODER_RAD = 2 * np.pi / 16471   # one count of a WXAI arm joint's reported position (2026-10-13 draw)
 
 
 def header(path: Path) -> dict:
@@ -64,13 +66,15 @@ def read(path: Path) -> np.ndarray:
     return np.frombuffer(body[: len(body) // size * size], dtype=dtype)
 
 
-def summarize(r: np.ndarray, kin=None) -> dict:
+def summarize(r: np.ndarray, model, kin=None) -> dict:
+    """The ring's numbers, its columns read by the arm's model (scripts/lib/arm_model.py): the revolute chain's speed,
+    the carriage's effort when the arm has one."""
     t = r["t"] - r["t"][0] if len(r) else r["t"]
     gaps = np.diff(t) * 1000 if len(t) > 1 else np.zeros(1)
     out = {"records": int(len(r)), "seconds": round(float(t[-1]) if len(t) else 0.0, 1),
            "period_max_ms": round(float(gaps.max()), 3), "jitter_ms": round(float(gaps.max()) - 2.5, 3),
            "rt_period_max_ms": round(float(r["rt_period_max_ms"].max()) if len(r) else 0.0, 3), "latches": []}
-    speed = np.abs(r["qd"][:, :6]).max(axis=1) if len(r) else np.zeros(0)
+    speed = np.abs(r["qd"][:, model.arm_index]).max(axis=1) if len(r) else np.zeros(0)
     for i in np.flatnonzero(np.diff(r["latched"].astype(int)) == 1) + 1:
         before = speed[(t >= t[i] - 0.05) & (t < t[i])]
         still = np.flatnonzero((t >= t[i]) & (speed < 0.005))
@@ -80,29 +84,49 @@ def summarize(r: np.ndarray, kin=None) -> dict:
                                "still_after_ms": round(float(t[still[0]] - t[i]) * 1000, 1) if len(still) else None})
     running = (r["phase"] == RUNNING) & (r["latched"] == 0)
     rest = running & (np.abs(r["qd"]).max(axis=1) < 0.01) if len(r) else running
-    if rest.any():
-        e = r["effort"][rest, 6]
+    if rest.any() and model.carriage is not None:
+        e = r["effort"][rest, model.carriage]
         out["carriage_effort_n"] = {k: round(float(np.percentile(e, p)), 2) for k, p in (("median", 50), ("p5", 5), ("p95", 95))}
     if kin is not None and running.any():
-        idx = np.flatnonzero(running)[:: max(1, int(running.sum()) // 20000)]
-        lag = []
-        for i in idx:
-            cmd, meas = kin.fk(r["cmd_q"][i].astype(float)), kin.fk(r["q"][i].astype(float))
-            lag.append(float((cmd[:3, 3] - meas[:3, 3]) @ cmd[:3, 2]))
-        lag = np.asarray(lag) * 1000
-        out["tip_lag_mm"] = {"p50": round(float(np.median(lag)), 3), "p99": round(float(np.percentile(lag, 99)), 3),
-                             "max": round(float(lag.max()), 3), "samples": int(len(lag))}
-        out["tracking"] = tracking(r[running], kin)
+        out.update(_tip(answered(r, model.command_delay_s), kin, model))
     return out
+
+
+def answered(r: np.ndarray, delay_s: float) -> np.ndarray:
+    """The ring with each record's commands (cmd_q, sent_q, sent_qd) the ones its measurement answers, sent `delay_s`
+    before it (the arm model's command_delay_s); a record with none that old goes. A delay of 0 leaves the ring."""
+    if delay_s <= 0 or not len(r):
+        return r
+    sent = np.searchsorted(r["t"], r["t"] - delay_s, side="right") - 1
+    out = r[sent >= 0].copy()
+    for name in ("cmd_q", "sent_q", "sent_qd"):
+        out[name] = r[name][sent[sent >= 0]]
+    return out
+
+
+def _tip(r: np.ndarray, kin, model) -> dict:
+    """tip_lag_mm and tracking over the running, unlatched records of a ring whose commands are the answered ones."""
+    running = (r["phase"] == RUNNING) & (r["latched"] == 0)
+    if not running.any():
+        return {}
+    lag = []
+    for i in np.flatnonzero(running)[:: max(1, int(running.sum()) // 20000)]:
+        cmd, meas = kin.fk(r["cmd_q"][i].astype(float)), kin.fk(r["q"][i].astype(float))
+        lag.append(float((cmd[:3, 3] - meas[:3, 3]) @ cmd[:3, 2]))
+    lag = np.asarray(lag) * 1000
+    return {"tip_lag_mm": {"p50": round(float(np.median(lag)), 3), "p99": round(float(np.percentile(lag, 99)), 3),
+                           "max": round(float(lag.max()), 3), "samples": int(len(lag))},
+            "tracking": tracking(r[running], kin, model)}
 
 
 def _pct(x, ps=(50, 95, 99)) -> dict:
     return {f"p{p}": round(float(np.percentile(x, p)), 3) for p in ps}
 
 
-def tracking(r: np.ndarray, kin, step: int = 4, min_mm_s: float = 1.0, max_mm_s: float = 20.0) -> dict:
+def tracking(r: np.ndarray, kin, model, step: int = 4, min_mm_s: float = 1.0, max_mm_s: float = 20.0) -> dict:
     """Measured minus sent tip while the command moves at drawing speed (every `step`th record), split along the
-    commanded path, across it and along the tool axis; per-joint errors in encoder counts, and near reversals."""
+    commanded path, across it and along the tool axis; the revolute joints' errors in encoder counts, and near
+    reversals."""
     r = r[np.isfinite(r["sent_q"][:, 0])][::step]
     if len(r) < 50:
         return {"seconds": 0.0}
@@ -124,27 +148,29 @@ def tracking(r: np.ndarray, kin, step: int = 4, min_mm_s: float = 1.0, max_mm_s:
     u = v / np.maximum(np.linalg.norm(v, axis=1, keepdims=True), 1e-12)
     along, depth = (e * u).sum(1), (e * z).sum(1)
     cross = np.linalg.norm(e - along[:, None] * u - depth[:, None] * z, axis=1)
-    counts = np.abs(r["q"][:, :6] - r["sent_q"][:, :6]).astype(float) / ENCODER_RAD
+    counts = np.abs(r["q"][:, model.arm_index] - r["sent_q"][:, model.arm_index]).astype(float) / ENCODER_RAD
     reversal = []
-    for j in range(6):
+    for c, j in enumerate(model.arm):
         s = np.sign(r["sent_qd"][:, j])
         near = np.zeros(len(r), bool)
         for i in np.flatnonzero((s[1:] != s[:-1]) & (s[1:] != 0)) + 1:
             near |= (t >= t[i]) & (t < t[i] + 0.3)
-        a, b = counts[steady & near, j], counts[steady & ~near, j]
+        a, b = counts[steady & near, c], counts[steady & ~near, c]
         reversal.append(round(float(np.percentile(a, 95) / max(np.percentile(b, 95), 1e-9)), 2)
                         if len(a) > 20 and len(b) > 20 else None)
     return {"seconds": round(float(steady.sum() * np.median(np.diff(t))), 1),
             "speed_mm_s": _pct(speed[steady], (50, 95)),
             "along_mm": _pct(along[steady]), "cross_mm": _pct(cross[steady]), "depth_mm": _pct(depth[steady]),
-            "joint_counts_p95": [round(float(np.percentile(counts[steady, j], 95)), 2) for j in range(6)],
+            "joint_counts_p95": [round(float(np.percentile(counts[steady, c], 95)), 2) for c in range(len(model.arm))],
             "reversal_ratio_p95": reversal}
 
 
 def main(argv=None) -> int:
+    from tatbot_description import drawing_arm
+
     parser = argparse.ArgumentParser(prog="flight_summary.py", description=__doc__.split("\n")[0])
     parser.add_argument("run_dir")
-    parser.add_argument("--arm", default="right")
+    parser.add_argument("--arm", default=drawing_arm())
     parser.add_argument("--no-tip", action="store_true")
     parser.add_argument("--since", type=float, help="Unix s: only records from then")
     parser.add_argument("--until", type=float, help="Unix s: only records until then")
@@ -153,6 +179,8 @@ def main(argv=None) -> int:
     if not ring.is_file():
         print(f"no flight ring at {ring}", file=sys.stderr)
         return 2
+    from tatbot_description import arm_model
+
     kin = None
     if not args.no_tip:
         from tatbot_description import robot_description
@@ -167,7 +195,7 @@ def main(argv=None) -> int:
             return 2
         wall = r["t"] + realtime0
         r = r[(wall >= (args.since or -np.inf)) & (wall <= (args.until or np.inf))]
-    print(json.dumps({"ring": str(ring), "realtime0": realtime0, **summarize(r, kin)}))
+    print(json.dumps({"ring": str(ring), "realtime0": realtime0, **summarize(r, arm_model.for_arm(args.arm), kin)}))
     return 0
 
 

@@ -10,7 +10,6 @@ import json
 import os
 import shlex
 import sys
-from pathlib import Path
 
 from tatbot_cli import (
     EXIT_BUSY,
@@ -49,14 +48,14 @@ global flags (anywhere before `--`; `--flag value` or `--flag=value`):
   --json            machine-readable output; refusals are one JSON line on stderr
   --dry-run         resolve node, tool and gates, print the exact command, exec nothing
   --on <node>       run this command on another node over ssh (config/nodes.json);
-                    a command that owns a fleet role already routes itself there
+                    a routed command already goes to its fleet role's owner
   --ee-tool <id>    the tool in the mount (or TATBOT_EE_TOOL); omitted, the
                     execution owner's configured fitted tool is used
   --explain         print the verb's tier, gates, invariants and docs, then exit
   --help-all        help including advanced, compatibility, internal and
                     experimental commands (nothing is hidden from the schema)
   -q / -v           quieter / louder
-  --version
+  --version         before the noun only
 
 exit codes:
   0 ok   1 tool failed   2 usage   3 safety gate refused   4 wrong node
@@ -220,7 +219,7 @@ def parse_globals(argv: list[str]) -> tuple[dict, str | None, list[str]]:
     if ownership_error and not g["explain"] and not g["help"] and not {"-h", "--help"}.intersection(head):
         raise UsageError(ownership_error)
     globals_, routing = _global_tokens(g)
-    g["invocation"] = Invocation(list(argv), globals_, ([noun] if noun else []) + kept, tail,
+    g["invocation"] = Invocation(globals_, ([noun] if noun else []) + kept, tail,
                                  routing_tokens=routing, has_passthrough="--" in rest)
     return g, noun, kept + (["--", *tail] if "--" in rest else [])
 
@@ -361,7 +360,7 @@ def resolve_verb(noun: str, own: list[str]) -> Verb | None:
 def build_noun_parser(noun: str, *, show_all: bool = False) -> argparse.ArgumentParser:
     """The parser for a noun and its verbs."""
     vs = verbs_of(noun)
-    # A pure passthrough noun (logs, ink, check) forwards --help to the tool it wraps.
+    # A pure passthrough noun (logs, check) forwards --help to the tool it wraps.
     pure = len(vs) == 1 and vs[0].verb == "" and vs[0].args is None and vs[0].passthrough
     parser = Parser(
         prog=f"tatbot {noun}", description=NOUN_SUMMARY.get(noun, ""), add_help=not pure,
@@ -408,6 +407,9 @@ def _home_relative(arg: str) -> str:
     """A path under this node's HOME travels as `~/...` so it resolves under the remote HOME
     (every node keeps its checkout and logs at the same HOME-relative paths; the shell expanded ~
     before we saw it)."""
+    flag, assigned, value = arg.partition("=")
+    if arg.startswith("--") and assigned:
+        return f"{flag}={_home_relative(value)}"
     home = os.path.expanduser("~")
     if home != "/" and (arg == home or arg.startswith(home + "/")):
         return "~" + arg[len(home):]
@@ -431,7 +433,6 @@ def print_plan(ctx: Ctx, v: Verb, plan: Plan, *, hop_to: str | None = None,
             "dry_run": True, "verb": v.name, "tier": v.tier, "node": ctx.node, "hop": hop_to,
             "role": role, "argv": plan.argv, "cwd": str(plan.cwd) if plan.cwd else None,
             "env": plan.env, "gates": list(v.gates), "wraps": list(v.wraps), "notes": plan.notes,
-            "files": plan.files,
             "busy": gates.busy_reasons(), "launch_id": launch_id, "tool": tool_selection(ctx, v, hop_to),
         }))
         return
@@ -453,23 +454,9 @@ def print_plan(ctx: Ctx, v: Verb, plan: Plan, *, hop_to: str | None = None,
         print(f"  busy   {b}")
     if launch_id:
         print(f"  launch {launch_id}  (example; a fresh id is minted at exec, ledgered + audited by arm_gate)")
-    _print_files(plan)
     print(f"  exec   {shlex.join(plan.argv)}" if plan.kind == "exec" else f"  native {v.name}")
     for n in plan.notes:
         print(f"  note   {n}")
-
-
-def _print_files(plan: Plan) -> None:
-    for path in plan.files:
-        print(f"  file   {path}  (written right before the exec)")
-
-
-def write_files(plan: Plan) -> None:
-    """What the verb composed for its launcher, written after every gate and
-    immediately before the exec (a dry run only shows it)."""
-    for path, text in plan.files.items():
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(text)
 
 
 def tool_selection(ctx: Ctx, v: Verb, hop_to: str | None = None) -> dict | None:
@@ -627,7 +614,7 @@ def _route_to_owner(ctx: Ctx, v: Verb, nmap: dict, role: str) -> tuple[bool, int
 
 
 def _route(ctx: Ctx, v: Verb, nmap: dict, role: str | None) -> tuple[bool, int | None]:
-    """Settle ctx.on: the owner a role-declaring command routes itself to, or the
+    """Settle ctx.on: the owner a routed command goes to, or the
     typed --on, validated. Runs before binding files or probing hardware, which
     belong to the execution node; the remote CLI repeats validation, a hop is no
     authority. Returns (whether the CLI chose the hop, exit code to stop with)."""
@@ -654,6 +641,21 @@ def _route(ctx: Ctx, v: Verb, nmap: dict, role: str | None) -> tuple[bool, int |
     return resolved, None
 
 
+def _state_tool_across_hop(ctx: Ctx, v: Verb, remote_argv: list[str]) -> list[str]:
+    """Record the tool this hop states, adding a carried TATBOT_EE_TOOL to remote_argv; returns the plan's notes."""
+    carried = os.environ.get("TATBOT_EE_TOOL")
+    if ctx.ee_tool:
+        ctx.tool_source = "flag"
+    elif v.needs_tool and carried:
+        # Valued globals lead, which every released parser accepts.
+        remote_argv[:0] = ["--ee-tool", carried]
+        ctx.ee_tool, ctx.tool_source = carried, "environment"
+        return [f"TATBOT_EE_TOOL={carried} is carried over as an explicit --ee-tool"]
+    elif v.needs_tool:
+        return [f"no tool stated: {ctx.on} resolves its own configured fitted tool"]
+    return []
+
+
 def _hop(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str], nmap: dict,
          role: str | None, resolved: bool) -> int:
     """Re-run this invocation on ctx.on over ssh: plan it, or exec it."""
@@ -671,13 +673,7 @@ def _hop(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str], nmap
     invocation = ctx.invocation or parse_globals(ctx.argv)[0]["invocation"]
     remote_argv = [_home_relative(a) for a in invocation.remote_tokens()]
     notes = [f"remote exit code is returned as-is; run ids carry the node ({ctx.on})"]
-    carried = os.environ.get("TATBOT_EE_TOOL")
-    if v.needs_tool and not ctx.ee_tool and carried:
-        # Valued globals lead, which every released parser accepts.
-        remote_argv[:0] = ["--ee-tool", carried]
-        notes.append(f"TATBOT_EE_TOOL={carried} is carried over as an explicit --ee-tool")
-    elif v.needs_tool and not ctx.ee_tool:
-        notes.append(f"no tool stated: {ctx.on} resolves its own configured fitted tool")
+    notes += _state_tool_across_hop(ctx, v, remote_argv)
     if v.sync:
         notes.append(f"the {ctx.on} checkout is fast-forwarded to origin/main first")
     plan = Plan(argv=nodes.hop_argv(nmap, ctx.on, remote_argv, tty=v.tty or v.tier in MOTION_TIERS,
@@ -788,7 +784,7 @@ def _gate(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str],
         if stop is not None:
             return {}, stop
     if v.needs_tool:
-        tool, source, err = gates.resolve_tool(ctx.repo, ctx.ee_tool, arm=v.tool_arm)
+        tool, source, err = gates.resolve_tool(ctx.repo, ctx.ee_tool)
         if err:
             return {}, refuse(ctx, EXIT_GATE_REFUSED, "ee_tool", err, gates.FLAG_HINT)
         # A read-only prepare hook may already have bound an authoritative
@@ -864,7 +860,6 @@ def dispatch(ctx: Ctx, v: Verb, ns: argparse.Namespace, passthrough: list[str]) 
     env.update(plan.env)
     if plan.cwd:
         os.chdir(plan.cwd)
-    write_files(plan)
     try:
         os.execvpe(plan.argv[0], plan.argv, env)
     except FileNotFoundError:

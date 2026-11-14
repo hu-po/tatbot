@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://tatbot.ai/schemas/inkmap/placement/v6",
+  "$id": "https://tatbot.ai/schemas/inkmap/placement/v7",
   "title": "Inkmap placement file",
-  "description": "Placements on the reviewed MHR/SOMA surface with frozen shared artwork. v6 stores acquired metric geometry rather than SVG materialization inputs.",
+  "description": "Placements on the reviewed MHR/SOMA surface with the source art each places. v7 embeds source art (tatbot.inkmap-art/1) rather than stroke artwork; the size of each placement is the width the art pipeline separates it at.",
   "type": "object",
   "required": [
     "schema_version",
@@ -13,7 +13,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 6
+      "const": 7
     },
     "units": {
       "type": "object",
@@ -93,7 +93,7 @@
           "design_id": {
             "type": "string",
             "minLength": 1,
-            "description": "Content-addressed vector design identifier. Generated designs are embedded in this file."
+            "description": "The design's identifier; its source art is embedded in this file's designs."
           },
           "anchor": {
             "type": "object",
@@ -116,7 +116,7 @@
                   "minimum": 0,
                   "maximum": 1
                 },
-                "description": "Weights of the design origin (SVG viewBox centre) on the face's three vertices; sum to 1."
+                "description": "Weights of the design origin (the art rectangle's centre) on the face's three vertices; sum to 1."
               }
             }
           },
@@ -226,9 +226,9 @@
     },
     "designs": {
       "type": "object",
-      "description": "Shared frozen artwork records, keyed by the placement design ID.",
+      "description": "The source art, keyed by the placement design ID.",
       "additionalProperties": {
-        "$ref": "https://tatbot.dev/schemas/inkmap/artwork.schema.json"
+        "$ref": "https://tatbot.dev/schemas/inkmap/art.schema.json"
       }
     }
   }

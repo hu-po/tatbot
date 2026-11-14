@@ -62,6 +62,10 @@ std::string urdf(const std::map<std::string, std::string> & params)
          "</hardware>" + control + gpio + "</ros2_control></robot>";
 }
 
+// The WXAI's joints in controller order, as tatbot_description.hardware_params names them from its model.
+constexpr const char * kWxaiJoints =
+  "right/joint_0 right/joint_1 right/joint_2 right/joint_3 right/joint_4 right/joint_5 right/left_carriage_joint";
+
 struct Plugin
 {
   TatbotArm arm;
@@ -75,6 +79,8 @@ struct Plugin
   {
     params.emplace("arm", "right");
     params.emplace("sdk", "fake");
+    params.emplace("joints", kWxaiJoints);
+    params.emplace("carriage_joint", "right/left_carriage_joint");
     hardware_interface::HardwareComponentParams p;
     p.hardware_info = hardware_interface::parse_control_resources_from_urdf(urdf(params)).at(0);
     p.clock = std::make_shared<rclcpp::Clock>();
@@ -142,6 +148,22 @@ TEST(HwPlugin, ActivatesHoldingInPositionModeAndPassesVelocityFeedForward)
   p.arm.on_error(p.none);
   EXPECT_EQ(p.get("right_safety/latch_reason"), names::kLatchDeactivated);   // first reason kept
   EXPECT_FALSE(p.arm.fake()->idle());
+}
+
+TEST(HwPlugin, RefusesJointsOtherThanItsModels)
+{
+  // The arm model's joints name the ros2_control joints, and its carriage is one of them.
+  for (const auto & [key, value] : {std::pair{"joints", "right/joint_0 right/joint_1"},
+      std::pair{"carriage_joint", "right/joint_7"}})
+  {
+    std::map<std::string, std::string> params{{"arm", "right"}, {"sdk", "fake"}, {key, value}};
+    params.emplace("joints", kWxaiJoints);
+    TatbotArm arm;
+    hardware_interface::HardwareComponentParams p;
+    p.hardware_info = hardware_interface::parse_control_resources_from_urdf(urdf(params)).at(0);
+    p.clock = std::make_shared<rclcpp::Clock>();
+    EXPECT_EQ(arm.init(p), hardware_interface::CallbackReturn::ERROR) << key;
+  }
 }
 
 TEST(HwPlugin, ErrorHoldsAndTheAuxThreadCachesControllerErrors)

@@ -1,0 +1,11 @@
+{
+  "schema": "tatbot.stencil-tiles/1",
+  "tiles": {
+    "forearm": {"name": "Forearm", "for": "skin", "tile_mm": [45.0, 63.0], "cols": 3, "rows": 4, "cell_mm": 2.0,
+                "pitch_mm": 16.5, "gap_mm": 2.0, "anchor_mm": null},
+    "forearm18": {"name": "Forearm 18", "for": "skin", "tile_mm": [40.0, 62.0], "cols": 2, "rows": 3, "cell_mm": 3.0,
+                  "pitch_mm": 22.0, "gap_mm": 2.0, "anchor_mm": null},
+    "silicone": {"name": "Silicone", "for": "silicone", "tile_mm": [111.0, 157.5], "cols": 5, "rows": 7, "cell_mm": 3.0,
+                 "pitch_mm": 23.25, "gap_mm": 4.0, "anchor_mm": 40.0}
+  }
+}

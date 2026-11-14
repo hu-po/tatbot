@@ -30,8 +30,6 @@ def _vector(pose: np.ndarray) -> np.ndarray:
     return np.concatenate([cv2.Rodrigues(pose[:3, :3])[0].ravel(), pose[:3, 3]])
 
 
-FREE_JOINTS = (1, 2, 3, 4)   # controller order; joint_0 is a base yaw, joint_5 the seat's roll, index 6 the carriage
-MODELS = {"rigid": ((), False), "seat": ((), True), "seat+joints": (FREE_JOINTS, True)}
 ROBUST_PX = 2.0              # soft-L1 scale: a corner this far off counts less than squared
 STILL_RAD = 2e-3             # a hold whose joints moved more than this during its capture is not used (register's)
 
@@ -78,10 +76,20 @@ class Chain:
     def __post_init__(self):
         from fiducials import tag_model_corners
 
-        zero = np.zeros(7)
+        zero = np.zeros(self.kin.n)
         parent = np.linalg.inv(self.kin.frame(zero, self.target.parent_frame))
         self.parent_from_tag = {t: parent @ self.kin.frame(zero, f"{self.arm}/wrist_tag{t}") for t in self.target.ids}
         self.model = np.c_[tag_model_corners(self.target.edge_m), np.ones(4)]
+
+    @property
+    def free(self) -> tuple[int, ...]:
+        """The joints whose zero offsets the fit frees: the arm's model's calibrated_offsets (on the WXAI 1-4: joint_0
+        is a base yaw, joint_5 the seat's roll)."""
+        return tuple(self.kin.arm_model.calibrated_offsets)
+
+    def models(self) -> dict:
+        """What compare weighs: the chain rigid, its tags' seat free, and the seat and the calibrated joints free."""
+        return {"rigid": ((), False), "seat": ((), True), "seat+joints": (self.free, True)}
 
     def corners(self, s, dq, seat) -> np.ndarray:
         """A sighting's four corners in the base at its joints moved by dq, the tags on their seat."""
@@ -101,8 +109,8 @@ def _norms(errors) -> np.ndarray:
     return np.linalg.norm(errors.reshape(-1, 2), axis=1)
 
 
-def _shared(x, n: int, free, seat: bool) -> tuple[np.ndarray, np.ndarray]:
-    dq = np.zeros(7)
+def _shared(x, n: int, free, seat: bool, joints: int) -> tuple[np.ndarray, np.ndarray]:
+    dq = np.zeros(joints)
     dq[list(free)] = x[6 * n:6 * n + len(free)]
     return dq, (_pose(x[6 * n + len(free):]) if seat else np.eye(4))
 
@@ -114,7 +122,7 @@ def _solve(chain: Chain, runs, free, seat: bool, x0=None):
     n = len(runs)
 
     def residuals(x):
-        dq, pose = _shared(x, n, free, seat)
+        dq, pose = _shared(x, n, free, seat, chain.kin.n)
         return np.concatenate([chain.errors(r, x[6 * i:6 * i + 6], dq, pose) for i, r in enumerate(runs)])
     start = np.r_[np.concatenate([_vector(r.camera_from_base) for r in runs]), np.zeros(len(free) + 6 * seat)]
     return least_squares(residuals, start if x0 is None else x0, loss="soft_l1", f_scale=ROBUST_PX)
@@ -128,15 +136,17 @@ def _camera_alone(chain: Chain, run: Run, dq, seat):
                          f_scale=ROBUST_PX)
 
 
-def fit(chain: Chain, runs: list[Run], free=FREE_JOINTS, seat: bool = True) -> dict:
-    """The shared terms over the runs, each run its camera <- base: dq (7, rad), the seat (parent <- parent as
-    measured), their 1-sigma from the Jacobian scaled by the median corner error, the cameras and the corner error."""
+def fit(chain: Chain, runs: list[Run], free=None, seat: bool = True) -> dict:
+    """The shared terms over the runs, each run its camera <- base: dq (one per joint, rad), the seat (parent <- parent
+    as measured), their 1-sigma from the Jacobian scaled by the median corner error, the cameras and the corner error.
+    `free` defaults to the chain's calibrated joints."""
+    free = chain.free if free is None else free
     n = len(runs)
     result = _solve(chain, runs, free, seat)
     norms = _norms(result.fun)
     cov = np.linalg.pinv(result.jac.T @ result.jac) * float(np.median(norms)) ** 2
     sd = np.sqrt(np.clip(np.diag(cov)[6 * n:], 0.0, None))
-    dq, pose = _shared(result.x, n, free, seat)
+    dq, pose = _shared(result.x, n, free, seat, chain.kin.n)
     names = [chain.kin.joint_names[j].split("/")[-1] for j in free]
     return {"dq": dq, "seat": pose, "sigma": {**dict(zip(names, sd[:len(free)].tolist(), strict=True)),
                                               **({"seat": sd[len(free):].tolist()} if seat else {})},
@@ -145,16 +155,17 @@ def fit(chain: Chain, runs: list[Run], free=FREE_JOINTS, seat: bool = True) -> d
             "corners": int(len(norms)), "x": result.x}
 
 
-def hold_out(chain: Chain, runs: list[Run], free=FREE_JOINTS, seat: bool = True, full=None) -> dict:
+def hold_out(chain: Chain, runs: list[Run], free=None, seat: bool = True, full=None) -> dict:
     """The median corner error of what the fit was not given. Several runs: each left out in turn, the shared terms
     fitted to the others and its camera alone to them. One run: each hold left out, its corners at the camera and
     terms of the rest (warm-started from `full`, the fit of all)."""
+    free = chain.free if free is None else free
     n = len(runs)
     if n > 1:
         each = {}
         for i, run in enumerate(runs):
             others = [r for j, r in enumerate(runs) if j != i]
-            dq, pose = _shared(_solve(chain, others, free, seat).x, n - 1, free, seat)
+            dq, pose = _shared(_solve(chain, others, free, seat).x, n - 1, free, seat, chain.kin.n)
             each[run.name] = float(np.median(_norms(_camera_alone(chain, run, dq, pose).fun)))
         return {"by": "run", "median_px": float(np.median(list(each.values()))), "each": each}
     run, x0 = runs[0], (full or fit(chain, runs, free, seat))["x"]
@@ -163,8 +174,8 @@ def hold_out(chain: Chain, runs: list[Run], free=FREE_JOINTS, seat: bool = True,
         rest = Run(run.name, run.k, run.dist, [s for s in run.sightings if s["hold"] != hold], run.camera_from_base)
         left = Run(run.name, run.k, run.dist, [s for s in run.sightings if s["hold"] == hold], run.camera_from_base)
         x = _solve(chain, [rest], free, seat, x0).x
-        dq, pose = _shared(x, 1, free, seat)
-        held.append(float(np.median(_norms(chain.errors(left, x[:6], dq, pose)))))
+        dq, pose = _shared(x, 1, free, seat, chain.kin.n)
+        held.append(float(np.median(_norms(chain.errors(left, x[:6], dq, pose)))))   # arm-model: not joints, camera6
     return {"by": "hold", "median_px": float(np.median(held)), "p90_px": float(np.percentile(held, 90)),
             "holds": len(held)}
 
@@ -173,7 +184,7 @@ def compare(chain: Chain, runs: list[Run], models=None) -> tuple[dict, dict]:
     """Each model fitted and held out; the best is the least held-out median. Returns (the report, JSON-ready;
     each model's fit)."""
     report, fits = {}, {}
-    for name, (free, seat) in (models or MODELS).items():
+    for name, (free, seat) in (models or chain.models()).items():
         fits[name] = fit(chain, runs, free, seat)
         report[name] = {"fit": summary(chain, fits[name], free, seat),
                         "held_out": hold_out(chain, runs, free, seat, fits[name])}
@@ -232,11 +243,11 @@ def information(c: Chain, k, dist, camera_from_base, q, tags, step: float = 1e-5
     import cv2
 
     sightings = [{"q": np.asarray(q, float), "tag": t} for t in tags]
-    x0 = np.r_[_vector(camera_from_base), np.zeros(6 + len(FREE_JOINTS))]
+    x0 = np.r_[_vector(camera_from_base), np.zeros(6 + len(c.free))]
 
     def pixels(x):
-        dq = np.zeros(7)
-        dq[list(FREE_JOINTS)] = x[12:]
+        dq = np.zeros(c.kin.n)
+        dq[list(c.free)] = x[12:]
         return np.concatenate([cv2.projectPoints(c.corners(s, dq, _pose(x[6:12])).reshape(-1, 1, 3), x[:3], x[3:6], k,
                                                  dist)[0].ravel() for s in sightings])
     base = pixels(x0)
@@ -292,11 +303,13 @@ def main(argv=None) -> int:
     import argparse
     import sys
 
+    from tatbot_description import drawing_arm
+
     from tatbot_calib import register
 
     parser = argparse.ArgumentParser(prog="chain", description=main.__doc__.split("\n\n")[0])
     parser.add_argument("runs", nargs="+", help="ros-register run ids or directories, all of one arm")
-    parser.add_argument("--arm", default="right", choices=sorted(register.TARGETS))
+    parser.add_argument("--arm", default=drawing_arm(), choices=sorted(register.TARGETS))
     ns = parser.parse_args(argv)
     from tatbot_description import repo_root, robot_description
     repo = repo_root()

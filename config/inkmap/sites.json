@@ -1,6 +1,6 @@
 {
-  "inklang": "0.3",
-  "comment": "Inklang site lexicon v0.3: 59 leaf body sites for tattoo placement language. Scope: standard commercial tattoo placements. IDs are stable keys (mesh-independent) and never rename; the region atlas maps them to faces per body. laterality: sided = takes left/right, midline = center only, any = both. level (upper/lower/mid) is a separate slot from aspect. geometry: flat | wrap | crease. `parent` marks a leaf that is a sub-part of another leaf (containment rolls up). `anchor` hints where the default point goes: centroid (default) | extremum_front | extremum_back. ncic_site = the ANSI/NIST-NCIC base site each leaf refines; snomed = SNOMED CT cross-reference where known.",
+  "inklang": "0.4",
+  "comment": "Inklang site lexicon v0.4: 59 leaf body sites for tattoo placement language. Scope: standard commercial tattoo placements. IDs are stable keys (mesh-independent) and never rename; the region atlas maps them to faces per body. laterality: sided = takes left/right, midline = center only, any = both. level (upper/lower/mid) is a separate slot from aspect. geometry: flat | wrap | crease. `parent` marks a leaf that is a sub-part of another leaf (containment rolls up). `anchor` hints where the default point goes: centroid (default) | extremum_front | extremum_back. ncic_site = the ANSI/NIST-NCIC base site each leaf refines; snomed = SNOMED CT cross-reference where known.",
   "laterality_words": {
     "left": [],
     "right": [],
@@ -142,6 +142,10 @@
       "laterality": "sided",
       "geometry": "wrap",
       "ncic_site": "UPPER ARM",
+      "aspects": [
+        "inner",
+        "outer"
+      ],
       "aliases": [
         "triceps",
         "back of the arm"
@@ -659,6 +663,22 @@
       "site": "bicep",
       "aspect": "inner"
     },
+    "outer arm": {
+      "site": "bicep",
+      "aspect": "outer"
+    },
+    "outside of the arm": {
+      "site": "bicep",
+      "aspect": "outer"
+    },
+    "inside of the arm": {
+      "site": "bicep",
+      "aspect": "inner"
+    },
+    "side of the arm": {
+      "site": "bicep",
+      "aspect": "outer"
+    },
     "hamstring": {
       "site": "thigh",
       "aspect": "back"
@@ -677,6 +697,15 @@
     }
   },
   "zones": {
+    "arm": {
+      "name": "arm",
+      "laterality": "sided",
+      "members": [
+        "bicep",
+        "tricep",
+        "forearm"
+      ]
+    },
     "quarter_sleeve": {
       "name": "quarter sleeve",
       "laterality": "sided",

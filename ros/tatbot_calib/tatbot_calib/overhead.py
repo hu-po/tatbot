@@ -3,8 +3,9 @@
 The cube's registration (register.py) places the D555 by the cube's tags through FK and their layout on the carriage.
 The cube gives under load and its stickers stand millimetres off their layout: that fit carried a ~2 deg tilt, which
 read the palette station 8.5 mm low against the wrist camera and the measured tool alike (2026-10-22). This places
-the camera by what it and the wrist D405 both see, through FK and the URDF's chain to the D405 (Trossen's rigid
-mount, the same in every view):
+the camera by what it and the wrist D405 both see, through FK and the D405's mount on the tool: its gauge file's
+(calib wristcam, then calib gauge) when it holds the fitted tool, else the URDF's chain (Trossen's rigid mount; the
+xArm's printed bracket put the D405s 4.4-5.6 mm off it, 2026-11-09):
 
 - the palette's roof tag, its pose in the arm base from the wrist's holds over it (wristcam.HandEye's views, the tag
   left free), and the fiducial tile on the holder, its markers' corners in the base by bundle adjustment of the
@@ -12,9 +13,9 @@ mount, the same in every view):
   frame taken with the arm at rest;
 - the wrist's depth of the station and the holder against the D555's own, point to plane on its flat patches.
 
-A tile marker the fit misses past OUTLIER_M is a bad read on one side and is left out once (2026-10-22: 6 of 17, each
-2.2-4.6 mm off, the rest 0.2-1.5 mm). Each region (station, holder) is left out and predicted by the other: one alone
-extrapolates past ten millimetres to the other, so the run needs both. A tile the D555 cannot read (the 12 mm forearm
+A tile marker the fit misses past twice the markers' median miss (OUTLIER_M at least) is a bad read on one side and is
+left out once (2026-10-22: 6 of 17, each 2.2-4.6 mm off, the rest 0.2-1.5 mm; solve). Each region (station, holder)
+is left out and predicted by the other: one alone extrapolates past ten millimetres to the other, so the run needs both. A tile the D555 cannot read (the 12 mm forearm
 tile) has its views aimed at the bridge's page and rests on the wrist's depth there (ros/README.md section 7). The D555's optics are held as it reports them
 (it sees the tile ~1 % larger than the wrist puts it; its depth agrees there within 0.1 mm). The run writes the holds,
 candidate.json (a tatbot.arm-registration/1 record) and report.md; --adopt installs it where register.adopt does, the
@@ -235,10 +236,13 @@ def solve(installed, targets, clouds, scene: Scene, k, dist) -> tuple[np.ndarray
     each variant's misses (each region left out, tags alone, depth alone)."""
     fitted = fit(installed, targets, clouds, scene, k, dist)
     first = {t.name: target_miss_m(fitted, t, k, dist) for t in targets if t.region == "holder"}
-    page = [miss for name, miss in first.items() if name.startswith("page")]
     # stencild's page may stand millimetres off whole; a wrist read off its layout stands off alone (2026-10-23: one
-    # forearm marker 17.5 mm off the print's surface, the rest within 2 mm of their layout)
-    bound = {"tile": OUTLIER_M, "page": max(OUTLIER_M, 2.0 * float(np.median(page))) if page else 0.0}
+    # forearm marker 17.5 mm off the print's surface, the rest within 2 mm). A small tile's few shared markers miss
+    # alike, and a fixed 2 mm left most of them out (2026-10-23, 10-25: 3 of 4, 2 of 2, 2 of 3), the holder on one or
+    # none; kept, the station stood 1.6 mm off the touched ball and the overhead's page 6.2 mm off the wrist's, against
+    # 2.0 and 6.8 (the 10-25 holds refitted both ways)
+    kinds = {name.split()[0] for name in first}
+    bound = {k: max(OUTLIER_M, 2.0 * float(np.median([m for n, m in first.items() if n.split()[0] == k]))) for k in kinds}
     dropped = [name for name, miss in first.items() if miss > bound[name.split()[0]]]
     targets = [t for t in targets if t.name not in dropped]
     fitted = fit(installed, targets, clouds, scene, k, dist)
@@ -317,15 +321,30 @@ def _report(report: dict, ball_gap: dict | None) -> str:
 class Capture:
     """One run's views: the static D555 frame, the wrist's holds over the roof tag and its views of the tile."""
 
-    def __init__(self, cal: program.Calibration, camera, detector, model, tile):
+    def __init__(self, cal: program.Calibration, camera, detector, model, tile, gauge: dict | None = None):
         from tatbot_session import inspect as ins
 
         self.cal, self.camera, self.detector, self.model, self.tile = cal, camera, detector, model, tile
         self.kin, self.frame = cal.kin, ins.camera_frame(cal.arm)
-        self.depth_frame = ins.DEPTH_FRAME.format(arm=cal.arm)
+        self.depth_frame = ins.camera_frame(cal.arm, "depth")
+        self.mount_frame, self.gauge = f"{cal.arm}/tool_mount", gauge
+        q0 = np.zeros(self.kin.n)
+        cad = np.linalg.inv(self.kin.frame(q0, self.mount_frame)) @ self.kin.frame(q0, self.frame)
+        # tool_mount <- the colour optical frame: the gauge file's (calib wristcam, then calib gauge) when it holds the
+        # fitted tool, else the robot model's, which stood 4.4-5.6 mm off on the xArm's printed bracket (2026-11-09)
+        self.mount = cad if gauge is None else wristcam.gauge_mount(gauge, cad, cal.tip0)
+        self.color_from_depth = np.linalg.inv(self.kin.frame(q0, self.frame)) @ self.kin.frame(q0, self.depth_frame)
         self.dir = cal.run.dir / "holds"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.holds: list[dict] = []
+
+    def camera_pose(self, q) -> np.ndarray:
+        """base <- the wrist's colour optical frame at joints q, through its measured mount."""
+        return self.kin.frame(np.asarray(q, float), self.mount_frame) @ self.mount
+
+    def depth_pose(self, q) -> np.ndarray:
+        """base <- the wrist's depth optical frame at joints q (the camera's own colour-to-depth offset)."""
+        return self.camera_pose(q) @ self.color_from_depth
 
     def hold(self, label: str, region: str, tcp: np.ndarray) -> dict | None:
         """One guarded move (Calibration.go_to) and the wrist's frames there (median colour and raw depth), or None
@@ -341,7 +360,7 @@ class Capture:
         before = self.cal.rig.joints()
         colors, _ = self.camera.grab_both(FRAMES, fresh=True)
         after = self.cal.rig.joints()
-        if float(np.max(np.abs(after - before)[:6])) > 2e-3:
+        if float(np.max(np.abs(after - before)[self.kin.revolute])) > 2e-3:
             self.cal.say(f"{label}: the arm moved during the grab")
             return None
         row = {"label": label, "region": region, "q": (before + after) / 2.0,
@@ -352,7 +371,7 @@ class Capture:
         return row
 
     def station(self, base_from_tag: np.ndarray) -> None:
-        hand = wristcam.HandEye(self.cal, base_from_tag, self.camera, self.detector, self.model, self.frame)
+        hand = wristcam.HandEye(self.cal, base_from_tag, self.camera, self.detector, self.model, self.frame, self.gauge)
         pool = hand.candidates()
         self.cal.say(f"station: {len(pool)} views of the roof tag clear of the station; {STATION_HOLDS} wanted")
         def wanted() -> int:
@@ -377,16 +396,36 @@ class Capture:
         raise RuntimeError(f"the {self.cal.arm} arm did not wake after landing between the station and the holder")
 
     def holder(self, base_from_tile: np.ndarray) -> None:
+        """TILE_VIEWS over the tile, each looking straight down where the arm reaches it, else obliquely as the
+        page's locate looks: the xArm's D405 stands 48 deg off the pen, so a straight-down view tilts the pen past
+        its wrist's reach and joint 7's window, and no straight-down view of the forearm18 tile was reachable
+        (2026-11-09); the oblique ones all were, 45-50 deg off it at 0.22-0.26 m."""
         from tatbot_session import inspect as ins
         from tatbot_session.ready import solve_ik
 
         for i, (distance, xy) in enumerate(TILE_VIEWS):
+            side = float(base_from_tile[1, 3])
             aimed = ins.top_down(self.kin, solve_ik, base_from_tile, xy, self.cal.rig.joints(), frame=self.frame,
-                                 clearance_m=0.015, max_y=float(base_from_tile[1, 3]), distances_m=(distance,))
+                                 clearance_m=0.015, max_y=side, distances_m=(distance,))
+            if aimed is None:
+                aimed = ins.aim(self.kin, solve_ik, base_from_tile, xy, self.cal.rig.joints(), frame=self.frame,
+                                clearance_m=0.015, max_y=side + ins.TOP_DOWN_SIDE_M, distances_m=(distance,))
             if aimed is None:
                 self.cal.say(f"holder{i:02d}: no reachable view {distance:.2f} m over {xy}")
                 continue
             self.hold(f"holder{i:02d}", "holder", self.kin.fk(aimed[0]))
+
+
+def d555_reads(image, tile) -> dict:
+    """The tile's markers in one D555 frame, by the stencil's detector and then upsampled: the forearm18 tile's 18 mm
+    markers stand ~14 px there, which only the upsampled one reads (2 of 6, 2026-11-09)."""
+    from fiducials import stencil
+
+    reads = {}
+    for det in (stencil.detector(tile), stencil.detector(tile, upsample=True)):
+        for i, c in stencil.find(image, tile, det).items():
+            reads.setdefault(int(i), np.asarray(c, float))
+    return reads
 
 
 def tile_frame(tile, reads: dict, depth_m, k, dist, installed: np.ndarray) -> np.ndarray | None:
@@ -460,7 +499,7 @@ def tile_targets(capture: Capture, static_image, meta, page=None) -> tuple[list[
 
     views, start = [], {}
     for h in (h for h in capture.holds if h["region"] == "holder"):
-        b_c = capture.kin.frame(h["q"], capture.frame)
+        b_c = capture.camera_pose(h["q"])
         reads = {int(i): np.asarray(c, float) for i, c in stencil.find(h["color"], capture.tile).items()}
         depth = np.asarray(h["depth_raw"], float) * float(meta["depth_units_m"])
         depths = {i: d for i, c in reads.items() if np.isfinite(d := corner_depths(depth, c)).all()}
@@ -471,10 +510,7 @@ def tile_targets(capture: Capture, static_image, meta, page=None) -> tuple[list[
     if not start:
         return [], {"tile_views": len(views)}
     corners, rms, out = tile_in_base(views, start)
-    d555 = {}
-    for det in (stencil.detector(capture.tile), stencil.detector(capture.tile, upsample=True)):
-        for i, c in stencil.find(static_image, capture.tile, det).items():
-            d555.setdefault(int(i), np.asarray(c, float))
+    d555 = d555_reads(static_image, capture.tile)
     targets = [Target("holder", f"tile {i}", corners[i], d555[i], TAG_SIGMA_PX if capture.tile.sides_m[i] > 0.03 else 0.8)
                for i in sorted(set(d555) & set(corners))]
     shared = len(targets)
@@ -486,7 +522,7 @@ def tile_targets(capture: Capture, static_image, meta, page=None) -> tuple[list[
 
 def targets_from(capture: Capture, prior_tag, static_image, meta, page=None) -> tuple[list[Target], list, dict]:
     """The run's targets and clouds from its holds and static frame, and what they said along the way."""
-    roof = [(capture.kin.frame(h["q"], capture.frame), capture.camera.k, capture.camera.dist, px)
+    roof = [(capture.camera_pose(h["q"]), capture.camera.k, capture.camera.dist, px)
             for h in capture.holds if h["region"] == "station"
             and (px := roof_tag_px(capture.detector, h["color"])) is not None]
     base_from_tag, per_view = tag_in_base(roof, capture.model, prior_tag)
@@ -494,7 +530,7 @@ def targets_from(capture: Capture, prior_tag, static_image, meta, page=None) -> 
     targets = [] if seen is None else [
         Target("station", "roof tag", (base_from_tag @ np.c_[capture.model, np.ones(4)].T).T[:, :3], seen)]
     tile, said = tile_targets(capture, static_image, meta, page)
-    clouds = [(h["region"], wrist_cloud(h["depth_raw"], meta, capture.kin.frame(h["q"], capture.depth_frame), n))
+    clouds = [(h["region"], wrist_cloud(h["depth_raw"], meta, capture.depth_pose(h["q"]), n))
               for n, h in enumerate(capture.holds)]
     return targets + tile, clouds, {"roof_tag_views": len(roof), "roof_tag_px": per_view.round(2).tolist(), **said}
 
@@ -516,6 +552,19 @@ def unmeasured(targets, clouds) -> str | None:
         return "the D555 or the wrist reads no roof tag at the station"
     if "holder" not in regions and sum(region == "holder" and len(c) > 0 for region, c in clouds) < HOLDER_DEPTH_VIEWS:
         return f"the holder has no tile marker both cameras read and under {HOLDER_DEPTH_VIEWS} views of its depth"
+    return None
+
+
+def measured_mount(cal, tool_id: str) -> dict | None:
+    """The session wrist camera's gauge file when it holds the fitted tool: its hand-eye (calib wristcam) and the
+    height along the pen calib gauge set, which place the camera on the tool mount; None, and the robot model's mount,
+    without one."""
+    _, _, path = program.wrist_camera(cal.repo, cal.arm)
+    gauge = json.loads(path.read_text()) if path.is_file() else None
+    if gauge is not None and gauge.get("measured_with") == tool_id:
+        cal.say(f"the wrist camera stands where {path.name} measured it")
+        return gauge
+    cal.say(f"the wrist camera stands where the robot model mounts it: {path.name} holds no hand-eye for {tool_id}")
     return None
 
 
@@ -579,7 +628,7 @@ def run(args) -> int:
     sys.path.insert(0, str(repo / "scripts" / "lib"))
     sys.path.insert(0, str(repo / "scripts" / "vision"))
     import tatbot_runlog
-    from fiducials import load_inventory, stencil, tag_model_corners
+    from fiducials import load_inventory, tag_model_corners
     from fiducials.detector import DetectorConfig, FiducialDetector
 
     fix = station.StationFix.from_dict(json.loads(Path(args.station).expanduser().read_text()))
@@ -616,10 +665,11 @@ def run(args) -> int:
             d555.close()
         k, dist = overhead.k_dist(overhead.intrinsics_of(shot["metadata"]))
         np.savez_compressed(run_log.dir / "static.npz", overhead_rgb_bgr=shot["image"], overhead_depth_m=shot["depth_m"])
-        reads = {int(i): c for i, c in stencil.find(shot["image"], tile).items()}
+        reads = d555_reads(shot["image"], tile)
         base_from_tile = tile_frame(tile, reads, shot["depth_m"], k, dist, world_from_base0)
         prior_tag = placed.base_from_palette @ station.palette_from_tag(urdf, require_confirmed=True)
-        capture = Capture(cal, camera, detector, tag_model_corners(roof.edge_m), tile)
+        gauge = measured_mount(cal, tool.tool_id)
+        capture = Capture(cal, camera, detector, tag_model_corners(roof.edge_m), tile, gauge)
         capture.station(prior_tag)
         seen = None   # stencild's page, the D555's sight of the print whole: the holder's lateral place
         if base_from_tile is None and (page := cal.rig.page()) is not None:

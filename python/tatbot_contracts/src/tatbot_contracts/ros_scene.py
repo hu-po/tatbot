@@ -36,6 +36,7 @@ from urllib.parse import unquote, urlparse
 
 import numpy as np
 
+from tatbot_contracts.ros_program import cartridge
 from tatbot_contracts.ros_progress import counts, next_index
 
 PLANNED_RGBA = (154, 170, 187, 64)   # drawn.svg's planned #9ab, translucent
@@ -246,8 +247,9 @@ class DrawState:
         self.shift = np.zeros(2)   # the newest stroke's correction: the page in use has print point p at p - shift
         self.page: dict | None = None
         self.dips: Counter = Counter()
-        self.trims: dict[str, float] = {}   # resource id -> its pen trim (m), the newest pen_trim row's
+        self.trims: dict[str, float] = {}   # cartridge (tool id) -> its pen trim (m), the newest pen_trim row's
         self.trim_cap: tuple = (None, None)   # (op, m): the newest sent row's trim_cap_m, its deepest trim
+        self.holding: str | None = None       # the cartridge whose depth hold waits for the keys (depth_hold rows)
         self.t: float | None = None
         self.meta: dict = {}
         self.meta_stamp = self.motion_stamp = self.trim_limit_m = None
@@ -280,6 +282,15 @@ class DrawState:
         except (OSError, ValueError):
             pass
 
+    def drawing(self, now_s: float | None = None) -> bool:
+        """Whether the run still draws at now_s: its run log not finalized yet, or finalized after now_s (a bag
+        replayed on its own clock meets the end when it gets there). A run that has ended draws nothing on the
+        viewer: between draws the design map and the strokes are blank (2026-11-09)."""
+        if self.meta.get("status") in (None, "running"):
+            return True
+        ended = stamp_s(self.meta.get("ended_at"))
+        return ended is not None and now_s is not None and now_s < ended
+
     def summary(self) -> dict:
         """The run for the status (ros_status.items): {id, t, index, total, done, started_s, ended_s, status}."""
         status = self.meta.get("status")
@@ -297,9 +308,8 @@ class DrawState:
         if event == "page" and row.get("page"):
             self.page, self.shift = row["page"], np.zeros(2)   # set up again: the page in use is on the print
             return {"page", "planned", "done"}
-        if event == "pen_trim":
-            self.trims[row.get("resource")] = float(row.get("trim_m", 0.0))
-            return set()
+        if event in ("pen_trim", "depth_hold"):
+            return self._trim_row(row)
         if event == "sent":
             self.trim_cap = (row.get("op"), row.get("trim_cap_m"))
             if row.get("op") in self.planned:
@@ -314,6 +324,17 @@ class DrawState:
             line = np.asarray(row["line"], float).reshape(-1, 2) + self.corrections.get(row["op"], np.zeros(2))
             self.lines.setdefault(row["op"], []).append(line)
             return {"done", "design"}
+        return set()
+
+    def _trim_row(self, row: dict) -> set[str]:
+        """A pen_trim row: its cartridge's trim. A depth_hold row: the cartridge whose depth hold waits for the keys
+        (`holding`; none once taken or left), and the cap that hold takes them at."""
+        if row["event"] == "pen_trim":
+            self.trims[row.get("cartridge") or self._cartridge(row.get("resource"))] = float(row.get("trim_m", 0.0))
+            return set()
+        self.holding = row.get("cartridge") if row.get("state") == "holding" else None
+        if self.holding:
+            self.trim_cap = (row.get("op"), row.get("trim_cap_m"))
         return set()
 
     @property
@@ -336,11 +357,16 @@ class DrawState:
         resource = self.resources.get(self.ops[index].get("resource_id")) or {}
         return {"ink": resource.get("ink_id"), "slot": resource.get("slot")}
 
+    def _cartridge(self, resource_id) -> str | None:
+        """The cartridge (its tool) whose trim a resource takes, as the executor keys it; an unknown one stands alone."""
+        resource = self.resources.get(resource_id)
+        return cartridge(resource) if resource else resource_id
+
     def trim(self, index: int | None) -> dict | None:
-        """{m, limit_m, used_m} of the op at index's resource (ros_status.trim_item): its pen trim (0 before its first
+        """{m, limit_m, used_m, hold} of the op at index's resource (ros_status.trim_item): its pen trim (0 before its first
         pen_trim row), motion.yaml's pen.trim limit_m as the run directory holds it (each draw goal writes it; None
         unread), and the trim that op takes once sent: a needle cartridge's no deeper than its sent row's trim_cap_m
-        (the skin read along it), or None."""
+        (the skin read along it), or None. hold: its cartridge's depth hold waits for the keys (a depth_hold row)."""
         if index is None or not 0 <= index < len(self.ops):
             return None
         import yaml
@@ -352,9 +378,10 @@ class DrawState:
                 self.motion_stamp = stamp
         except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
             pass
-        op, m = self.ops[index], self.trims.get(self.ops[index].get("resource_id"), 0.0)
-        cap = self.trim_cap[1] if self.trim_cap[0] == op.get("id") else None
-        return {"m": m, "limit_m": self.trim_limit_m, "used_m": m if cap is None else max(m, float(cap))}
+        op, cart = self.ops[index], self._cartridge(self.ops[index].get("resource_id"))
+        m, cap = self.trims.get(cart, 0.0), self.trim_cap[1] if self.trim_cap[0] == op.get("id") else None
+        return {"m": m, "limit_m": self.trim_limit_m, "used_m": m if cap is None else max(m, float(cap)),
+                "hold": self.holding == cart}
 
     def dip_slot(self, index: int | None) -> str | None:
         """The slot of the dip at or after op `index`, the one the palette highlights."""
@@ -656,7 +683,7 @@ DEMO_VIEW = {"eye": (0.44, 0.68, 0.60), "look_at": (0.24, 0.10, 0.15), "fov_y_de
 # zoom; `tatbot viewer reset` brings the eye back. Each cap's mark stands `lift_m` over its rim, clear of the D555
 # cloud, which lies on the caps' tops; the column stands `toward_eye_m` nearer the eye, so its leaders clear it too.
 CAP_LABELS = {"lift_m": 0.02, "toward_eye_m": 0.06, "em_px": 17.0, "pad_px": 6.0, "top_px": 1.5, "box_px": 30.0,
-              "gap_px": 48.0, "pitch_px": 46.0, "end_px": 6.0, "stub_px": 12.0, "margin_px": 8.0}
+              "gap_px": 48.0, "pitch_px": 48.0, "end_px": 6.0, "stub_px": 12.0, "margin_px": 8.0}
 CAP_FOOTNOTE = "≥ level as recorded at load"
 MARK_RADII = {"next": -4.0, "loaded": -3.5, "unknown": -3.0, "empty": -2.0, "absent": -2.0}   # UI points
 

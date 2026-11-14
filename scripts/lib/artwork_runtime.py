@@ -1,15 +1,13 @@
-"""The checkout's artwork runtime: the pinned Node dependencies the shared SVG
-adapter (`web/inkmap/tools/artwork.ts`) imports, brought to the checkout's own
-package lock before the design stage runs it.
+"""The checkout's artwork runtime: `web/inkmap`'s pinned Node dependencies,
+brought to the checkout's own package lock by the deploy's install. The CLI
+uses them through its inkmap resolve verb, which runs `tools/resolve.ts` from
+the checkout.
 
 `web/inkmap/node_modules` is gitignored, so a fresh checkout has none: a deploy
 fast-forwards the command path (`fleet_install.update_checkout`) and a clone
-starts empty, and the first design compile on either failed
-`artwork_runtime_unavailable ... Cannot find package '@xmldom/xmldom'` until an
-operator ran `npm ci` by hand. `prepare` runs that install once per lock
-digest — under a lock outside the tree, so concurrent sessions serialize on
-one install — and skips when the receipt matches and the adapter's packages
-are present. The receipt lives inside `node_modules`, which `npm ci` replaces
+starts empty. `prepare` runs `npm ci` once per lock digest — under a lock
+outside the tree, so concurrent installs serialize on one — and skips when the
+receipt matches and the pinned packages are present. The receipt lives inside `node_modules`, which `npm ci` replaces
 wholesale: a failed or foreign install leaves no receipt to trust, and nothing
 here is ever an untracked path `git status` reports.
 
@@ -31,8 +29,9 @@ from tatbot_digest import sha256_file
 
 PROJECT = 'web/inkmap'
 LOCK_FILE = 'package-lock.json'
-# What the adapter imports: named so a lock that stops pinning one refuses
-# here, with the package, instead of inside the adapter as a module-not-found.
+# What `tools/svg-dom.ts` and `src/core/project.ts` import: named so a lock that
+# stops pinning one refuses here, with the package, instead of later as a
+# module-not-found.
 MODULES = ('@xmldom/xmldom', 'ajv')
 RECEIPT = '.tatbot-artwork-runtime.sha256'
 NPM_CI = ('ci', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund')
@@ -69,7 +68,7 @@ def _missing(project: Path) -> list[str]:
 
 
 def current(project: Path, expected: str) -> bool:
-    """The receipt names this lock and the adapter's packages are installed."""
+    """The receipt names this lock and the pinned packages are installed."""
     receipt = project / 'node_modules' / RECEIPT
     try:
         return receipt.read_text().strip() == expected and not _missing(project)
@@ -81,8 +80,7 @@ def prepare(repo, npm: str | None = None, log=None) -> bool:
     """Bring `repo/web/inkmap/node_modules` to its package lock. True when an
     install ran, False when the checkout was already current (no npm runs
     then). A missing or failing npm raises ValueError naming the command and
-    `artwork_runtime_unavailable`, the refusal the adapter's own failure
-    carries — never a traceback."""
+    `artwork_runtime_unavailable` — never a traceback."""
     log = sys.stderr if log is None else log
     project = Path(repo) / PROJECT
     try:
@@ -99,7 +97,7 @@ def prepare(repo, npm: str | None = None, log=None) -> bool:
             return False
         executable = npm or find_npm()
         if executable is None:
-            raise ValueError(f'{REASON}: npm not found; the shared SVG adapter needs Node.js 22 and `{command()}`')
+            raise ValueError(f'{REASON}: npm not found; the Inkmap code needs Node.js 22 and `{command()}`')
         print(f"Preparing the checkout's artwork runtime from its package lock ({command()})…", file=log, flush=True)
         try:
             # npm is a node script (`#!/usr/bin/env node`): the toolchain's bin
@@ -118,6 +116,6 @@ def prepare(repo, npm: str | None = None, log=None) -> bool:
         missing = _missing(project)
         if missing:
             raise ValueError(f'{REASON}: {PROJECT}/node_modules lacks {", ".join(missing)} after `{command()}`; '
-                             f'the package lock no longer pins the adapter\'s dependencies')
+                             'the package lock no longer pins them')
         (project / 'node_modules' / RECEIPT).write_text(expected + '\n')
         return True

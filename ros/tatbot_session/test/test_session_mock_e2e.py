@@ -41,10 +41,6 @@ def test_status_and_idle_decide(graph):
 
 def test_draw_square_to_completion(graph):
     program = sg.square_program(graph.tmp, name="square")
-    document = json.loads(program.read_text())
-    document['research'] = {'study_sha256': 'a'*64, 'trial': '0000', 'side': 'a', 'page': 'synthetic-mock-sheet',
-                            'slot': '0:0', 'slot_m': [.026, .026]}
-    program.write_text(json.dumps(document))
     proc = graph.client("draw", str(program), "--arm", "right", timeout=150)
     result = sg.last_json(proc.stdout)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -77,20 +73,28 @@ def test_draw_square_to_completion(graph):
 
     loo = np.asarray(page["surface"]["report"]["loo_m"], float)
     assert np.isfinite(loo).sum() >= 3 and max(abs(loo[np.isfinite(loo)])) <= 0.0009
-    receipt = graph.evidence('synthetic-mock-sheet', '0:0')
-    assert receipt.returncode == 0, receipt.stderr
-    evidence = json.loads(receipt.stdout)
-    assert evidence['runtime_live'] and evidence['meta']['runtime'] == evidence['runtime']
-    native = evidence['runtime']['controller']
+    # the run records what drew it: the live stack's runtime, its loaded controller code, and the draw's timing
+    identity, live = graph.runtime()
+    assert live and meta['runtime'] == identity
+    native = meta['runtime']['controller']
     assert native['complete'], native
     libraries = {Path(item['path']).name for item in native['files']}
     assert {'ros2_control_node', 'libjoint_trajectory_controller.so', 'libmock_components.so'} <= libraries
-    assert evidence['claim']['run_id'] == result['run_id'] and evidence['ledger'] == rows
-    assert evidence['timing']['complete'] and evidence['timing']['duration_s'] > 0
-    assert len(evidence['timing']['attempts']) == 1 and meta['draw_timing'] == evidence['timing']
-    duplicate = graph.client('draw', str(program), '--arm', 'right', timeout=30)
-    assert duplicate.returncode != 0 and 'occupied' in duplicate.stdout
-    assert sg.ledger(result['run_dir']) == rows  # refusal appended no robot operations
+    from tatbot_session import timing
+
+    drawn = timing.summarize(run / 'run.jsonl')
+    assert drawn['complete'] and drawn['duration_s'] > 0
+    assert len(drawn['attempts']) == 1 and meta['draw_timing'] == drawn
+    from tatbot_contracts.ros_pipeline import report
+
+    pipeline = report(run)
+    assert pipeline['recording_complete'], pipeline['errors']
+    assert pipeline['hardware_modes'] == ['mock']
+    assert pipeline['coverage']['goals_sent'] > 0
+    assert pipeline['coverage']['goals_with_controller_feedback'] > 0
+    assert pipeline['metrics']['send_to_first_controller_feedback_s']['n'] > 0
+    assert pipeline['metrics']['newest_source_receipt_age_at_draw_feedback_s']['p95_s'] is None
+    assert pipeline['metrics'] == meta['pipeline_timing']['metrics']
     graph.last_run = result["run_id"]
 
 

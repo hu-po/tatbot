@@ -2,7 +2,8 @@
 states, and a JTC goal that moves, succeeds and leaves the arm unlatched (scripts/mock_check.py).
 
 TATBOT_CHECK_HARDWARE picks the hardware: mock (test_mock_stack) or fake (test_fake_stack, TatbotArm
-with its fake SDK and every interlock live)."""
+with its fake SDK and every interlock live), and TATBOT_CHECK_ARMS the arm: right, or xarm (test_fake_stack_xarm,
+the xArm's controllers rendered from its model and its fake answering late)."""
 import json
 import os
 import random
@@ -21,9 +22,10 @@ pytestmark = pytest.mark.slow
 @pytest.mark.skipif(not shutil.which("ros2"), reason="needs a sourced ROS 2 workspace")
 def test_mock_stack(tmp_path):
     hardware = os.environ.get("TATBOT_CHECK_HARDWARE", "mock")
+    arms = os.environ.get("TATBOT_CHECK_ARMS", "right")
     env = dict(os.environ, TATBOT_LOG_ROOT=str(tmp_path / "logs"))
     out = subprocess.run([sys.executable, str(CHECK), "--port", "0", "--domain", str(random.randint(100, 199)),
-                          "--logs", str(tmp_path / "check"), f"hardware:={hardware}"],
+                          "--logs", str(tmp_path / "check"), "--arms", arms, f"hardware:={hardware}"],
                          env=env, capture_output=True, text=True, timeout=200)
     lines = [line for line in out.stdout.splitlines() if line.startswith("{")]
     assert lines, out.stdout + out.stderr

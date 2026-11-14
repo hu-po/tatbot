@@ -25,7 +25,7 @@ public log.
 ├── meta.json       # revision, argv, environment summary, exit code
 ├── console.log     # complete stdout/stderr
 ├── run.jsonl       # timestamped structured events
-└── artifacts/      # optional derived outputs, with a manifest
+└── ...             # optional derived outputs, beside these and listed in meta.json
 ```
 
 The run id should be sortable and unique. Include the execution environment in

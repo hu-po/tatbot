@@ -48,7 +48,7 @@ sim_fingerprint::guarded_tests() {
   # The fast Python suite runs tatbot-arm-guide and compares its compiled
   # source record with the checkout. Include every Rust input in that record,
   # even the workspace lockfile outside tatbot-arm's own directory.
-  printf '%s\n' scripts python cpp/teleop web/inkmap/src web/inkmap/tools docs/cli.md \
+  printf '%s\n' scripts python cpp/teleop web/inkmap/src web/inkmap/tools web/inkmap/public/designs docs/cli.md \
     rust/Cargo.toml rust/Cargo.lock rust/trossen-arm-sys
   # A project that carries a scripts/check job pack runs its own tests/ there,
   # so editing those must not re-run this suite. The rest of the project stays

@@ -7,8 +7,9 @@
     {"t": ...,            "event": "decision","arm": "right", "op": "s0005", "index": 5, "decision": "skip"}
     {"t": ...,            "event": "page",    "arm": "right", "page": {...}, "workspace": {...}}
     {"t": ...,            "event": "dip_phase", "arm": "right", "op": "d0002", "phase": "dwell", "status": "ok", ...}
-    {"t": ...,            "event": "pen_trim", "arm": "right", "resource": "r1", "trim_m": -0.0002}
+    {"t": ...,            "event": "pen_trim", "arm": "right", "cartridge": "tool", "resource": "r1", "trim_m": -0.0002}
     {"t": ...,            "event": "dip_scale", "arm": "right", "op": "s0123", "resource": "r1", "scale": 0.9, "key": "+"}
+    {"t": ...,            "event": "depth_hold", "arm": "right", "op": "s0001", "cartridge": "tool", "state": "taken", "trim_m": -0.0015, "held_m": -0.0015}
 
 `t` is Unix seconds (the session clock's utc), `t_clock` the session clock's own seconds. `arc_m` is the stroke arc position (m): the start arc on `sent`, the reached arc
 on `done`/`aborted` (the planned arc nearest the measured tip at the latch or failure); `line` the measured
@@ -21,7 +22,9 @@ or resume eased back carries `eased_from_m`; a needle stroke's `sent` row carrie
 `trim_cap_m`); `dip_scale`
 likewise its dip scale (tatbot_session.charge), a `+` row also the numpad's dip, which the goal it was pressed in makes
 or drops: a resumed goal dips before its first stroke anyway, so none is made again. A compiled dip the charge still
-covered is `skipped`. Pure Python, no ROS; the readers are tatbot_contracts.ros_progress, shared with the CLI.
+covered is `skipped`. `depth_hold` rows follow a cartridge's depth hold: `holding` when it
+starts, then `taken` with the depth the operator took (the keys' trim, and `held_m`, where the pen held it), which a
+resume does not ask for again, or `left` when it ended untaken. Pure Python, no ROS; the readers are tatbot_contracts.ros_progress, shared with the CLI.
 
 GoalLog writes <run_dir>/goals.jsonl (stack.yaml session.goal_log): every trajectory goal sent, its op, tag
 (ports.goal_tag), the session clock's time at sending (`stamp`) and where the goal starts on it (`start`; null when
@@ -48,7 +51,7 @@ from tatbot_contracts.ros_progress import (  # noqa: F401 -- the session's ledge
 
 from tatbot_session.ports import WALL
 
-EVENTS = (*PROGRESS, "decision", "page", "dip_phase", "pen_trim", "dip_scale")
+EVENTS = (*PROGRESS, "decision", "page", "dip_phase", "pen_trim", "dip_scale", "depth_hold")
 
 
 class Ledger:

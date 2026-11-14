@@ -17,7 +17,7 @@ try {
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto(url); await ready(page);
-  await page.fill(".sentence input", "an dbv3-ridges on the left forearm");
+  await page.fill(".sentence input", "a snake on the left forearm");
   await page.click(".sentence button.primary");
   await page.waitForFunction(() => window.__inkmap.getState().placements.length === 1);
 
@@ -95,8 +95,8 @@ try {
   // A fresh phone: choose (browse the full library), tap the body, accept —
   // three actions, with the body and the primary action on screen together.
   if (await phone.getByRole("button", { name: /Browse all/ }).count()) await phone.getByRole("button", { name: /Browse all/ }).tap();
-  await phone.getByRole("button", { name: "dbv3-ridges", exact: true }).tap();
-  await phone.waitForFunction(() => window.__inkmap.getState().placing === "dbv3-ridges");
+  await phone.getByRole("button", { name: "Snake and dagger", exact: true }).tap();
+  await phone.waitForFunction(() => window.__inkmap.getState().placing === "snake-and-dagger");
   const canvas = await phone.locator("canvas").boundingBox(); assert.ok(canvas);
   assert.ok(canvas.height >= 844 * 0.4, `placing leaves only ${canvas.height} px of body`);
   assert.equal(await phone.locator(".hud").getByText(/Tap the body/).isVisible(), true);

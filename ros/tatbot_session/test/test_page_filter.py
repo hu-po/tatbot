@@ -1,5 +1,6 @@
 """page_filter.PageFilter: the print's offset from the wrist's fits and the overhead's marker moves (ros/README.md 4.4,
 stencil tracking: what track.Tracker corrects each stroke by)."""
+import copy
 import json
 from types import SimpleNamespace
 
@@ -229,7 +230,7 @@ def test_the_tracker_corrects_by_the_filter_with_the_stacks_keys(tmp_path):
 
 
 def test_a_second_camera_reads_its_own_offset_and_steadies_the_first():
-    """A further wrist camera (the lower D405, its mount the URDF's until measured) reads the residual 2 mm off: the
+    """A further wrist camera (D405-1, its mount the URDF's until measured) reads the residual 2 mm off: the
     filter learns that offset where both cameras read and keeps the session camera's estimate on the truth, its sigma
     less than one camera's alone."""
     one, two = held(PageFilter()), held(PageFilter(cameras=2))
@@ -245,7 +246,7 @@ def test_a_second_camera_reads_its_own_offset_and_steadies_the_first():
 
 
 def test_the_filters_views_are_read_beside_the_session_camera_with_their_own_calibration(tmp_path, monkeypatch):
-    """page.track.cameras: the filter reads the lower wrist D405 at every stop beside the session's camera, through the
+    """page.track.cameras: the filter reads D405-1 at every stop beside the session's camera, through the
     camera the session's preview has open, its gauge calibration carried from the session camera's through the URDF;
     a view's reading feeds the filter alone (no stroke end, no skin), and a stop's verdict is the best of its views'."""
     import wrist_cameras
@@ -253,9 +254,9 @@ def test_the_filters_views_are_read_beside_the_session_camera_with_their_own_cal
 
     monkeypatch.setattr(gauge, "CALIB", tmp_path)
     monkeypatch.setattr(wrist_cameras, "mounted_for_arm", lambda repo, arm: [
-        {"role": "wrist_upper", "serial": "111"}, {"role": "wrist_lower", "serial": "222"}])
+        {"role": "wrist_2", "serial": "111"}, {"role": "wrist_1", "serial": "222"}])
     monkeypatch.setattr(wrist_cameras, "optical_frames", lambda repo, arm, stream: {
-        "wrist_upper": "right/realsense_color_optical_frame", "wrist_lower": "right/realsense_lower_color_optical_frame"})
+        "wrist_2": "right/realsense_color_optical_frame", "wrist_1": "right/realsense_lower_color_optical_frame"})
     upper, lower = np.eye(4), np.diag([1.0, -1.0, -1.0, 1.0])   # the lower mount rolled pi, as the URDF has it
     upper[:3, 3] = lower[:3, 3] = [0.1, 0.0, 0.3]
     poses = {"right/realsense_color_optical_frame": upper, "right/realsense_lower_color_optical_frame": lower}
@@ -268,7 +269,7 @@ def test_the_filters_views_are_read_beside_the_session_camera_with_their_own_cal
                          io=SimpleNamespace(q=np.zeros(7)), kin=SimpleNamespace(frame=lambda q, f: poses[f]))
     cal = {"tip_cam_m": [0.0, 0.01, 0.15], "cone_end_cam_m": [0.0, 0.01, 0.14], "axis_cam": [0.0, 0.0, 1.0],
            "normal_cam": [0.0, 0.0, -1.0], "source": "measured"}
-    tracker = Tracker(ex, cam, None, cal, {"mode": "correct", "cameras": ["wrist_lower"]})
+    tracker = Tracker(ex, cam, None, cal, {"mode": "correct", "cameras": ["wrist_1"]})
     view = tracker.views[0]
     assert view["serial"] == "222" and tracker.field.n == 16   # + the stop's error and the view's offset
     assert np.allclose(view["cal"]["tip_cam_m"], [0.0, -0.01, -0.15]) and np.allclose(view["cal"]["axis_cam"], [0, 0, -1])
@@ -276,7 +277,7 @@ def test_the_filters_views_are_read_beside_the_session_camera_with_their_own_cal
     monkeypatch.setattr(tracker, "_submit", lambda name, *a, camera=0, **kw: submitted.append((name, camera))
                         or marked.append((kw.get("stamp_ns"), kw.get("shown"))))
     tracker._grab("s0002-hover", "s0002", np.zeros(2))
-    assert submitted == [("s0002-hover", 0), ("s0002-hover-wrist_lower", 1)]
+    assert submitted == [("s0002-hover", 0), ("s0002-hover-wrist_1", 1)]
     assert marked[1] == (77, seen)                     # its markers go to its own pane, at its frame's stamp
     cam.preview.cameras = []                                             # the preview not open yet: the view waits
     submitted.clear()
@@ -289,10 +290,10 @@ def test_the_filters_views_are_read_beside_the_session_camera_with_their_own_cal
     row = {"fit": "markers", "tip_m": [0.001, 0.0, 0.011], "inliers": 5, "rms_m": 0.0008, "accepted": True,
            "skin_base": [[0.0, 0.0, 0.0]]}
     u = np.zeros(2)
-    assert tracker._log("s0002-wrist_lower", "s0002", u, u, 1.0, dict(row), camera=1) == "added"
+    assert tracker._log("s0002-wrist_1", "s0002", u, u, 1.0, dict(row), camera=1) == "added"
     assert taken == [1] and tracker.ends == [] and tracker.skin is None
     logged = json.loads((tmp_path / "track.jsonl").read_text().splitlines()[-1])
-    assert logged["camera"] == "wrist_lower"
+    assert logged["camera"] == "wrist_1"
     future = lambda: SimpleNamespace(done=lambda: True, result=lambda: {})   # noqa: E731
     verdicts = iter([None, "added"])
     monkeypatch.setattr(tracker, "_log", lambda *a, **k: next(verdicts))
@@ -359,3 +360,68 @@ def test_a_stroke_is_read_while_it_draws_every_stroke_s_for_the_filter_alone(tmp
     tracker.after_lift(op)
     assert events == ["track s0005: 1 readings while it drew, 1 taken, the tip 0.30 mm off the plan's line (median)"]
     tracker._grabber.shutdown(wait=True)
+
+
+def test_a_large_move_two_readings_agree_on_is_taken_whole():
+    """The sheet's covariance opens to the jump the two agree on: at open_m alone a 30 mm move was taken 23 mm (sim2
+    xarm-mount-shove, 2026-11-12). A small one opens as before. (Early in a draw: after four checked readings one
+    such jump already reads as a pull.)"""
+    f = held(PageFilter())
+    jump = slid(0.030, 0.006)
+    u, v = np.array([0.003, 0.003]), np.array([-0.004, 0.003])
+    assert f.add(110.0, u, residual(u, jump), rms=0.0008, markers=5) == "held"
+    assert f.add(112.0, v, residual(v, jump), rms=0.0008, markers=5) == "moved"
+    assert np.linalg.norm(f.predict([[0.0, 0.0]])[0][0] - residual(np.zeros(2), jump)) < 1.5e-3
+    assert np.linalg.norm(f.sheet()[:2, 2] - [0.030, 0.006]) < 2e-3
+
+
+def test_a_readings_own_turn_speaks_only_for_a_turn_past_its_gate_and_is_taken_at_once():
+    """The rig, 2026-11-12: a holder pushed 17 mm and turned 13 deg was followed by its slide alone, and 30 mm of the
+    stroke ran on a page turned 13 deg wrong until a second stop. A reading's markers say how the print is turned on
+    the page in use: within the gate (a still sheet, the camera's mount and the wrist in it) nothing is taken; past it
+    the sheet's turn is, net of the turn the page has followed."""
+    f = strokes(held(PageFilter()))
+    before = f.x.copy()
+    assert not f.turn(120.0, 0.05) and np.allclose(f.x, before)
+    assert f.turn(121.0, -0.22) and f.sheet()[1, 0] == pytest.approx(np.sin(-0.22), abs=0.01)
+    assert not f.turn(122.0, -0.20)                                      # within the gate of it now
+    followed = slid(0.0, 0.0, -0.22)                                    # the page turned with the sheet
+    assert not f.turn(123.0, 0.01, followed) and f.turn(124.0, 0.15, followed)
+    assert np.arctan2(f.sheet()[1, 0], f.sheet()[0, 0]) == pytest.approx(-0.07, abs=0.01)
+
+
+def test_a_held_jump_is_said_by_its_size_and_time_and_the_sheets_move_as_a_page_move():
+    """What the executor stops a stroke on and moves the page by (ArmExecutor._moved_under, _follow_filter): the held
+    reading's distance from where the filter has the print, none once a second agrees or for one taken by the time
+    asked; and the sheet's slide and turn about the drawing's centre as one in-plane move."""
+    f = PageFilter(centre=(0.01, 0.0))
+    assert f.jump() == 0.0 and np.allclose(f.sheet(), np.eye(3))
+    assert f.add(5.0, [0.0, 0.0], [0.030, 0.0], rms=0.0005, markers=4) == "held"
+    assert f.jump() == pytest.approx(0.030, abs=1e-4) and f.jump(after=4.9) == f.jump() and f.jump(after=5.0) == 0.0
+    assert f.add(6.0, [0.005, 0.0], [0.030, 0.0], rms=0.0005, markers=4) == "moved"
+    assert f.jump() == 0.0
+    f.x[:3] = [0.030, -0.004, 0.1]
+    move = f.sheet()
+    assert np.allclose(move @ [0.01, 0.0, 1.0], [0.040, -0.004, 1.0])        # the centre slides, and nothing more
+    assert np.allclose(move @ [0.02, 0.0, 1.0] - move @ [0.01, 0.0, 1.0], [0.01 * np.cos(0.1), 0.01 * np.sin(0.1), 0.0])
+
+
+def test_a_retracked_page_starts_its_sheet_again_and_keeps_the_arm_and_the_cameras():
+    """ArmExecutor._retrack carries the page onto the moved sheet: the sheet and the overhead's error start again, the
+    sheet within the carry's error; the arm's part (a 7 mm tool offset learned) and the further camera's offset stand.
+    A reading 3 mm off the carried page is then taken nearly whole, where a set-up's sheet would hold it at the gate."""
+    f = PageFilter(cameras=2)
+    f.x[:3], f.x[3:5], f.x[9:12], f.x[14:16] = [0.03, -0.02, 0.05], [0.007, 0.0], [0.001, 0.0, 0.0], [-0.0045, 0.0018]
+    f.P[3:9, 3:9] = np.eye(6) * 1e-10                      # the arm's part learned
+    arm, views = f.P[3:9, 3:9].copy(), f.P[12:, 12:].copy()
+    held = copy.deepcopy(f)
+    held.x[:3], held.P[:3, :3] = 0.0, np.diag(held.setup)    # a set-up's sheet
+    f.retracked(0.003, 0.05)
+    assert np.allclose(f.x[:3], 0.0) and np.allclose(f.x[9:12], 0.0)
+    assert np.allclose(f.x[3:5], [0.007, 0.0]) and np.allclose(f.x[14:16], [-0.0045, 0.0018])
+    assert np.allclose(np.diag(f.P)[:3], [0.003 ** 2, 0.003 ** 2, 0.05 ** 2]) and np.allclose(f.P[3:9, 3:9], arm)
+    assert np.allclose(f.P[12:, 12:], views) and np.allclose(f.P[:3, 3:], 0.0) and f.held is None
+    r = np.array([0.010, 0.0])                                 # the tool's 7 mm, and 3 mm the carry missed
+    assert held.add(1.0, [0.0, 0.0], r, rms=0.0005, markers=3) == "held"
+    assert f.add(1.0, [0.0, 0.0], r, rms=0.0005, markers=3) == "added"
+    assert np.allclose(f.predict([[0.0, 0.0]])[0][0], r, atol=0.0004)

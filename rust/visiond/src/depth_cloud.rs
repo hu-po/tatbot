@@ -23,7 +23,7 @@ pub const MAX_POINTS: usize = 14_400;
 
 /// Points per logged row. A point is 12 bytes of position and 4 of colour, so
 /// a band stays within the cockpit's 60 KiB row (`frame_bus::VIEWER_ROW_BYTES`):
-/// the hub streams each chunk on over the link the pink controller shares.
+/// the hub streams each chunk on over the link the arm's controller shares.
 pub const BAND_POINTS: usize = 3_600;
 
 /// Rows a cloud is logged as, always all of them: a smaller cloud's leftover
@@ -191,8 +191,7 @@ pub fn back_project(
         return cloud;
     }
     let color = color.filter(|c| c.width > 0 && c.height > 0);
-    let pixels = width as usize * height as usize;
-    let step = ((pixels as f64 / max_points as f64).sqrt().ceil() as usize).max(1);
+    let step = sample_step(width as usize, height as usize, max_points);
     let tint = source.tint();
     cloud.spacing_per_m = step as f32 * 2.0 / (focal[0] + focal[1]);
     for y in (0..height).step_by(step) {
@@ -213,6 +212,17 @@ pub fn back_project(
         }
     }
     cloud
+}
+
+/// The smallest stride whose sampled grid fits `max_points`. A stride that does
+/// not divide the plane samples a partial last row and column too.
+fn sample_step(width: usize, height: usize, max_points: usize) -> usize {
+    let pixels = width * height;
+    let mut step = ((pixels as f64 / max_points as f64).sqrt().ceil() as usize).max(1);
+    while width.div_ceil(step) * height.div_ceil(step) > max_points {
+        step += 1;
+    }
+    step
 }
 
 #[cfg(test)]
@@ -241,6 +251,15 @@ mod tests {
         // Pixel (2,2)'s centre is half a pixel past it.
         let [x, y, _] = cloud.positions[2 * 4 + 2];
         assert!((x - 0.0025).abs() < 1e-6 && (y - 0.0025).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_budget_holds_when_the_stride_does_not_divide_the_plane() {
+        // A stride of 2 samples 170 x 85 = 14,450 here, and the viewer logs
+        // only BANDS full bands: the bottom rows would never be drawn.
+        let bytes = plane(339, 169, 1000);
+        let cloud = back_project((339, 169, &bytes), 1000.0, [160.0, 160.0], [169.5, 84.5], None, CloudSource::Overhead, MAX_POINTS);
+        assert!(cloud.positions.len() <= MAX_POINTS, "{} points", cloud.positions.len());
     }
 
     #[test]

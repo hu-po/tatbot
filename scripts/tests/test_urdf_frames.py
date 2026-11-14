@@ -37,7 +37,7 @@ def test_physical_rig_uses_robot_centric_axes_and_models_the_pink_arm_alone():
     np.testing.assert_allclose((np.linalg.inv(center) @ chain.link_pose('600mm_vertical_top'))[:3, 3],
                                [-.0275, 0, .61])
     np.testing.assert_allclose(base_from_root_matrix(repo, 'right') @ follower, np.eye(4))
-    # the blue (left) arm is the teleop leader alone, not modelled (owner, 2026-10-23)
+    # the blue (left) arm is the teleop leader alone, not modelled (2026-10-23)
     assert not any(name.startswith('left/') for name in chain.links)
 
 

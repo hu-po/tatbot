@@ -13,7 +13,7 @@ develop one surface without installing the entire robotics stack.
 ```text
 operator or test
       │
-      ├── ROS 2 stack (ros/) ─┐  drawing: one arm, ballpoint
+      ├── ROS 2 stack (ros/) ─┐  drawing: one arm, needle cartridge
       ├── C++ teleop ─────────┤
       ├── LeRobot adapter ────┼── robot interface
       ├── Rust visiond ───────┘
@@ -25,15 +25,15 @@ motif/style text ── Inkgen ── source PNG ── DrawingBot V3 ── art
 TattooProgram ── SurfacePlacement ── InkProgram
  body-free art      target address     tool intent
 
-plane design + fitted tool + registered page
+acquired artwork + fitted tool + measured stencil page
       └── tatbot ros compile ── program.json ── tatbot ros draw
 body placement ── measured address mapping still required (refused)
 ```
 
 ## Boundaries
 
-- `ros/` owns autonomous drawing: the ROS 2 Jazzy stack that compiles a design,
-  registers the page, touches it and draws (`ros/README.md`).
+- `ros/` owns autonomous drawing: the ROS 2 Jazzy stack that compiles acquired
+  artwork, registers the page, touches it and draws (`ros/README.md`).
 - `cpp/teleop/` owns the high-rate leader/follower teleop loop.
 - `python/lerobot_robot_tatbot/` owns the LeRobot environment for training and
   policy serving.
@@ -57,9 +57,10 @@ metric surface an execution program may bind. Nominal geometry cannot fill a
 missing observed cell.
 
 `TattooProgram`, `SurfacePlacement`, and `InkProgram` carry artwork,
-target addresses, and ordered tool intent. The robot draws plane designs:
-`tatbot_ink` compiles them into the ROS 2 stack's `program.json`; that does not
-supply a body mapping.
+target addresses, and ordered tool intent. The robot draws acquired DBV3
+artwork on the printed fiducial page it measures on the skin or the curved
+silicone skin mount: `tatbot_ink` compiles it into the ROS 2 stack's
+`program.json`; that does not supply a body mapping.
 
 The old `ExecutionProgram/1` schema and synthetic fixtures remain readable
 for historical inspection, but its standalone compiler has been retired.

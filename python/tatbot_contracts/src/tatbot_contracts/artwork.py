@@ -118,8 +118,13 @@ def max_width_m(record: dict) -> float:
 
 
 # DBV3 traces; centreline-trace/1 draws a line drawing's 1 px skeleton once, a single-pass baseline
-# beside DBV3's ECS, which goes round every line (owner, 2026-10-17).
-ACQUIRED_ADAPTERS = ("dbv3-batik-paths/1", "centreline-trace/1")
+# beside DBV3's ECS, which goes round every line (2026-10-17). tatbot-art-shade/1 is whip and
+# pendulum shading from a tone image, its deposition fading along each stroke (tatbot_art.shade).
+# tatbot-lab-pattern/1 is a lab trial's test pattern in its cell, a technique at stated settings (tatbot_lab.plan).
+# tatbot-art-offset/1 fills a separation's regions with passes one mark apart along their edges, a band too narrow
+# for two once along its middle: the single-pass baseline for regions, where DBV3 lays three or four (tatbot_art.offset).
+ACQUIRED_ADAPTERS = ("dbv3-batik-paths/1", "centreline-trace/1", "tatbot-art-shade/1", "tatbot-lab-pattern/1",
+                     "tatbot-art-offset/1")
 
 
 def require_acquired_artwork(record: dict) -> dict:

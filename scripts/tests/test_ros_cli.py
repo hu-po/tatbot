@@ -6,6 +6,8 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
+import shutil
 import subprocess
 import sys
 import types
@@ -24,11 +26,59 @@ spec.loader.exec_module(backend)
 NMAP = nodes.load(REPO)
 HAS_ROS_NODE = len(nodes.nodes_with(NMAP, "ros")) == 1
 needs_fleet = pytest.mark.skipif(not HAS_ROS_NODE, reason="config/nodes.json names no single ros node")
+ARM = backend.drawing_arm()   # stack.yaml arms: the arm a verb given no --arm drives
+
+
+def stack_arm_program(arm: str = ARM) -> dict:
+    """The fixture program, prepared for the stack's drawing arm (the fixture's own is the WXAI follower)."""
+    from ros_program_fixtures import program
+
+    return {**program(), "arm": arm}
+
+
+def test_the_drawing_arm_is_the_first_of_stack_yaml_arms_and_every_arm_flag_defaults_to_it(tmp_path):
+    import yaml
+    from tatbot_cli import stack
+
+    assert ARM == yaml.safe_load((REPO / backend.STACK_YAML).read_text())["arms"][0] == "xarm"
+    flags = [action for sub in backend.parser()._subparsers._group_actions[0].choices.values()
+             for action in sub._actions if "--arm" in action.option_strings]
+    assert len(flags) > 10 and all(action.default == ARM for action in flags)
+    path = tmp_path / backend.STACK_YAML
+    path.parent.mkdir(parents=True)
+    path.write_text("arms: [right, xarm]   # the WXAI follower first\nhardware: mock\n")
+    assert stack.drawing_arm(tmp_path) == "right" and stack.stack_defaults(tmp_path)["arms"] == "right,xarm"
+
+
+@needs_fleet
+def test_a_draw_given_no_arm_drives_the_stacks_and_the_wxai_follower_is_still_named(tmp_path):
+    # a draw given no --arm takes a program prepared for the stack's arm, and refuses another arm's by name
+    theirs, others = tmp_path / "program.json", tmp_path / "wxai.json"
+    theirs.write_text(json.dumps(stack_arm_program()))
+    others.write_text(json.dumps(stack_arm_program("right")))
+    proc = tatbot("--dry-run", "ros", "draw", str(theirs), "--no-wake")
+    assert proc.returncode == 0 and f"client land --arm {ARM}" in proc.stdout
+    proc = tatbot("--dry-run", "ros", "draw", str(others), "--no-wake")
+    assert "the program was prepared for the right arm" in proc.stdout and "dry run exits 2" in proc.stdout
+    proc = tatbot("--dry-run", "ros", "draw", str(others), "--arm", "right", "--no-wake")   # the WXAI follower, named
+    assert proc.returncode == 0 and "client land --arm right" in proc.stdout
+    status = tatbot("--dry-run", "ros", "status").stdout
+    assert f"page_watch --seconds 2 --arm {ARM}" in status
+    # a setup's stack comes up with the arm it sets up: the WXAI follower needs naming once, not twice
+    for flags, arm in (((), ARM), (("--arm", "right"), "right")):
+        plan = tatbot("--dry-run", "ros", "setup", "--hardware", "fake", "--estop", "none", *flags).stdout
+        assert f"arms={arm} " in plan and f"tatbot_calib register --arm {arm} " in plan and "arms=" + (
+            "right" if arm != "right" else ARM) + " " not in plan
+
+
+def test_a_rehearsal_reports_its_program_not_its_dry_dip_cap():
+    """`--dry-dips M1` before the program made --progress report the cap as the program."""
+    assert backend.draw_program(["ros", "draw", "--rehearse", "--dry-dips", "M1", "x.json"]) == "x.json"
 
 
 def test_tip_adoption_imports_without_ros_or_site_packages():
     code = (f'import sys; sys.path.insert(0, {str(REPO / "scripts/lib")!r}); import probe_calibration_adopt; '
-            'assert probe_calibration_adopt.apply({"arm": "right", "tool": "x"}, "right:\\n  tool_id: y\\n")[1]')
+            'assert probe_calibration_adopt.apply({"arm": "right", "tool": "x"}, {"tool_id": "y"})[1]')
     subprocess.run([sys.executable, '-S', '-c', code], check=True, capture_output=True, text=True)
 
 
@@ -54,14 +104,35 @@ def test_changed_packages_from_itemized_rsync():
         "*deleting   ros/tatbot_ink/test/.pytest_cache/",
     ])
     assert backend.changed_packages(itemized) == {"tatbot_bridge", "tatbot_interfaces", "tatbot_rerun", "tatbot_new"}
-    # what the node marks new after the sync: the ros/ files rsync wrote (sent to a node, <f), not deletions,
-    # directories or config
-    assert backend.synced_sources(itemized) == ["ros/tatbot_bridge/tatbot_bridge/page.py",
-                                                "ros/tatbot_interfaces/action/Touch.action", "ros/README.md"]
     said = []
     runner = type("R", (), {"say": lambda self, text: said.append(text)})()
     assert backend.buildable({"tatbot_bridge", "tatbot_estop_relay", "tatbot_new"}, runner) == {"tatbot_bridge"}
     assert len(said) == 1 and "tatbot_new" in said[0]
+
+
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="no rsync on this node")
+def test_a_deploy_sends_only_changed_content_and_what_it_sends_lands_new(tmp_path):
+    """A file the node holds with the same content (a time the node set) is not sent, so its package is not rebuilt;
+    a changed one is, with the transfer's time, newer than any build of the file it replaced; and a second sync
+    sends nothing."""
+    checkout, node = tmp_path / "checkout", tmp_path / "node"
+    old = 1767225600   # 2026-01-01: the checkout's files are older than anything built on the node
+    for root, b in ((checkout, "two\n"), (node, "one\n")):
+        for package, text in (("tatbot_a", "same\n"), ("tatbot_b", b)):
+            path = root / "ros" / package / "x.py"
+            path.parent.mkdir(parents=True)
+            path.write_text(text)
+            os.utime(path, (old, old))
+    os.utime(node / "ros/tatbot_a/x.py")   # touched or built there since
+
+    def sync() -> str:
+        return subprocess.run([*backend.SYNC, f"{checkout}/", f"{node}/"], capture_output=True, text=True,
+                              check=True).stdout
+
+    assert backend.changed_packages(sync()) == {"tatbot_b"}
+    assert (node / "ros/tatbot_b/x.py").read_text() == "two\n"
+    assert (node / "ros/tatbot_b/x.py").stat().st_mtime > old + 86400
+    assert sync() == ""
 
 
 def test_home_relative_root():
@@ -149,7 +220,7 @@ def test_pattern_names_one_installed_print_by_the_digits_its_sheet_prints():
     ("deploy",), ("deploy", "--units", "--clean"), ("up", "--hardware", "mock", "--estop", "none"),
     ("up", "--hardware", "mock", "--estop", "none", "--pattern", "71f05c95e635"),
     ("down", "--router"), ("down", "--hold"), ("status",), ("touch",), ("jog", "--joint", "0", "--delta", "0.02"),
-    ("decide", "right", "land"), ("logs", "last"), ("relay-install",), ("ready",)])
+    ("decide", "right", "land"), ("logs", "last"), ("relay-install",)])
 def test_every_verb_dry_runs_with_the_backend_plan(args):
     proc = tatbot("--dry-run", "--json", "ros", *args, env={"TATBOT_ROS_ROOT": "~/tatbot-ros-lanes/test"})
     assert proc.returncode == 0, proc.stderr
@@ -170,13 +241,13 @@ def test_the_station_fix_is_the_d555s_on_the_ros_node_and_calib_runs_after_it():
     out = tatbot("--dry-run", "ros", "station", "--arm", "right", env=lane).stdout
     steps = [line.split("]")[0].split("[")[-1] for line in out.splitlines() if "plan   [" in line]
     assert steps == ["fix"] and "tatbot_calib station fix --arm right" in out and "vision tags scan" not in out
-    proc = tatbot("--dry-run", "--ee-tool", "lutin-ballpoint-dot", "ros", "calib", "run", "--arm", "right", env=lane)
+    proc = tatbot("--dry-run", "--ee-tool", "lutin-3rl-bugpin", "ros", "calib", "run", "--arm", "right", env=lane)
     assert proc.returncode == 0, proc.stderr
     steps = [line.split("]")[0].split("[")[-1] for line in proc.stdout.splitlines() if "plan   [" in line]
     assert steps == ["fix", "arms", "calibrate"], steps
-    assert "calib run --arm right --station" in proc.stdout and "--tool lutin-ballpoint-dot" in proc.stdout
+    assert "calib run --arm right --station" in proc.stdout and "--tool lutin-3rl-bugpin" in proc.stdout
     assert "--against" not in proc.stdout
-    proc = tatbot("--dry-run", "--ee-tool", "lutin-ballpoint-dot", "ros", "calib", "sweep", "--arm", "right", env=lane)
+    proc = tatbot("--dry-run", "--ee-tool", "lutin-3rl-bugpin", "ros", "calib", "sweep", "--arm", "right", env=lane)
     assert proc.returncode == 0, proc.stderr
     steps = [line.split("]")[0].split("[")[-1] for line in proc.stdout.splitlines() if "plan   [" in line]
     assert steps == ["fix", "arms", "sweep"], steps
@@ -201,6 +272,33 @@ def test_a_sweep_still_is_taken_on_the_camera_node_and_sent_into_the_run():
     assert "rpicam-still" in r.steps[0][1][-1] and r.steps[1][1][-2] == f"pi@camera:{backend.STILL_TMP}"
     assert r.steps[2][1][-1] == "me@ros:/data/ros-calib/x/stills/00-park.jpg"
     assert backend.still(cam, ros, "/x.jpg", Steps("", fail_land=True)).startswith("error: fetch failed")
+    r = Steps("")
+    backend.still(cam, ros, "/x.jpg", r, (30300, 2.0))
+    assert "--shutter 30300 --gain 2 " in r.steps[0][1][-1]
+
+
+def test_a_sweep_meters_the_room_but_never_takes_more_light_than_the_dark_rooms_still():
+    """2026-10-27: a lit venue's stills at the dark room's 60 ms and gain 8 clipped half of each frame and the park
+    read the pen on the ball. The camera's own metering sets a brighter room's exposure; a darker room, or a meter
+    that cannot be read, keeps the exposure the finders were tuned on."""
+    class Meter(_Steps):
+        def __init__(self, out):
+            super().__init__("")
+            self.out = out
+
+        def step(self, label, argv, capture=False, stdin=None):
+            self.steps.append((label, argv))
+            if self.out is None:
+                raise backend.VerbError(5, "meter: ssh could not reach the node (exit 255)")
+            return 0, self.out
+
+    cam = argparse.Namespace(local=False, ssh="pi@camera", shell=lambda script: ["ssh", "pi@camera", script])
+    venue = Meter(json.dumps({"ExposureTime": 30300, "AnalogueGain": 2.0, "Lux": 748.5}))
+    assert backend.meter(cam, venue) == (30300, 2.0)
+    assert "--metadata" in venue.steps[0][1][-1]
+    assert backend.meter(cam, Meter(json.dumps({"ExposureTime": 66666, "AnalogueGain": 16.0}))) == backend.STILL_MAX
+    assert backend.meter(cam, Meter("")) == backend.STILL_MAX
+    assert backend.meter(cam, Meter(None)) == backend.STILL_MAX
 
 
 @needs_fleet
@@ -223,16 +321,14 @@ def test_chain_pools_the_named_registrations_on_the_ros_node_and_moves_nothing()
 
 
 def test_draw_and_compile_dry_run(tmp_path):
-    from ros_program_fixtures import program as resource_program
-
     program = tmp_path / "program.json"
-    program.write_text(json.dumps(resource_program()))
-    proc = tatbot("--dry-run", "ros", "draw", str(program), "--arm", "right", "--from-op", "t0000")
+    program.write_text(json.dumps(stack_arm_program()))
+    proc = tatbot("--dry-run", "ros", "draw", str(program), "--from-op", "t0000")
     assert proc.returncode == 0, proc.stderr
     assert "client draw" in proc.stdout and "--from-op t0000" in proc.stdout and "[send]" in proc.stdout
     # the arm is checked (a landed arm is woken alone), and a complete draw is inspected, then landed
     assert proc.stdout.index("[arms]") < proc.stdout.index("client draw")
-    assert "client inspect --arm right" in proc.stdout and "client land --arm right" in proc.stdout
+    assert f"client inspect --arm {ARM}" in proc.stdout and f"client land --arm {ARM}" in proc.stdout
     # a draw that ends in an error lands too (2026-10-18: a refused set-up left the arm awake over a forearm)
     draw_line = next(line for line in proc.stdout.splitlines() if "client draw" in line)
     assert "; rc=$?; " in draw_line and "&&" not in draw_line.split("client draw")[1]
@@ -240,28 +336,26 @@ def test_draw_and_compile_dry_run(tmp_path):
     assert proc.returncode == 0 and "client land" not in proc.stdout and "client inspect" in proc.stdout
     proc = tatbot("--dry-run", "ros", "draw", str(program), "--no-wake", "--hold")
     assert proc.returncode == 0 and "[arms]" not in proc.stdout and "client draw" in proc.stdout
-    design = tmp_path / "design.json"
-    design.write_text(json.dumps({"schema": "tatbot.inkmap-design/1"}))
-    proc = tatbot("--dry-run", "ros", "draw", str(design))
+    artwork = tmp_path / "artwork.json"
+    artwork.write_text(json.dumps({"schema": "tatbot.inkmap-artwork/2"}))
+    proc = tatbot("--dry-run", "ros", "draw", str(artwork))
     assert proc.returncode == 0 and "compiling it first" in proc.stdout
-    proc = tatbot("--dry-run", "ros", "compile", str(design), "-o", str(tmp_path / "out"))
+    proc = tatbot("--dry-run", "ros", "compile", str(artwork), "-o", str(tmp_path / "out"))
     assert proc.returncode == 0 and "-m tatbot_ink compile" in proc.stdout
-    proc = tatbot("--dry-run", "ros", "compile", str(design), "--stencil", str(tmp_path / "print"))
+    proc = tatbot("--dry-run", "ros", "compile", str(artwork), "--stencil", str(tmp_path / "print"))
     assert proc.returncode == 0 and f"--stencil {tmp_path / 'print'}" in proc.stdout
-    proc = tatbot("--dry-run", "ros", "compile", str(design), "--min-stroke-mm", "0", "--mark-width-mm", "0.8")
+    proc = tatbot("--dry-run", "ros", "compile", str(artwork), "--min-stroke-mm", "0", "--mark-width-mm", "0.8")
     assert proc.returncode == 0 and "--min-stroke-mm 0 " in proc.stdout and "--mark-width-mm 0.8" in proc.stdout
-    proc = tatbot("--dry-run", "ros", "draw", str(design), "--stencil", str(tmp_path / "print"))
+    proc = tatbot("--dry-run", "ros", "draw", str(artwork), "--stencil", str(tmp_path / "print"))
     assert proc.returncode == 0 and f"--stencil {tmp_path / 'print'}" in proc.stdout
     proc = tatbot("--dry-run", "ros", "draw", str(program), "--stencil", str(tmp_path / "print"))
-    assert "--stencil apply to artwork" in proc.stdout and "dry run exits 2" in proc.stdout
+    assert "--stencil apply to acquired artwork" in proc.stdout and "dry run exits 2" in proc.stdout
 
 
 @needs_fleet   # it resolves the ros node; the public export describes no fleet
 def test_a_rehearsal_draws_the_program_in_the_air_without_its_inspection(tmp_path):
-    from ros_program_fixtures import program as resource_program
-
     program = tmp_path / "program.json"
-    program.write_text(json.dumps(resource_program()))
+    program.write_text(json.dumps(stack_arm_program()))
     proc = tatbot("--dry-run", "ros", "draw", str(program), "--rehearse", "--standoff-mm", "7")
     assert proc.returncode == 0, proc.stderr
     assert "rehearse: 1 strokes in the air at 7 mm, the machine off, 0 dip(s) left out" in proc.stdout
@@ -270,6 +364,48 @@ def test_a_rehearsal_draws_the_program_in_the_air_without_its_inspection(tmp_pat
     assert "--standoff-mm is a rehearsal's height" in proc.stdout and "dry run exits 2" in proc.stdout
     proc = tatbot("--dry-run", "ros", "draw", str(program), "--rehearse", "--standoff-mm", "1")
     assert "hover_height_m" in proc.stdout and "dry run exits 2" in proc.stdout
+
+
+def test_a_draw_can_start_its_cartridge_at_a_trim_but_a_resume_keeps_its_ledgers(tmp_path):
+    program = tmp_path / "program.json"
+    program.write_text(json.dumps(stack_arm_program()))
+    proc = tatbot("--dry-run", "ros", "draw", str(program), "--trim-mm=-1.75")
+    assert proc.returncode == 0, proc.stderr
+    assert "the run starts its cartridge at a pen trim of -1.75 mm" in proc.stdout and "client draw" in proc.stdout
+    proc = tatbot("--dry-run", "ros", "draw", str(program), "--trim-mm=-1.75", "--resume", "20261103T183501Z-node-5108")
+    assert "--trim-mm starts a new run" in proc.stdout and "dry run exits 2" in proc.stdout
+
+
+def test_a_draw_can_say_how_its_stroke_ends_are_drawn_but_a_resume_keeps_its_programs(tmp_path):
+    program = tmp_path / "program.json"
+    program.write_text(json.dumps(stack_arm_program()))
+    proc = tatbot("--dry-run", "ros", "draw", str(program), "--ends", "fly", "--trim-mm=-1.75")
+    assert proc.returncode == 0, proc.stderr
+    assert "the run draws its stroke ends fly (over motion.yaml draw.ends)" in proc.stdout
+    assert "the run starts its cartridge at a pen trim of -1.75 mm" in proc.stdout and "client draw" in proc.stdout
+    proc = tatbot("--dry-run", "ros", "draw", str(program), "--ends", "fly", "--resume", "20261103T183501Z-node-5108")
+    assert "--ends starts a new run" in proc.stdout and "dry run exits 2" in proc.stdout
+    assert tatbot("--dry-run", "ros", "draw", str(program), "--ends", "whip").returncode != 0
+
+
+def test_a_draw_or_touch_on_a_chosen_sheet_tells_the_client_where_it_stands(tmp_path):
+    program = tmp_path / "program.json"
+    program.write_text(json.dumps(stack_arm_program()))
+    proc = tatbot("--dry-run", "ros", "draw", str(program), "--sheet-at=-40,520")
+    assert proc.returncode == 0, proc.stderr
+    assert "client draw" in proc.stdout and "--sheet-at=-40,520" in proc.stdout
+    proc = tatbot("--dry-run", "ros", "touch", "--arm", "xarm", "--sheet-at=400,-100")
+    assert proc.returncode == 0, proc.stderr
+    assert "client touch --arm xarm --sheet-at=400,-100" in proc.stdout
+
+
+def test_a_trim_file_carries_the_start_trim_in_the_program(tmp_path):
+    path = tmp_path / "program.json"
+    path.write_text(json.dumps(stack_arm_program()))
+    said = []
+    out = backend.start_trim_file(path, -1.75, SimpleNamespace(dry=False, say=said.append))
+    assert json.loads(out.read_text())["start_trim_m"] == pytest.approx(-0.00175)
+    assert said and "-1.75 mm" in said[0] and "start_trim_m" not in path.read_text()
 
 
 @pytest.mark.parametrize('document', [
@@ -320,9 +456,9 @@ def test_the_keypad_takes_keys_from_the_station_alone(monkeypatch):
 def test_effective_settings_merge_flags_over_stack_yaml():
     d = backend.stack_defaults()
     base = {k: v for k, v in d.items() if not k.startswith("machine_") and k != "keypad_from"}
-    assert set(base) == {"hardware", "estop", "relay_gpio", "probe_gpio", "page", "pattern_id", "arms", "keypad_port"}
+    assert set(base) == {"hardware", "estop", "relay_gpio", "probe_gpio", "probe_touched", "page", "pattern_id", "arms", "keypad_port"}
     assert all(base.values()) and d["keypad_from"] == ""   # the CLI resolves the station's lan
-    assert set(d) - set(base) - {"keypad_from"} == {f"machine_{k}" for k in ("switch", "arm", "addr", "gpio", "port", "estop_port",
+    assert set(d) - set(base) - {"keypad_from"} == {f"machine_{k}" for k in ("switch", "addr", "gpio", "port", "estop_port",
                                                            "period_s", "timeout_s", "confirm_s", "sim_endpoint")}
     eff = backend.effective(up_ns(hardware="real", estop="udp"))
     assert eff.startswith("hardware=real estop=udp page=") and f"arms={d['arms']}" in eff
@@ -406,11 +542,11 @@ def test_the_probe_relay_sends_to_the_ros_node():
     assert backend.probe_dests() == expected and expected
     with contextlib.redirect_stdout(io.StringIO()) as out:
         assert backend.main(["--dry-run", "relay-install", "--probe"]) == 0
-    assert "--probe GPIO27" + "".join(f" --dest {d}" for d in expected) in out.getvalue()
+    assert "--probe GPIO27 --probe-touched low" + "".join(f" --dest {d}" for d in expected) in out.getvalue()
     assert "tatbot-estop-relay.service " not in out.getvalue()   # the e-stop relay's unit is never touched
     with contextlib.redirect_stdout(io.StringIO()) as out:
         assert backend.main(["--dry-run", "relay-install", "--probe", "--dest", "192.0.2.1:7641"]) == 0
-    assert "--probe GPIO27 --dest 192.0.2.1:7641|" in out.getvalue()
+    assert "--probe GPIO27 --probe-touched low --dest 192.0.2.1:7641|" in out.getvalue()
 
 
 @needs_fleet
@@ -436,10 +572,10 @@ def test_the_machine_switch_takes_the_ros_nodes_commands_and_the_button_over_the
 
 @needs_fleet
 def test_draw_passes_the_global_tool_and_cli_logs_are_local(tmp_path):
-    design = tmp_path / "design.json"
-    design.write_text(json.dumps({"schema": "tatbot.inkmap-design/1"}))
-    tool = "lutin-ballpoint-dot"
-    proc = tatbot("--dry-run", "--ee-tool", tool, "ros", "draw", str(design))
+    artwork = tmp_path / "artwork.json"
+    artwork.write_text(json.dumps({"schema": "tatbot.inkmap-artwork/2"}))
+    tool = "lutin-3rl-bugpin"
+    proc = tatbot("--dry-run", "--ee-tool", tool, "ros", "draw", str(artwork))
     assert proc.returncode == 0, proc.stderr
     assert f"--ee-tool {tool}" in proc.stdout
     out = tatbot("--dry-run", "ros", "logs", "last", "--workflow", "ros-cli").stdout
@@ -742,6 +878,27 @@ def test_a_tracked_page_is_reported_in_the_set_up_pages_frame():
     assert moved == {"x_mm": 2.0, "y_mm": 1.0, "turn_deg": 1.5}
 
 
+def test_the_newest_run_goes_by_its_id_not_the_time_a_prune_left_on_an_old_one(tmp_path):
+    logs, old, new = tmp_path / "tatbot-logs", "20261022T164432Z-node-aaaa", "20261105T202938Z-node-bbbb"
+    for workflow in ("ros-draw", "ros-touch"):
+        for run in (old, new):
+            (logs / workflow / run).mkdir(parents=True)
+            (logs / workflow / run / "page.json").write_text("{}")
+        for path in (logs / workflow / old, logs / workflow / old / "page.json"):
+            os.utime(path, (2e9, 2e9))
+        (logs / workflow / "latest").symlink_to(old)
+
+    def run(script):
+        env = {**os.environ, "HOME": str(tmp_path), "TATBOT_LOG_ROOT": str(logs)}
+        return subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True).stdout
+
+    status = run(backend.STATUS_SCRIPT.format(root=tmp_path, root_arg=tmp_path, unit_lines="", unit_up="false", arm=ARM))
+    assert f"newest_run={new}" in status
+    (tmp_path / "env.sh").write_text("")
+    page = run(backend.PAGE_SCRIPT.format(root=tmp_path, seconds=0, timeout=1, arm="right"))
+    assert f'"run": "{new}"' in page
+
+
 def test_the_page_report_gives_the_set_up_surface_and_says_when_the_stencil_is_not_seen(capsys):
     placed = [[0.0, 1.0, 0.0, 0.309], [-1.0, 0.0, 0.0, 0.072], [0.0, 0.0, 1.0, 0.034], [0.0, 0.0, 0.0, 1.0]]
     sample = {"base_xyz_mm": [306.0, 73.0, 42.0], "base_rpy_deg": [0.0, 0.0, -90.0], "sigma_mm": 4.0}
@@ -753,6 +910,28 @@ def test_the_page_report_gives_the_set_up_surface_and_says_when_the_stencil_is_n
     lost = backend.page_report(json.dumps({"summary": {"pattern_id": "p", "seconds": 5.0, "measured": 0, "lost": 5}}))
     backend.print_page(lost)
     assert capsys.readouterr().out.startswith("stencil NOT seen: 0 of 5")
+
+
+def test_the_page_report_lists_the_prints_other_sheets(capsys):
+    page, spare = {"page": True, "arm_mm": 310, "markers": 19}, {"page": False, "arm_mm": 919, "markers": 20,
+                                                                  "base_xy_mm": [400.4, -830.0]}
+    sample = {"base_xyz_mm": [306.0, 73.0, 42.0], "base_rpy_deg": [0.0, 0.0, -90.0], "sigma_mm": 4.0,
+              "sheets": [spare, page]}
+    summary = {"summary": {"pattern_id": "p", "seconds": 5.0, "measured": 1, "lost": 0}}
+    backend.print_page(backend.page_report("\n".join([json.dumps(sample), json.dumps(summary)])))
+    assert "also in view, not the page: at 400,-830 mm (20 markers)" in capsys.readouterr().out
+    lone = {**sample, "sheets": [page]}
+    backend.print_page(backend.page_report("\n".join([json.dumps(lone), json.dumps(summary)])))
+    assert "also in view" not in capsys.readouterr().out
+
+
+def test_the_page_report_says_when_sheets_are_in_view_but_none_is_the_page(capsys):
+    row = {"source": "lost", "sheets": [{"page": False, "arm_mm": 932, "markers": 21}]}
+    summary = {"summary": {"pattern_id": "p", "seconds": 5.0, "measured": 0, "lost": 1}}
+    backend.print_page(backend.page_report("\n".join([json.dumps(row), json.dumps(summary)])))
+    text = capsys.readouterr().out
+    assert text.startswith("stencil NOT placed: 1 sheet(s) of the print in view, none the page: 932 mm")
+    assert "--sheet-at=X,Y chooses one" in text
 
 
 def test_a_setup_whose_process_died_reads_as_stopped_at_its_step(tmp_path, capsys):
@@ -950,6 +1129,20 @@ def test_a_setup_keeps_the_wrist_cameras_registration_not_the_tags(capsys, monke
     assert steps[:2] == ["restart on the stencil", "register the D555 through the wrist"]
 
 
+def test_a_setup_hands_every_step_the_prints_full_id(capsys, monkeypatch, local_target):
+    """2026-11-10: `setup --pattern 981a6476` restarted the stack on the print (up resolves the digits) but handed calib
+    overhead the digits, which it does not resolve: "no fiducial tile '981a6476' is installed", the setup stopped."""
+    full = "stencil-981a6476" + "0" * 56
+    monkeypatch.setattr(backend, "ros_target", lambda: local_target)
+    monkeypatch.setattr(backend, "installed_pattern", lambda t, r, pattern: full)
+    backend.main(["--dry-run", "setup", "--hardware", "real", "--estop", "udp", "--relay-addr", "relay.example",
+                  "--pattern", "981a6476", "--from", "overhead"])
+    out = capsys.readouterr().out
+    overhead = next(line for line in out.splitlines() if "tatbot_calib overhead" in line)
+    assert f"--pattern {full}" in overhead
+    assert all(f"pattern_id:={full}" in line for line in out.splitlines() if "stack.launch.py" in line)
+
+
 def test_a_station_fix_asks_a_just_restarted_d555_owner_again(monkeypatch, local_target):
     """2026-10-22: the agent's setup fixed the station 9 s after the tags' adoption restarted the D555's owner."""
     monkeypatch.setattr(backend, "ros_target", lambda: local_target)
@@ -979,13 +1172,13 @@ def test_a_station_fix_asks_a_just_restarted_d555_owner_again(monkeypatch, local
 def test_a_gauge_its_holds_do_not_agree_on_keeps_the_installed_one_and_the_setup_goes_on(monkeypatch, local_target):
     """2026-10-22: the station agent's setup stopped at the gauge (known to 1.17 mm, 0.25 wanted), its page unset."""
     monkeypatch.setattr(backend, "ros_target", lambda: local_target)
-    ran, said = [], []
-    r = SimpleNamespace(dry=False, say=said.append)
+    ran, said, gauge_file = [], [], ["yes"]
+    r = SimpleNamespace(dry=False, say=said.append, step=lambda label, command, **kw: (0, gauge_file[0] + "\n"))
     monkeypatch.setattr(backend, "wake", lambda *a, **k: None)
     monkeypatch.setattr(backend, "run_cancellable", lambda *a: ran.append("page") or 0)
 
     def calib(ns, runner):
-        ran.append(ns.action)
+        ran.append(ns.action + (" --adopt" if ns.adopt else ""))
         if ns.action == "gauge":
             raise backend.VerbError(3, "gauge failed (exit 3)")
         return 0
@@ -995,6 +1188,10 @@ def test_a_gauge_its_holds_do_not_agree_on_keeps_the_installed_one_and_the_setup
     steps = {label: body for _, label, body in backend.setup_steps(ns, r, local_target, {})}
     assert steps["measure the wrist gauge on the probe's top"]() == 0 and "installed gauge stays" in said[-1]
     assert steps["set the page up"]() == 0 and ran == ["gauge", "page"]
+    gauge_file[0] = "no"   # a camera's first gauge file: the wrist hand-eye's, adopted, before the gauge refines it
+    ran.clear()
+    assert steps["measure the wrist gauge on the probe's top"]() == 0 and ran == ["wristcam --adopt", "gauge"]
+    gauge_file[0] = "yes"
 
     def broken(ns, runner):
         raise backend.VerbError(1, "gauge failed (exit 1)")
@@ -1128,7 +1325,7 @@ def test_a_sim_lanes_deploy_down_status_and_logs_stay_in_its_container(capsys, m
 
 
 def test_a_sim_lane_never_lands_on_the_ros_node_even_if_nodes_json_puts_it_there(monkeypatch):
-    """Owner decision (2026-10-18): no sim lanes on the ros node. A nodes.json that gave the ros owner the
+    """2026-10-18: no sim lanes on the ros node. A nodes.json that gave the ros owner the
     ros-sim role too is refused, not obeyed."""
     for name in ("TATBOT_ROS_NODE", "TATBOT_ROS_ROOT"):
         monkeypatch.delenv(name, raising=False)
@@ -1137,3 +1334,56 @@ def test_a_sim_lane_never_lands_on_the_ros_node_even_if_nodes_json_puts_it_there
     with pytest.raises(backend.VerbError) as error:
         backend.ros_target()
     assert error.value.code == backend.EXIT_WRONG_NODE and "never runs on the ros node" in str(error.value)
+
+
+def _views(monkeypatch, tmp_path, **given):
+    """backend.views on a stand-in remote ros node: what it runs there and what it fetches."""
+    ran, steps = [], []
+    target = SimpleNamespace(local=False, ssh="user@ros", node="ros")
+    monkeypatch.setattr(backend, "ros_target", lambda: target)
+    monkeypatch.setattr(backend, "wake", lambda t, r, arm: steps.append(("wake", arm)))
+    monkeypatch.setattr(backend, "run_cancellable", lambda t, command, r: ran.append(command) or 0)
+    runner = SimpleNamespace(dry=False, say=lambda text: None,
+                             step=lambda label, argv, **kw: steps.append((label, argv)) or (0, ""))
+    ns = SimpleNamespace(arm="xarm", label="card-p0001-run-01-before", points="-40,52;0,52", run="", frames=None,
+                         fetch=str(tmp_path / "before"), land=True, wake=True, overhead=False, wrist=True,
+                         hover_mm=None, overhead_pages="", sheet_at="")
+    for key, value in given.items():
+        setattr(ns, key, value)
+    return backend.views(ns, runner), ran, steps
+
+
+def test_views_capture_on_the_ros_node_lands_after_and_fetch_the_frames_here(monkeypatch, tmp_path):
+    code, ran, steps = _views(monkeypatch, tmp_path)
+    assert code == 0 and steps[0] == ("wake", "xarm")
+    assert ran[0].startswith("ros2 run tatbot_session client views --arm xarm "
+                             "--out ~/tatbot-logs/ros-views/card-p0001-run-01-before --points=")
+    assert "-40,52;0,52" in ran[0] and "client land --arm xarm" in ran[0]
+    assert steps[1] == ("fetch", ["rsync", "-a", "user@ros:tatbot-logs/ros-views/card-p0001-run-01-before/",
+                                  f"{tmp_path / 'before'}/"])
+
+
+def test_views_held_for_a_draw_run_the_capture_alone_and_an_after_names_its_page(monkeypatch, tmp_path):
+    code, ran, _ = _views(monkeypatch, tmp_path, land=False, run="20261108T100000Z-ros-aaaa", hover_mm=35.0)
+    assert code == 0 and ran[0].startswith("exec ros2 run tatbot_session client views")
+    assert "--run=20261108T100000Z-ros-aaaa" in ran[0] and "land" not in ran[0] and "--hover=0.035" in ran[0]
+
+
+def test_views_refuse_a_label_that_is_no_directory_name(monkeypatch, tmp_path):
+    with pytest.raises(backend.VerbError, match="--label"):
+        _views(monkeypatch, tmp_path, label="../escape")
+
+
+def test_views_of_the_overhead_alone_never_wake_or_land_the_arm(monkeypatch, tmp_path):
+    code, ran, steps = _views(monkeypatch, tmp_path, points="", overhead=True, wrist=False)
+    assert code == 0 and not any(step[0] == "wake" for step in steps)
+    assert ran[0].startswith("exec ") and ran[0].endswith("--overhead --no-wrist") and "land" not in ran[0]
+    with pytest.raises(backend.VerbError, match="add --overhead"):
+        _views(monkeypatch, tmp_path, overhead=False, wrist=False)
+
+
+def test_views_aimed_by_the_overhead_name_the_print(monkeypatch, tmp_path):
+    code, ran, _ = _views(monkeypatch, tmp_path, points="", overhead_pages="981a6476", hover_mm=35.0)
+    assert code == 0 and "--overhead-pages=981a6476" in ran[0] and "--hover=0.035" in ran[0]
+    code, ran, _ = _views(monkeypatch, tmp_path, points="", overhead_pages="981a6476", sheet_at="-40,520")
+    assert code == 0 and "--sheet-at=-40,520" in ran[0]

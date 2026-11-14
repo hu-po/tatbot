@@ -50,6 +50,14 @@ def page_marks(support_json: str) -> dict:
             if ids.count(i) == 1 and (p[:, 2] > 0).all()}
 
 
+def other_copies_m(support_json: str) -> list[float]:
+    """How far the print's other sheets in the overhead's view stand from the page, m (tatbot_bridge._page_of)."""
+    try:
+        return [float(d) for d in json.loads(support_json or "{}").get("other_copies_m") or []]
+    except (ValueError, TypeError, AttributeError):
+        return []
+
+
 def marks_median(readings) -> dict:
     """Each marker's corners, each the median over the readings (page_marks) that saw it."""
     seen = {}
@@ -122,7 +130,7 @@ def marks_extended(ref: dict, readings, printed: dict, up=None, slide_m: float =
 # its holds, or one whose follow a print turned round the arm would put roll_m under the skin (ArmExecutor._rolled).
 # Replayed with the page following before each stroke (it lags the sheet up to follow_m), 3.5 mm held 10 s fired on no
 # still silicone, the left forearm or 31 references of a lively right one (3 mm on 3 of them); a 5 mm step fires in
-# 11-20 s. The owner doubled every stop (2026-10-20): off_m, bend_m, total_*, roll_m twice those. Not rise_m, depth: a
+# 11-20 s. Every stop was doubled (2026-10-20): off_m, bend_m, total_*, roll_m twice those. Not rise_m, depth: a
 # hover whose gauge reads no skin has no other bound, and the 3RL's needles reach 4 mm from a tube 5 mm over the field.
 WATCH = {"follow_s": 20.0, "follow_m": 0.001, "follow_rad": 0.0175, "gate_s": 10.0, "hold_s": 10.0, "off_m": 0.007,
          "rise_m": 0.0025, "bend_m": 0.003, "total_m": 0.020, "total_rad": 0.10, "roll_m": 0.001}
@@ -277,15 +285,25 @@ def gauge_layout(program: dict | None, spread_m: float, clear_m, inset_m=None) -
     return np.clip(corners, [-hx, -hy], [hx, hy])
 
 
+# Points narrower than this across their line (rms) say nothing of a plane's turn about it. The holds under one stroke
+# stood 0.09 mm wide and their plane on its edge (2026-11-05); the narrowest real pattern that day stood 5.3 mm wide.
+LINE_WIDTH_M = 0.001
+
+
 def fit_plane(points, normal_hint) -> tuple[np.ndarray, float]:
-    """Least-squares plane through >= 3 points: (unit normal n, d) with n.p + d = 0, n along normal_hint."""
+    """Least-squares plane through >= 3 points: (unit normal n, d) with n.p + d = 0, n along normal_hint. Points in a
+    line fix only the tilt along it: about it the plane keeps normal_hint's (LINE_WIDTH_M)."""
     pts = np.asarray(points, dtype=float)
     if len(pts) < 3:
         raise ValueError("a plane needs three touches")
     centroid = pts.mean(axis=0)
-    _, _, vt = np.linalg.svd(pts - centroid)
-    normal = vt[-1]
-    if float(normal @ np.asarray(normal_hint, dtype=float)) < 0:
+    _, singular, vt = np.linalg.svd(pts - centroid)
+    spread = singular / np.sqrt(len(pts))
+    normal, hint = vt[-1], np.asarray(normal_hint, dtype=float)
+    if spread[1] < LINE_WIDTH_M:
+        along = vt[0] if spread[0] >= LINE_WIDTH_M else np.zeros(3)
+        normal = hint - (hint @ along) * along
+    if float(normal @ hint) < 0:
         normal = -normal
     normal = normal / np.linalg.norm(normal)
     return normal, float(-normal @ centroid)
@@ -354,10 +372,11 @@ def stroke_length(points_m, closed: bool = False) -> float:
     return timelaw.polyline_length(np.vstack([points_m, points_m[:1]]) if closed and len(points_m) > 1 else points_m)
 
 
-def pose_moved(q_latched, q_now, fk) -> tuple[float, float]:
+def pose_moved(q_latched, q_now, kin) -> tuple[float, float]:
     """(max revolute joint change rad, tip change m) between the latched and the current joints."""
-    joint = float(np.max(np.abs(np.asarray(q_now)[:6] - np.asarray(q_latched)[:6])))
-    tip = float(np.linalg.norm(fk(q_now)[:3, 3] - fk(q_latched)[:3, 3]))
+    r = kin.revolute
+    joint = float(np.max(np.abs(np.asarray(q_now)[r] - np.asarray(q_latched)[r])))
+    tip = float(np.linalg.norm(kin.fk(q_now)[:3, 3] - kin.fk(q_latched)[:3, 3]))
     return joint, tip
 
 
@@ -365,8 +384,8 @@ def tip_force_along_tool(kin, q, tau) -> float:
     """The tip force along the tcp +z axis (toward the paper) that the arm joints' external torques
     imply for a point force at the tcp: tau = Jv^T f (tatbot_hardware tip_force_along_tool)."""
     _, rot, jac = kin.evaluate(np.asarray(q, dtype=float))
-    jv = jac[:3, :6]
-    f = np.linalg.solve(jv @ jv.T + 1e-9 * np.eye(3), jv @ np.asarray(tau, dtype=float)[:6])
+    jv = jac[:3, kin.revolute]
+    f = np.linalg.solve(jv @ jv.T + 1e-9 * np.eye(3), jv @ np.asarray(tau, dtype=float)[kin.revolute])
     return float(f @ rot[:, 2])
 
 

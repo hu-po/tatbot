@@ -5,7 +5,7 @@
 # fusion. A copied example is not a calibration.
 right:
   # Which physical tool is fitted — names a datasheet in config/tools/.
-  tool_id: lutin-ballpoint-dot
+  tool_id: lutin-3rl-bugpin
   # Frame the tip offset is solved in.
   tip_frame: right/tool_mount
   # Pen tip in that frame, metres — MEASURED by the touch-off, not typed.

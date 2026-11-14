@@ -342,15 +342,16 @@ rerun_session::window_memory_max() {
 }
 
 # `tatbot viewer open`: the window as the transient user unit
-# $VIEWER_WINDOW_UNIT. The viewer drops its oldest rows at --memory-limit; the
-# unit's MemoryMax is the hard ceiling for the whole process. A running unit
-# or window is left as it is, unless the third argument is `restart`: a window
-# never reconnects to a hub that restarted, so it is closed and opened again.
+# $VIEWER_WINDOW_UNIT, whose main process keeps it on its hub
+# (rerun_session::keep_window). The viewer drops its oldest rows at
+# --memory-limit; the unit's MemoryMax is the hard ceiling for the whole unit.
+# A running unit or window is left as it is, unless the third argument is
+# `restart`: it is closed and opened again (a new cap, a new path to the hub).
 # The fourth is the window's state once it maps, `maximized` (the default) or
 # `fullscreen` (rerun_session::window_state); a running unit is made
 # fullscreen too, and one that already is is not touched. Without a user
-# manager (no systemd login session) the window starts detached instead.
-# 1 = no display here.
+# manager (no systemd login session) the window starts detached instead, and
+# nothing keeps it on its hub. 1 = no display here.
 rerun_session::open_window() {
   local memory_limit="$1" proxy="$2" state="${4:-maximized}" max var
   max="$(rerun_session::window_memory_max "$memory_limit")" || {
@@ -374,17 +375,86 @@ rerun_session::open_window() {
   fi
   rerun_session::_window_running && return 0
   rerun_session::_borrow_display || return 1
-  local -a env=()
+  local -a env=(--setenv=RERUN_BIN="$RERUN_BIN" --setenv=TATBOT_NO_HINT=1) full=()
   for var in DISPLAY WAYLAND_DISPLAY XAUTHORITY; do
     [ -n "${!var:-}" ] && env+=("--setenv=$var=${!var}")
   done
+  [ "$state" = fullscreen ] && full=(--fullscreen)
   mkdir -p "$RERUN_RUNTIME_DIR"
   systemctl --user reset-failed "$VIEWER_WINDOW_UNIT" >/dev/null 2>&1 || true
   systemd-run --user --quiet --collect --unit "$VIEWER_WINDOW_UNIT" -p MemoryMax="$max" \
     -p StandardOutput="append:$RERUN_RUNTIME_DIR/gui.log" -p StandardError="append:$RERUN_RUNTIME_DIR/gui.log" \
-    "${env[@]}" "$RERUN_BIN" --connect "$proxy" --memory-limit "$memory_limit" --hide-welcome-screen || return 2
-  rerun_session::window_state "$state" >/dev/null 2>&1 &
-  return 0
+    "${env[@]}" "$RERUN_SESSION_REPO/scripts/viewer.sh" window --connect "$proxy" --memory-limit "$memory_limit" \
+    "${full[@]}" || return 2
+}
+
+# How often the window unit looks at its window, and how long the window may go
+# without its hub before it is closed to be opened again (rerun_session::keep_window).
+WINDOW_CHECK_S="${WINDOW_CHECK_S:-5}"
+WINDOW_LOST_S="${WINDOW_LOST_S:-15}"
+
+# Whether this unit's window holds a connection to the hub at HOST:PORT (ss,
+# by the unit's cgroup) and the hub answers there. Both, because a hub that
+# restarts drops the window's connection, while one whose node rebooted leaves
+# it looking established on this side.
+rerun_session::_window_on_hub() {
+  local cgroup="$1" hub="$2" proxy="$3"
+  [ -n "$(ss -Htn state established cgroup "$cgroup" dst "$hub" 2>/dev/null)" ] && rerun_session::reachable "$proxy"
+}
+
+# The window unit's main process (`viewer.sh window`, started by open_window):
+# one window on the hub at --connect, kept there. A rerun 0.36 window never
+# redials a hub that restarted: on 2026-11-08 the station's stayed up on stale
+# data after one restart and went after another, and its demo page was dark for
+# 18 h. So a window that has been off its hub for WINDOW_LOST_S is closed and,
+# once the hub answers, opened again in its state, behind the window that has
+# the focus. A window that ends by itself stays closed and ends the unit,
+# except the fullscreen demo page: it has no close button, and it comes back.
+# The proxy never changes, so a window on the direct cable never moves to the
+# rig LAN. `tatbot viewer stop` (and so `tatbot rig sleep`) stops the unit, and
+# this loop with it.
+rerun_session::keep_window() {
+  local proxy="" memory_limit="$VIEWER_MEMORY_LIMIT" state=maximized behind="" hub cgroup pid since lost rc
+  while (($#)); do
+    case "$1" in
+      --connect) [ $# -gt 1 ] || break; proxy="$2"; shift 2 ;;
+      --memory-limit) [ $# -gt 1 ] || break; memory_limit="$2"; shift 2 ;;
+      --fullscreen) state=fullscreen; shift ;;
+      *) break ;;
+    esac
+  done
+  if [ $# -gt 0 ] || [ -z "$proxy" ]; then
+    echo "usage: viewer.sh window --connect URL [--memory-limit SIZE] [--fullscreen]${1:+ (not: $1)}" >&2
+    return 2
+  fi
+  hub="${proxy#*://}"; hub="${hub%%/*}"
+  cgroup="$(sed -n 's/^0:://p' /proc/self/cgroup)"
+  while :; do
+    until rerun_session::reachable "$proxy"; do sleep "$WINDOW_CHECK_S"; done
+    # A process group of its own: the `rerun` entry point is Python waiting on the
+    # native viewer, and one kill has to reach both.
+    setsid "$RERUN_BIN" --connect "$proxy" --memory-limit "$memory_limit" --hide-welcome-screen &
+    pid=$!
+    rerun_session::window_state "$state" "$behind" >/dev/null 2>&1 &
+    behind=behind since="" lost=""
+    while kill -0 "$pid" 2>/dev/null; do
+      sleep "$WINDOW_CHECK_S"
+      if rerun_session::_window_on_hub "$cgroup" "$hub" "$proxy"; then since=""; continue; fi
+      since="${since:-$SECONDS}"
+      (( SECONDS - since >= WINDOW_LOST_S )) || continue
+      echo "$(date -u +%FT%TZ) window: off the hub at $proxy for $((SECONDS - since)) s; reopening it once the hub answers"
+      lost=1
+      kill -- "-$pid" 2>/dev/null || true
+      break   # `wait` below sees it go; a check now would find it still exiting
+    done
+    rc=0; wait "$pid" || rc=$?
+    if [ -z "$lost" ] && [ "$state" != fullscreen ]; then
+      echo "$(date -u +%FT%TZ) window: closed (exit $rc)"
+      return 0
+    fi
+    [ -n "$lost" ] || echo "$(date -u +%FT%TZ) window: the demo page ended (exit $rc); opening it again"
+    sleep "$WINDOW_CHECK_S"
+  done
 }
 
 # The browser viewer on the fleet server, opened on the standing proxy:
@@ -402,11 +472,13 @@ rerun_session::web_url() {
 # window manager the EWMH request, so no key is typed and no focus is needed; a
 # window already in the state is not asked again. Fullscreen is the demo page:
 # the focus goes back to the window that held it (the station's agent terminal),
-# and the operator alt-tabs to the viewer. Silently nothing off X11.
+# and the operator alt-tabs to the viewer. A second argument `behind` does the
+# same in either state: a window reopened on its hub never takes the focus from
+# what someone is doing. Silently nothing off X11.
 rerun_session::window_state() {
   [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "${DISPLAY:-}" ] || return 0
   local -a keep=()
-  [ "${1:-maximized}" = fullscreen ] && keep=(--keep-focus)
+  if [ "${1:-maximized}" = fullscreen ] || [ "${2:-}" = behind ]; then keep=(--keep-focus); fi
   python3 "$RERUN_SESSION_REPO/scripts/lib/x11_window.py" rerun "${1:-maximized}" "${keep[@]}"
 }
 

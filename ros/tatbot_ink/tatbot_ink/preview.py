@@ -1,16 +1,18 @@
 """preview.svg: the page and its clear centre, strokes numbered in order and coloured by ink, pen-up travel dashed,
-and where the pen passes three or more times (tatbot_ink.passes) shaded under them."""
+and where the skin takes the pokes of three or more steady passes (tatbot_ink.dose) shaded under them: where the
+pen comes back, and where it comes down, lifts, eases and turns."""
 from __future__ import annotations
 
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 import numpy as np
+from tatbot_motion import load_motion
 
-from tatbot_ink import passes
+from tatbot_ink import dose, passes
 
-HEAT_BLOCK_M = 0.0005     # the shading's squares, under the strokes: the most passes of any cell in each
-HEAT = ("#f59f00", "#e8590c", "#c92a2a")   # 3, 4, and 5 or more passes
+HEAT_BLOCK_M = 0.0005     # the shading's squares, under the strokes: the most dosed cell in each
+HEAT = ("#f59f00", "#e8590c", "#c92a2a")   # the pokes of 3, 4, and 5 or more steady passes
 
 
 def _xy(point) -> str:
@@ -19,11 +21,14 @@ def _xy(point) -> str:
 
 
 def _heat(program: dict) -> list[str]:
-    counts, origin, cell = passes.grid(passes.program_lines(program)) or (np.zeros((0, 0)), 0, 1)
+    if "dose" not in program["stats"]:   # a program directly authored without one (a calibration shape)
+        return []
+    _, counts, origin, cell = dose.grid(program, load_motion()) or (None, np.zeros((0, 0)), 0, 1)
+    counts = np.floor(counts + 1e-9).astype(int)
     b = max(1, round(HEAT_BLOCK_M / cell))
     counts = np.pad(counts, ((0, -counts.shape[0] % b), (0, -counts.shape[1] % b)))
     blocks = counts.reshape(counts.shape[0] // b, b, counts.shape[1] // b, b).max(axis=(1, 3))
-    return ['<g id="passes" opacity="0.6">', *(
+    return ['<g id="dose" opacity="0.6">', *(
         f'<rect x="{(origin[0] + col * b * cell) * 1000:.3f}" y="{-(origin[1] + (row + 1) * b * cell) * 1000:.3f}" '
         f'width="{b * cell * 1000:g}" height="{b * cell * 1000:g}" fill="{HEAT[min(blocks[row, col], 5) - 3]}"/>'
         for row, col in np.argwhere(blocks >= 3)), "</g>"]
@@ -39,13 +44,15 @@ def preview_svg(program: dict) -> str:
              f"~{stats['est_s']:.0f} s")
     if any(resource['tool']['line_width_m'] is None for resource in resources.values()):
         title += "; preview uses generation width (physical width unknown)"
-    if "passes" in stats:
-        title += (f"; passes at {passes.at_marks(program)} marks: max {stats['passes']['max']}, p95 {stats['passes']['p95']}, "
-                  f"{stats['passes']['mm2_at_least']['3']:.0f} mm2 at 3+ (shaded orange 3, red 5+)")
+    dosed = ""
+    if "dose" in stats:
+        dosed = (f"{dose.headline(stats['dose'])} at {passes.at_marks(program)} marks, "
+                 f"{stats['dose']['cells']['mm2_at_least']['3']:.0f} mm2 at 3+ passes' pokes (shaded orange 3, red 5+)")
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{-width / 2:g} {-height / 2 - 8:g} {width:g} {height + 8:g}" '
            f'width="{width:g}mm" height="{height + 8:g}mm" font-family="sans-serif">',
-           f"<title>{escape(title)}</title>",
-           f'<text x="{-width / 2 + 1:g}" y="{-height / 2 - 3:g}" font-size="2.6">{escape(title)}</text>',
+           f"<title>{escape('; '.join(filter(None, (title, dosed))))}</title>",
+           f'<text x="{-width / 2 + 1:g}" y="{-height / 2 - 4:g}" font-size="2.6">{escape(title)}</text>',
+           f'<text x="{-width / 2 + 1:g}" y="{-height / 2 - 1:g}" font-size="1.8">{escape(dosed)}</text>',
            f'<rect x="{-width / 2:g}" y="{-height / 2:g}" width="{width:g}" height="{height:g}" fill="#fff" stroke="#999" stroke-width="0.3"/>',
            f'<rect x="{-clear_w / 2:g}" y="{-clear_h / 2:g}" width="{clear_w:g}" height="{clear_h:g}" fill="none" '
            f'stroke="#9ebde6" stroke-width="0.25" stroke-dasharray="1.5 1"/>', *_heat(program)]

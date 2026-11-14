@@ -7,9 +7,10 @@ return to the page standoff, each one goal planned by tatbot_motion.dip from the
 every tick: the arm's bodies clear of the station's parts, the tool on the cap's axis and over its dwell height
 inside the cap.
 
-The machine is off except during the dwell. It runs there when the tool's needle reach is recorded: the tube's end
-holds above_ink_m over the ink and the needles' strokes pull the ink up into the tube. With no reach recorded the
-dwell holds with the machine off and says so.
+The machine is off except during the dwell, and the drain after it when the resource's dip has one (drain_s: the
+tool's end held drain_above_rim_m over the rim, the machine still running, before the retract). It runs there when
+the tool's needle reach is recorded: the tube's end holds above_ink_m over the ink and the needles' strokes pull the
+ink up into the tube. With no reach recorded the dwell holds with the machine off and says so.
 
 A phase that ended off its place (the end checks of at_end, no tick's fault) withdraws and dips again once with no
 key; a return judged at the page standoff once the arm settles is planned again once, then goes on from where it is
@@ -32,7 +33,8 @@ from tatbot_session.lease import clear_in_cap, mark_in_cap
 from tatbot_session.ports import Event
 
 IMMERSED = ("descend", "dwell", "retract")
-HOLLOW = ("hover", "cap_exit", *IMMERSED)   # stages where the tool may be over or in its cap
+RUNNING = ("dwell", "drain")                # the phases the machine runs in
+HOLLOW = ("hover", "cap_exit", "drain_rise", "drain", *IMMERSED)   # stages where the tool may be over or in its cap
 
 
 def dip(ex, resource: dict, op_id: str, index: int, ledger) -> bool:
@@ -50,6 +52,18 @@ def withdraw_after_restart(ex, program: dict, marker: dict, ledger) -> None:
     ex.event(Event.KIND_PAGE, f"the tool may be in cap {marker['slot']} (run {marker['run']}): withdrawing first")
     ex.require_off("cap withdrawal")
     Cycle(ex, marker["resource"], marker["op"], 0, ledger, return_tcp=np.asarray(marker["return_tcp"])).withdraw()
+
+
+def _dry_level(ex, slot: str, cap) -> float:
+    """A rehearsal's dry dip (a hover resource, ros_program.rehearsal dip_slot) flies to the cap's hover and back, never
+    into it: a cap declared present (whatever it holds), its declared level or half its depth for the Dip's checks."""
+    import ink_spec
+
+    load = ink_spec.load_palette_load(ex.repo).get(slot)
+    if load is None or load.cap_present is not True:
+        raise RuntimeError(f"a dry dip flies to a cap that stands there: {slot} is "
+                           + ("no cap" if load is not None and load.cap_present is False else "not declared"))
+    return load.level_lower_bound_m or (cap.rim_m - cap.inner_floor_m) / 2
 
 
 def _load(ex, slot: str, ink_id: str):
@@ -97,9 +111,10 @@ class Cycle:
         zones.append(("overhead_post", np.array([*post.xy, post.top_m]), post.radius_m, True))
         self.parts = station.station_world_parts(zones, base, float(base_from_palette[2, 3]))
         spec = tool_spec.load_tool(resource["tool"]["id"], ex.repo)
-        cap = cap_motion.read_cap(ex.repo, slot, ex.arm, base_from_palette)
+        cap = cap_motion.read_cap(ex.repo, slot, base_from_palette)
         reach = spec.raw.get("needle_reach_mm")
-        level = _load(ex, slot, resource["ink_id"])
+        self.dry = (hover := resource.get("pen_mode") == "hover") and not resource.get("dip_in_cap")   # a rehearsal's
+        level = _dry_level(ex, slot, cap) if self.dry else _load(ex, slot, resource["ink_id"])
 
         # the touches' heading only: there the tip's error across the tool's axis cancels, and at another it moves
         # the tool off the cap's axis by twice that error times the sine of half the turn (2026-10-08: the 3RL's tip
@@ -107,14 +122,17 @@ class Cycle:
         self.dip = cap_motion.Dip(cap, cap_motion.Tool.from_profile(spec.profile), resource["dip"], level,
                                   touch.rotation, reach_m=None if reach is None else float(reach) / 1000.0)
         self.heading_deg = float(np.degrees(np.arctan2(touch.rotation[1][0], touch.rotation[0][0])))
-        self.machine = self.dip.reach_m is not None and ex.machine is not None
+        self.machine = not hover and self.dip.reach_m is not None and ex.machine is not None
         self.return_tcp = return_tcp
         self.marker = {"run": ex.run_dir.name, "op": op_id, "slot": slot, "resource": resource}
         ex.event(Event.KIND_PAGE, f"dip {slot} at heading {self.heading_deg:+.0f} deg, the touch's: the ball "
                  f"{np.round((touch.ball - fix.ball) * 1000, 1).tolist()} mm "
                  f"from the overhead fix (touch {touch.run}); the tool's end {self.dip.settings['above_ink_m'] * 1000:.1f} "
                  f"mm over the ink, {self.dip.slack_m * 1000:.2f} mm of the bore to spare, machine "
-                 + ("on for the dwell" if self.machine else "off (no needle reach recorded)"), op_id)
+                 + (("on for the dwell" + (f" and a {self.dip.drain_s:g} s drain "
+                                           f"{self.dip.settings['drain_above_rim_m'] * 1000:.1f} mm over the rim"
+                                           if self.dip.drain_s else "")) if self.machine else "off (a dry dip: to the hover and back, not into the cap)"
+                    if self.dry else "off (a rehearsal: into the cap)" if hover else "off (no needle reach recorded)"), op_id)
 
     # --- geometry --------------------------------------------------------------------------------
     def check(self, stage: str, rows) -> None:
@@ -133,8 +151,7 @@ class Cycle:
         args = {"q_seed": q, "kin": self.ex.kin, "motion": self.ex.motion, "check": self.check}
         if phase == "approach":
             try:
-                traj = cap_motion.plan_approach(self.dip, base_from_page=self.ex.used(), station_top_m=self.station_top,
-                                                **args)
+                traj = self._approach(args)
             except (RuntimeError, ValueError) as error:   # PlanError is a RuntimeError
                 raise RuntimeError(f"the touch's heading {self.heading_deg:+.0f} deg does not reach cap "
                                    f"{self.dip.cap.slot} ({error}); a dip goes only at the heading the station was "
@@ -144,6 +161,17 @@ class Cycle:
         if phase == "return":
             return cap_motion.plan_return(self.dip, return_tcp=self.return_tcp, station_top_m=self.station_top, **args)
         return cap_motion.plan_axial(self.dip, phase, **args)
+
+    def _approach(self, args):
+        """The approach from where the pen stands, else from over the page's centre: from a stroke's end at a corner
+        of the silicone tile (-42 +59 mm) joint 3 met its guarded limit on the way to cap L1 (2026-10-25)."""
+        page = dict(base_from_page=self.ex.used(), station_top_m=self.station_top, **args)
+        try:
+            return cap_motion.plan_approach(self.dip, **page)
+        except (RuntimeError, ValueError) as error:
+            self.ex.event(Event.KIND_PAGE, f"dip {self.dip.cap.slot} from where the pen stands: {error}; it goes from "
+                          "over the page's centre", self.op_id)
+            return cap_motion.plan_approach(self.dip, via_xy=(0.0, 0.0), **page)
 
     def at_end(self, phase: str, pose) -> None:
         """Where the measured tool must be when a phase's goal ends (the return's is ended's)."""
@@ -156,6 +184,10 @@ class Cycle:
                                                     <= cap_motion.DWELL_HIGH_M):
             raise RuntimeError(f"{phase}: the tool's end is {(height - self.dip.dwell_height_m) * 1000:+.2f} mm from "
                                "its dwell height")
+        elif phase == "drain" and (abs(height - self.dip.drain_height_m) > cap_motion.DWELL_HIGH_M
+                                   or off > self.dip.slack_m):
+            raise RuntimeError(f"drain: the tool's end ended {(height - self.dip.drain_height_m) * 1000:+.2f} mm from "
+                               f"its drain height, {off * 1000:.2f} mm off the cap's axis")
 
     def ended(self, phase: str) -> tuple[str, str] | None:
         """(status, text) for a goal that ended ok off its place, else None: a return judged at the page standoff
@@ -177,7 +209,7 @@ class Cycle:
     def phase(self, phase: str) -> tuple[str, str]:
         """One phase's goal, monitored at every tick. Returns (status, text): ok | latched | cancelled | failed (a
         tick's fault) | off (it ended off its place, at_end) | missed (a return off the page standoff, settled)."""
-        if phase == "dwell" and self.machine:
+        if phase in RUNNING and self.machine:
             self.ex.machine_running(self.op_id, self.index, self.ledger)
         else:
             self.ex.require_off("a dip")
@@ -187,6 +219,8 @@ class Cycle:
             self.ledger.append("dip_phase", self.ex.arm, op=self.op_id, index=self.index, phase=phase, status="unplanned",
                                text=str(error), slot=self.dip.cap.slot, q=self.ex.io.measured().tolist())
             raise RuntimeError(f"dip {phase}: {error}") from error
+        if phase == "descend":   # marked once it is planned: an unplanned descent left the tool at the hover (2026-10-24)
+            mark_in_cap(self.ex.arm, {**self.marker, "return_tcp": self.return_tcp.tolist()})
         stages = list(traj.info.get("stages_s", {}).items())
         fault = []
 
@@ -205,16 +239,24 @@ class Cycle:
         try:
             status, _, text = self.ex.io.execute(traj, on_tick=tick,
                                                  should_stop=lambda: self.ex.stopping() or bool(fault))
-        finally:
-            if phase == "dwell":
-                self.ex.machine_off()
+        except BaseException:
+            self.ex.machine_off()
+            raise
+        status, text = self.outcome(phase, status, text, fault)
+        q = self.ex.io.measured()
+        self.ledger.append("dip_phase", self.ex.arm, op=self.op_id, index=self.index, phase=phase, status=status,
+                           text=text, slot=self.dip.cap.slot, q=q.tolist())
+        return status, text
+
+    def outcome(self, phase: str, status: str, text: str, fault: list) -> tuple[str, str]:
+        """An executed goal's (status, text): a tick's fault first, else where it ended (ended). The machine stops
+        here, but for a dwell that ended well and has a drain to run into."""
         if fault:
             status, text = "failed", fault[0]
         elif status == "ok":
             status, text = self.ended(phase) or (status, text)
-        q = self.ex.io.measured()
-        self.ledger.append("dip_phase", self.ex.arm, op=self.op_id, index=self.index, phase=phase, status=status,
-                           text=text, slot=self.dip.cap.slot, q=q.tolist())
+        if phase in RUNNING and not (phase == "dwell" and self.dip.drain_s and status == "ok"):
+            self.ex.machine_off()
         return status, text
 
     def run(self) -> bool:
@@ -224,16 +266,14 @@ class Cycle:
                 return True
             if status != "off" or again:
                 return self.interrupted(phase, status, text)
-            # ended off its place, no tick's fault nor a latch: out and in again once, no key (owner 2026-10-20)
+            # ended off its place, no tick's fault nor a latch: out and in again once, no key (2026-10-20)
             self.ex.event(Event.KIND_ERROR, f"dip {phase}: {text}: withdrawn to dip again", self.op_id)
             self.withdraw()
         return False
 
     def cycle(self) -> tuple[str, str, str]:
         """The dip's phases in turn: (the phase that stopped it, its status, text), or ("return", ok, "")."""
-        for phase in ("approach", *IMMERSED):
-            if phase == "descend":
-                mark_in_cap(self.ex.arm, {**self.marker, "return_tcp": self.return_tcp.tolist()})
+        for phase in ("approach",) if self.dry else self.phases():
             status, text = self.phase(phase)
             if phase == "retract" and status == "ok":
                 clear_in_cap(self.ex.arm)
@@ -242,6 +282,10 @@ class Cycle:
             if phase in ("approach", "descend"):
                 self.look("hover" if phase == "approach" else "dwell")
         return ("return", *self.back())
+
+    def phases(self) -> tuple[str, ...]:
+        """A dip into the cap: the drain between the dwell and the retract when the resource's dip has one."""
+        return ("approach", "descend", "dwell", *(("drain",) if self.dip.drain_s else ()), "retract")
 
     def back(self) -> tuple[str, str]:
         """The return to the page standoff; one that ended off it once the arm settled is planned again from where the

@@ -15,8 +15,8 @@ def bound_program(resource):
     resource.update(tool=tool, rgb=[0, 0, 0], slot=None, dip=None)
     resource['content_sha256'] = canonical_digest(resource)
     value = program()
-    value.update(resources=[resource], substrate='paper_pad')
-    value['preparation']['ink_binding'] = {'mode': 'explicit', 'file_sha256': 'e'*64, 'substrate': 'paper_pad'}
+    value.update(resources=[resource], substrate='silicon_skin')
+    value['preparation']['ink_binding'] = {'mode': 'explicit', 'file_sha256': 'e'*64, 'substrate': 'silicon_skin'}
     value['preparation']['pen_bindings'][0]['resource_id'] = resource['id']
     value['preparation']['content_sha256'] = canonical_digest(value['preparation'])
     value['ops'][0].update(resource_id=resource['id'], activation=resource['activation'])

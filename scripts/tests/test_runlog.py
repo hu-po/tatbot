@@ -16,6 +16,7 @@ Runs from scripts/githooks/pre-commit when the log system is touched.
 import json
 import os
 import re
+from datetime import timedelta
 from pathlib import Path
 
 import tatbot_runlog as rl  # noqa: E402
@@ -154,6 +155,71 @@ def test_prune_refuses_everything_it_does_not_recognise(tmp_path):
     outside.mkdir(parents=True)
     (outside / "meta.json").write_text("{}")
     assert rl.why_not_deletable(outside, tmp_path, "vision", cfg) == "outside the workflow directory"
+
+
+def _aged_run(wf, name, days, *media):
+    run = wf / name
+    run.mkdir(parents=True)
+    ended = (rl._utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    (run / "meta.json").write_text(json.dumps({"status": "ok", "ended_at": ended}))
+    (run / "console.log").write_text("what a citation reads")
+    for path in media:
+        (run / path).parent.mkdir(parents=True, exist_ok=True)
+        (run / path).write_bytes(b"x" * 10)
+    return run
+
+
+def test_prune_strips_media_past_the_window_and_keeps_the_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("TATBOT_LOG_ROOT", str(tmp_path))
+    cfg = rl.load_config()
+    cfg["workflows"]["ros-draw"] = {"keep_days": 365, "keep_runs": 1, "media_days": 14, "media_keep_runs": 1,
+                                    "media": ["bag*", "touches"]}
+    wf = tmp_path / "ros-draw"
+    heavy = ("bag/a.mcap", "bag-2/a.mcap", "touches/t.npz", "touches.txt")
+    expired = _aged_run(wf, "20200101T000000Z-nodeb-0001", 400, *heavy)
+    pinned = _aged_run(wf, "20200101T000000Z-nodeb-0002", 30, *heavy)
+    (pinned / "KEEP").touch()
+    aged = _aged_run(wf, "20200101T000000Z-nodeb-0003", 30, *heavy)
+    recent = _aged_run(wf, "20200101T000000Z-nodeb-0004", 5, *heavy)
+    newest = _aged_run(wf, "20200101T000000Z-nodeb-0005", 30, *heavy)  # media_keep_runs holds it whatever its age
+
+    planned = rl.prune("ros-draw", cfg=cfg, dry_run=True, verbose=False)
+    assert {e["run_id"]: e["bytes"] > 0 for e in planned} == {expired.name: True, aged.name: True}
+    assert (aged / "bag").is_dir() and expired.is_dir()
+
+    assert len(rl.prune("ros-draw", cfg=cfg, dry_run=False, verbose=False)) == 2
+    assert not expired.exists()
+    assert sorted(p.name for p in aged.iterdir()) == ["console.log", "meta.json", "touches.txt"]
+    meta = json.loads((aged / "meta.json").read_text())
+    assert meta["status"] == "ok" and meta["media_bytes_freed"] == 30 and meta["media_pruned_at"]
+    for whole in (pinned, recent, newest):
+        assert (whole / "bag-2/a.mcap").is_file() and (whole / "touches/t.npz").is_file()
+
+    assert rl.prune("ros-draw", cfg=cfg, dry_run=False, verbose=False) == []
+
+
+def test_prune_leaves_adopted_runs_their_own_policy(tmp_path, monkeypatch):
+    monkeypatch.setenv("TATBOT_LOG_ROOT", str(tmp_path))
+    cfg = rl.load_config()
+    cfg["workflows"]["ros-draw"] = {"keep_days": 365, "media_days": 14, "media": ["bag*"]}
+    cfg["workflows"]["adopted"] = {"keep_days": 365}
+    run = _aged_run(tmp_path / "ros-draw", "20200101T000000Z-nodeb-0001", 30, "bag/a.mcap")
+    (run / rl.ADOPTED).write_text("{}")
+    assert rl.prune("ros-draw", cfg=cfg, dry_run=False, verbose=False) == []
+    assert (run / "bag/a.mcap").is_file()
+
+
+def test_a_session_older_than_the_config_finds_nothing_new_to_delete():
+    """`tatbot ros deploy` lands the config under a running session, whose older prune reads only keep_days and
+    keep_runs: were those the media window, its next touch would delete whole runs, text and all."""
+    configs = list((Path(__file__).resolve().parents[2] / "config").glob("**/runlog.json"))
+    assert configs
+    for config in configs:
+        rows = json.loads(config.read_text())["workflows"]
+        for workflow in ("ros-draw", "ros-touch", "ros-stack"):
+            row = rows[workflow]
+            assert row["media"] and row["keep_days"] >= 90 and row["keep_runs"] >= 500, config
+            assert row["media_days"] < row["keep_days"] and row["media_keep_runs"] < row["keep_runs"], config
 
 
 def test_legacy_workflow_is_disabled_by_default():

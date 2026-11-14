@@ -3,7 +3,8 @@
 A program is one arm's drawing on one page: its resources (a tool, an ink and how the ink is supplied) and its ordered
 ops. `tool_change` puts a resource on the arm (the first, `initial`, is the one the run starts with), `dip` refills a
 dipping resource at its palette cap, and `stroke` is one pen-down polyline in page metres with the resource that draws
-it and its source in the acquired artwork (src, arc_m). validate_for_execution refuses what the executor cannot run:
+it and its source in the acquired artwork (src, arc_m), with a `deposition` per point when it fades (a build before
+deposition ignores it and draws the stroke at full depth). validate_for_execution refuses what the executor cannot run:
 an unknown op or resource, an op whose resource is not the one its tool change fitted, a stroke off the page's clear
 area, a dip without its cap and profile, a writing lift over 3 mm. How the compiler got there (bindings, source arcs,
 provenance) is tatbot_ink's to test, not the robot's to re-check.
@@ -20,43 +21,101 @@ from .dip import validate_dip, validate_rinse
 FORMAT = 'tatbot-program'
 VERSION = 2
 OPS = ('tool_change', 'dip', 'stroke')
+ARMS = ('right', 'xarm')   # the arms the ROS stack drives (tatbot_description.names.ARMS; a test keeps them equal)
 DIAGNOSTIC = 'native-diagnostic-to-ros/2'   # directly authored calibration shapes, not DBV3 artwork
+
+
+ENDS = ('stop', 'fly')   # how a stroke's ends are drawn (motion.yaml draw.ends; a program's draw_ends over it)
 
 
 HOVER_M = (0.003, 0.020)   # a rehearsal's hover over the measured page (the session also keeps a needle's reach clear)
 
 
-def rehearsal(program, height_m=None):
+def rehearsal(program, height_m=None, dip_slot=None, real_dips=False):
     """The same program drawn in the air: every resource's pen held `height_m` (else motion.yaml pen.hover.height_m)
     over the measured page with the tattoo machine off (pen_mode hover), no palette cap and no dip op, so the page
     setup, the gauge holds, the hover stops, the stencil's follow and every stroke run as they will with ink, and
     nothing touches the skin. Resources of one tool become one ink (it carries none), so their tool changes go on
-    without landing; a writing height reference is dropped. The source program's digest is kept as `rehearsal.of`;
-    validated as any program."""
+    without landing; a writing height reference is dropped. With `dip_slot` (a palette cap) every dip op stays and
+    every dipping resource dips at that cap, dry (tatbot_session.cap: to its hover and back, the machine off). With
+    `real_dips` every resource keeps its own cap, ink and rinse, and each dip and rinse goes into its cap as it will
+    with ink (`dip_in_cap`), the machine off: the dips practised over empty caps. The source program's digest is
+    kept as `rehearsal.of`; validated as any program."""
     import copy
 
+    if real_dips and dip_slot is not None:
+        raise ValueError('a rehearsal dips dry at one cap or into each resource\'s own, not both')
     out = copy.deepcopy(program)
     first = out['resources'][0] if out.get('resources') else None
     for resource in out.get('resources', []):
-        resource.update(pen_mode='hover', slot=None, dip=None)
-        resource.pop('ride_fraction', None)
-        if (resource.get('activation') or {}).get('method') == 'rinse':
-            resource['activation'] = {'method': 'manual', **resource['tool'].get('cartridge_activation',
-                                                                                 {'action': 'exchange'})}
-        if first is not None and resource['tool']['id'] == first['tool']['id']:
-            resource['ink_id'] = first['ink_id']
-        if height_m is not None:
-            resource['hover_height_m'] = float(height_m)
-    out['ops'] = [op for op in out['ops'] if op['op'] != 'dip']
+        _hover(resource, height_m)
+        if real_dips:
+            resource['dip_in_cap'] = resource.get('dip') is not None
+        else:
+            _without_ink(resource, first, dip_slot)
+    if not real_dips:
+        out['ops'] = [{**op, 'slot': dip_slot} if op['op'] == 'dip' else op for op in out['ops']
+                      if op['op'] != 'dip' or dip_slot is not None]
     out.pop('writing_height_reference', None)   # a writing reference sets the pen's height from a run: not a hover's
     for op in out['ops']:
         if op['op'] == 'tool_change' and 'activation' in op:
             op['activation'] = next(r['activation'] for r in out['resources'] if r['id'] == op['resource_id'])
     if isinstance(out.get('stats'), dict):
-        out['stats'] = {**out['stats'], 'dips': 0}
-    out['rehearsal'] = {'of': program_sha256(program), 'height_m': None if height_m is None else float(height_m)}
+        out['stats'] = {**out['stats'], 'dips': sum(op['op'] == 'dip' for op in out['ops'])}
+    out['rehearsal'] = {'of': program_sha256(program), 'height_m': None if height_m is None else float(height_m),
+                        **({'dip_slot': dip_slot} if dip_slot is not None else {}),
+                        **({'real_dips': True} if real_dips else {})}
     validate_for_execution(out)
     return out
+
+
+def started_at(program, trim_m):
+    """The program with its run starting every cartridge at `trim_m`, the operator's pen trim without the race for the
+    keys between the page set-up and the first stroke: the executor writes it as a pen_trim row, which a resume keeps."""
+    import copy
+
+    out = copy.deepcopy(program)
+    out['start_trim_m'] = float(trim_m)
+    validate_for_execution(out)
+    return out
+
+
+def ends_drawn(program, ends):
+    """The program with its run drawing every stroke's ends `ends` (ENDS), whatever the stack's motion.yaml draw.ends
+    says: `tatbot ros draw --ends`. Its stats, the dose among them, stay as it was prepared."""
+    import copy
+
+    out = copy.deepcopy(program)
+    out['draw_ends'] = ends
+    validate_for_execution(out)
+    return out
+
+
+def _hover(resource, height_m):
+    """A rehearsal's resource: its pen held over the page, at `height_m` when given, the machine off."""
+    resource['pen_mode'] = 'hover'
+    resource.pop('ride_fraction', None)
+    if height_m is not None:
+        resource['hover_height_m'] = float(height_m)
+
+
+def _without_ink(resource, first, dip_slot):
+    """No cap but `dip_slot`'s (dry dips) and no rinse, and the ink of the first resource on the same tool, so a
+    rehearsal's tool changes between them go on without landing."""
+    dry = dip_slot is not None and resource.get('dip') is not None
+    resource.update(slot=dip_slot if dry else None, dip=resource['dip'] if dry else None)
+    if (resource.get('activation') or {}).get('method') == 'rinse':
+        resource['activation'] = {'method': 'manual', **resource['tool'].get('cartridge_activation',
+                                                                             {'action': 'exchange'})}
+    if first is not None and resource['tool']['id'] == first['tool']['id']:
+        resource['ink_id'] = first['ink_id']
+
+
+def cartridge(resource) -> str:
+    """The cartridge a resource draws with, which owns the operator's pen trim: its tool. Every colour a rinse takes
+    one cartridge to shares it, so a depth trim carries across them (2026-11-02). A resource with no tool
+    record is its own."""
+    return (resource.get("tool") or {}).get("id") or resource["id"]
 
 
 def program_sha256(program):
@@ -89,12 +148,12 @@ def _id(value, name):
 
 
 def _validate(program):
-    if program['arm'] != 'right':
+    if program['arm'] not in ARMS:
         raise ValueError('the program names no drawing arm')
     _number(program['draw_speed_m_s'], 'draw_speed_m_s')
     page = program['page']
-    if page['kind'] not in ('plane', 'stencil') or any(c > s for c, s in zip(page['clear_m'], page['size_m'], strict=True)):
-        raise ValueError('the page must be flat with its clear area inside it')
+    if page['kind'] != 'stencil' or any(c > s for c, s in zip(page['clear_m'], page['size_m'], strict=True)):
+        raise ValueError('the page must be a stencil print with its clear area inside it: prepare it again')
     resources = {}
     for resource in program['resources']:
         if _id(resource['id'], 'resource id') in resources:
@@ -102,6 +161,12 @@ def _validate(program):
         _resource(resource)
         resources[resource['id']] = resource
     _writing_reference(program)
+    if 'start_trim_m' in program:
+        start = program['start_trim_m']
+        if type(start) not in (int, float) or not math.isfinite(start):
+            raise ValueError('start_trim_m must be a finite number')
+    if program.get('draw_ends', ENDS[0]) not in ENDS:
+        raise ValueError(f"draw_ends must be one of {', '.join(ENDS)}")
     _ops(program['ops'], resources, page)
     if program['preparation']['adapter'] == DIAGNOSTIC:
         first = resources[program['ops'][0]['resource_id']]
@@ -125,6 +190,7 @@ def _ops(ops, resources, page):
             raise ValueError(f"op {op['id']} names no resource of the program")
         resource = resources[op['resource_id']]
         if op['op'] == 'tool_change':
+            _wipe(op, resource, None if fitted is None else resources[fitted])
             fitted = resource['id']
         elif resource['id'] != fitted:
             raise ValueError(f"op {op['id']} uses {resource['id']}, but its tool change fitted {fitted}")
@@ -133,6 +199,18 @@ def _ops(ops, resources, page):
                 raise ValueError(f"dip {op['id']}: {resource['id']} dips at no cap or not at {op['slot']}")
         else:
             _stroke(op, resource, page)
+
+
+def _wipe(op, resource, previous):
+    """A tool change may carry `wipe: true`, the operator wiping the print before the resource draws: only where the
+    arm lands for it, a manual exchange to another tool or ink."""
+    if 'wipe' not in op:
+        return
+    lands = (previous is not None and (resource.get('activation') or {}).get('method') == 'manual'
+             and (previous['tool']['id'], previous['ink_id']) != (resource['tool']['id'], resource['ink_id']))
+    if op['wipe'] is not True or not lands:
+        raise ValueError(f"tool change {op['id']}: a wipe is `wipe: true` on a manual exchange to another tool or ink, "
+                         "where the arm lands")
 
 
 def riding_keys(tool) -> tuple[str, ...]:
@@ -171,9 +249,21 @@ def _stroke(op, resource, page):
     if len(points) < 2 or any(len(p) != 2 or any(type(v) not in (int, float) or not math.isfinite(v) for v in p)
                               for p in points):
         raise ValueError(f"stroke {op['id']} needs a finite 2D polyline")
+    if 'deposition' in op:
+        _deposition(op, resource)
     radius = max(resource['tool'].get('line_width_m') or 0., op['generation_width_m']) / 2
     if any(abs(v) + radius > c / 2 + 1e-9 for p in points for v, c in zip(p, page['clear_m'], strict=True)):
         raise ValueError(f"stroke {op['id']}: its line leaves the page's clear area")
+
+
+def _deposition(op, resource):
+    """A fading stroke: one share of full ink per point, in [0, 1], drawn by a tool whose fade lift is known (its
+    datasheet's fade_lift_mm: deposition 0 rides that much higher)."""
+    shares = op['deposition']
+    if not isinstance(shares, list) or len(shares) != len(op['points_m']) or any(
+            type(v) not in (int, float) or not 0 <= v <= 1 for v in shares):
+        raise ValueError(f"stroke {op['id']} needs one deposition in [0, 1] per point")
+    _number(resource['tool'].get('fade_lift_mm'), f"{resource['id']}: the fade_lift_mm of a tool drawing deposition")
 
 
 def _writing_reference(program):

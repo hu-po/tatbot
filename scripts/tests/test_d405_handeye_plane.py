@@ -4,21 +4,30 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 
+import arm_model
 import d405_handeye_plane as handeye
 import kinematic_calibration
 import numpy as np
 import pytest
 from urdf_kinematics import UrdfChain
 
-# 2026-10-04's adopted pink offsets: the test's own, whatever config/workspace.yaml holds today.
+# 2026-10-04's adopted WXAI follower offsets: the test's own, whatever config/workspace.yaml holds today.
 OFFSETS = [0., .0098, .0003, -.0195, -.0023, 0., 0.]
 JOINTS = np.array([.1, .9, .6, -.4, .2, .3])
+# The WXAI wrist's D405s as the tool binds them while they ride it (vision.toml); they are the xArm's since 2026-11-08.
+PINK = {'wrist_2': 'right/realsense_depth_optical_frame', 'wrist_1': 'right/realsense_lower_depth_optical_frame'}
+
+
+@pytest.fixture(autouse=True)
+def pink_wrist(monkeypatch):
+    monkeypatch.setattr(handeye, 'OPTICAL_FRAME', PINK)
+    monkeypatch.setattr(handeye, 'MOUNT_JOINT', dict.fromkeys(PINK, 'right/realsense_mount_joint'))
 
 
 def calibrated_chain(tmp_path, offsets):
     """urdf/tatbot.urdf as the drawing stack carries it: joint origins turned by the encoder-zero offsets."""
     tree = ET.parse(handeye.URDF)
-    kinematic_calibration.apply_origins(tree.getroot().findall('joint'), 'right', offsets)
+    kinematic_calibration.apply_origins(tree.getroot().findall('joint'), 'right', offsets, arm_model.for_arm('right'))
     tree.write(tmp_path / 'calibrated.urdf')
     return UrdfChain(tmp_path / 'calibrated.urdf')
 
@@ -65,6 +74,6 @@ def test_link6_is_the_calibrated_model_at_the_measured_joints(tmp_path, monkeypa
 
 def test_a_yaw_joint_offset_is_refused(tmp_path, monkeypatch):
     workspace(tmp_path, monkeypatch, [.01, *OFFSETS[1:]])
-    with pytest.raises(ValueError, match='joints 1-4'):
+    with pytest.raises(ValueError, match='nonzero only on joints 1, 2, 3, 4'):
         handeye.run([captures(tmp_path)], tmp_path / 'out', .5, None, handeye.URDF)
     assert not (tmp_path / 'out').exists()

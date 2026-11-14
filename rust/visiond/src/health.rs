@@ -55,10 +55,6 @@ impl SensorHealth {
         self.snapshot.last_host_monotonic_ns = Some(host_monotonic_ns);
     }
 
-    pub fn frame_dropped(&mut self, count: u64) {
-        self.snapshot.frames_dropped += count;
-    }
-
     pub fn error(&mut self, error: impl Into<String>) {
         let error = error.into();
         if self.errors.len() == self.error_limit {

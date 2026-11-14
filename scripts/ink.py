@@ -80,7 +80,7 @@ def cmd_status(args) -> int:
         else:
             name = inks[sl.ink_id].display_name if sl.ink_id in inks else f"?{sl.ink_id}"
             state = f"{name} {sl.fill_ul:.0f}/{usable:.0f} uL ({100 * sl.fill_ul / usable:.0f}%)"
-        print(f"  {slot_id:24s} {slot.size.size_id:6s} {slot.arm:5s} {state}")
+        print(f"  {slot_id:24s} {slot.size.size_id:6s} {state}")
     print("\nbottles:")
     for bid, b in inv["bottles"].items():
         rem = "?" if b.get("remaining_ml") is None else f"{b['remaining_ml']:.0f}"
@@ -415,7 +415,7 @@ def cmd_mise(args) -> int:
         need = ink_spec.need_from_polylines(polys, pol, args.speed_mm_s / 1000.0)
         needs[args.ink] = needs.get(args.ink, 0.0) + need
         print(f"program {args.program}: {len(polys)} strokes -> {need:.0f} uL of {args.ink}")
-    items = ink_spec.mise_en_place(pol, palette, load, inks, inv, needs, tool_id=tool.tool_id, arm=args.arm)
+    items = ink_spec.mise_en_place(pol, palette, load, inks, inv, needs, tool_id=tool.tool_id)
     print(f"mise en place — {tool.tool_id} ({pol.mode}), needs "
           + (", ".join(f"{k} {v:.0f} uL" for k, v in needs.items()) or "nothing declared"))
     marks = {"fill": "[ ]", "refill": "[ ]", "dump": "[ ]", "cartridge": "[ ]", "weigh": "[ ]",
@@ -439,8 +439,8 @@ def cmd_plan(args) -> int:
         ink = parts[2] if len(parts) > 2 else None
         needs.append(ink_spec.StrokeNeed(mm, s, ink))
     try:
-        ink_spec.require_supply(pol, palette, load, needs_ink=True, arm=args.arm, tool_id=tool.tool_id)
-        plans = ink_spec.plan_dips(needs, pol, palette, load, arm=args.arm, tool_id=tool.tool_id)
+        ink_spec.require_supply(pol, palette, load, needs_ink=True, tool_id=tool.tool_id)
+        plans = ink_spec.plan_dips(needs, pol, palette, load, tool_id=tool.tool_id)
     except ink_spec.InkSupplyError as exc:
         return _die(str(exc))
     total = sum(pol.stroke_ul(n.contact_mm, n.contact_s) for n in needs)
@@ -586,7 +586,6 @@ def main(argv=None) -> int:
     p = sub.add_parser("mise-en-place")
     p.set_defaults(fn=cmd_mise)
     _tool_arg(p)
-    p.add_argument("--arm", default="right")
     p.add_argument("--need", nargs="*", metavar="INK=UL", help="session need per ink, microlitres")
     p.add_argument("--ink", help="with --strokes-mm: the one ink the session draws with")
     p.add_argument("--strokes-mm", type=float, help="estimate the need from planned stroke length")
@@ -601,7 +600,6 @@ def main(argv=None) -> int:
     p = sub.add_parser("plan")
     p.set_defaults(fn=cmd_plan)
     _tool_arg(p)
-    p.add_argument("--arm", default="right")
     p.add_argument("--strokes", nargs="+", required=True, metavar="MM,S[,INK]")
 
     p = sub.add_parser("sync")

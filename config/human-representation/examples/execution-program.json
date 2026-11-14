@@ -510,7 +510,7 @@
     "captured_utc": "2026-09-04T01:09:37Z",
     "sha256": "c94919d7f2ce44ff1d9768c9cde0cc742caccf0147893d8fc1b312e61a09e5ce"
   },
-  "content_sha256": "016109a49a75d458c781f04ff44406776b529a52ff9b5610c6b73d1ae4627e36",
+  "content_sha256": "bc97bbc71eeb585deb0ade22df327392cf9b518c1e29886a3b8d943218e5cdea",
   "exact_events": [
     {
       "ink_event_index": 1,
@@ -523,14 +523,14 @@
   ],
   "ink_program": {
     "compiler_sha256": "d22cb7b3c94214261230f0b94b286d4bcfcb0bca3079807af89981b9bfeff912",
-    "content_sha256": "e5b402eb0cbd7d1a40ef064d50407c637b5aef4261621ea8118c718ec373943f",
+    "content_sha256": "232fd62e3d35d0a94b9792467f0effc7c89914e3602c55052cb6e461c417d06c",
     "events": [
       {
         "kind": "pen_transition",
         "state": "approach"
       },
       {
-        "allowed_tool_class": "ballpoint",
+        "allowed_tool_class": "tattoo-needle",
         "contact_envelope_m": [
           -0.0002,
           0.0002
@@ -587,7 +587,7 @@
       },
     {
       "kind": "tool_change",
-      "required_tool_class": "ballpoint",
+      "required_tool_class": "tattoo-needle",
       "transition_intent": "fixture-only explicit transition"
       },
       {
@@ -794,9 +794,9 @@
     "target_frame": "observed_patch"
   },
   "tool": {
-    "class": "ballpoint",
+    "class": "tattoo-needle",
     "datasheet_sha256": "45ec7cab30d3863afa5e5fd5f57f4a2449d4a4d2dc5061c862c5b469ac760ca4",
-    "id": "fixture-ballpoint"
+    "id": "fixture-needle"
   },
   "uncertainty": {
     "registration_sigma_m": 1e-05,

@@ -58,20 +58,21 @@ else
   C_PASS=''; C_FAIL=''; C_SKIP=''; C_DIM=''; C_OFF=''
 fi
 
-ALL_JOBS=(lint-py lint-sh complexity cli nodes tools motion-constants rerun-caps body-single-path disclosure export plans schemas ros-budget cpp rust ros tests tests-integration plugin surface web inkgen docs deps-audit)
+ALL_JOBS=(lint-py lint-sh complexity cli nodes tools motion-constants rerun-caps body-single-path disclosure export plans schemas ros-budget cpp rust ros tests tests-integration plugin surface web inkgen docs deps-audit export-skips)
 declare -A JOB_DESC=(
   [lint-py]="ruff over tracked Python"
   [lint-sh]="shellcheck over tracked shell"
   [complexity]="no Python function is more complex than config/complexity-debt.tsv records"
   [cpp]="cpp/teleop: cmake build + ctest"
   [ros]="ROS session developer tests; --full: every ROS package and slow test (cached colcon build; SKIP without Jazzy)"
-  [ros-budget]="ros/: <=23,867 lines of code, <=8 custom interfaces, <=3 launch files"
+  [ros-budget]="ros/: lines of code, custom interfaces and launch files within scripts/lib/ros_budget.py's budget"
   [rust]="one workspace build with every feature this node has: clippy, every test once (--full: each deployed vision profile also builds alone)"
   [tests]="scripts/tests offline profile (--light: core dependencies only)"
   [tests-integration]="LeRobot-dependent scripts tests in the plugin environment (heavy)"
   [plugin]="python/lerobot_robot_tatbot tests"
   [surface]="python/tatbot_surface: the torch-free body-surface readers Inkmap and sim 2.0 share (numpy and scipy only)"
   [docs]="sphinx build -W"
+  [export-skips]="the scripts tests in a fresh public export: no failure and no skip release validation's export-python suite refuses (not in the fast tier)"
   [deps-audit]="every locked or pinned dependency against OSV; advisories past config/deps-audit-allow.tsv fail (network; not in the fast tier)"
   [web]="web/inkmap: typecheck + core tests + vite build"
   [inkgen]="web/inkgen: the generator's idle-stop timer (no model, no GPU)"
@@ -463,12 +464,13 @@ job_rerun_caps() {
 # retired representation. Keep the historical asset digests here so a renamed
 # binary or copied JSON fixture cannot evade the textual/model-id checks.
 body_single_path_impl() {
-  local rc=0 path lower digest
+  local rc=0 path lower digest pattern
   local plan=""
   local legacy='HBM|hbm|hbm-humanoid-v1|0234fb725eae99eae4a1b56fb90893c7a03bcef5d3a14a2ead6eff70f0158a30|908f868a135c7c429d27acc7c7c253dcad3eeb0707159346bd6e0028b1b8eff3|a666e6642b8805af244d0058a243953a6428500cb79bd711beaec31cd65ca211|1f82950b85a77c80f60c389fd0f06b6ce69f248825adff2351b0e1ef9c1aa125|a5e31a6c51eb3e33395f898d017a7a05eecf58a3351d250d18eb407a5879cfaa|1c4685faa6c3ffcf1507c3860794208bb87ca008438134d9bb3df6ca7c4637ba'
-  # Bundles contain base64-encoded WASM, where a case-insensitive three-byte
-  # substring such as "hbm" occurs by chance. Require a retired model name or
-  # digest in generated output; the source/path scan above remains stricter.
+  # Bundles contain base64-encoded WASM and robot renders base64 PNGs, where a
+  # case-insensitive three-byte substring such as "hbm" occurs by chance. Require
+  # a retired model name or digest in generated output; the source/path scan
+  # above remains stricter.
   local legacy_bundle='hbm-(female|male)-stylized|hbm-humanoid-v1|0234fb725eae99eae4a1b56fb90893c7a03bcef5d3a14a2ead6eff70f0158a30|908f868a135c7c429d27acc7c7c253dcad3eeb0707159346bd6e0028b1b8eff3|a666e6642b8805af244d0058a243953a6428500cb79bd711beaec31cd65ca211|1f82950b85a77c80f60c389fd0f06b6ce69f248825adff2351b0e1ef9c1aa125|a5e31a6c51eb3e33395f898d017a7a05eecf58a3351d250d18eb407a5879cfaa|1c4685faa6c3ffcf1507c3860794208bb87ca008438134d9bb3df6ca7c4637ba'
   while IFS= read -r path; do
     [[ -f "$path" ]] || continue
@@ -478,7 +480,9 @@ body_single_path_impl() {
       echo "$path: retired body token remains in a filename"
       rc=1
     fi
-    if grep -IEiq "$legacy" "$path"; then
+    pattern=$legacy
+    [[ "$path" == web/inkmap/public/designs/renders/*.json || "$path" == web/inkmap/tests/fixtures/render.json ]] && pattern=$legacy_bundle
+    if grep -IEiq "$pattern" "$path"; then
       echo "$path: retired body token, model ID, or asset digest remains"
       rc=1
     fi
@@ -891,7 +895,7 @@ job_plugin() {
 # body assets, the pose catalog and the placement and artwork fixtures.
 surface_guard() {
   printf '%s\n' python/tatbot_surface python/tatbot_contracts config/inkmap \
-    web/inkmap/public/bodies web/inkmap/public/designs
+    web/inkmap/public/bodies config/sim2/acquired
 }
 
 # The readers' own environment, nothing else installed: their import-boundary
@@ -940,6 +944,13 @@ job_deps_audit() {
   have python3 || { skip deps-audit "python3 not installed"; return; }
   local RUN_JOB_SKIP_EXIT=2   # OSV unreachable
   run_job deps-audit python3 scripts/deps_audit.py
+}
+
+# The export-python suite's skip policy and failures, an hour before release validation finds them.
+job_export_skips() {
+  have uvx || { skip export-skips "uvx not installed"; return; }
+  [[ -d internal/ci ]] || { skip export-skips "no private CI policy in this checkout"; return; }
+  run_job export-skips python3 scripts/export_scan.py skips
 }
 
 job_inkgen() {
@@ -1000,6 +1011,7 @@ for j in "${WANT[@]}"; do
     web)     job_web ;;
     inkgen)  job_inkgen ;;
     deps-audit) job_deps_audit ;;
+    export-skips) job_export_skips ;;
     docs)    job_docs ;;
     *)       "job_${j//-/_}" ;;  # a pack's job; the pack hook checked the function exists
   esac

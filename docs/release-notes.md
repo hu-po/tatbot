@@ -1,5 +1,98 @@
 # Release Notes
 
+## 2026-11-13 — v0.12.0
+
+### A Second Drawing Arm: the UFACTORY xArm 7
+
+The ROS 2 stack now drives a UFACTORY xArm 7 as well as the Trossen WXAI. An
+arm's joints, rest pose, limits, carriage and command delay come from an arm
+model in `config/arm-models/`, and `config/arms.json` names each arm's model;
+the description, planner, calibration and orchestrator read the chain from it
+instead of assuming seven WXAI joints. `tatbot_hardware` has an `XArmBackend`
+that runs the arm in servo mode through UFACTORY's SDK, its own parser for
+the controller's report streams, and a fake arm that answers with the real
+one's measured delay. CLIK spends the longer chain's self-motion on the
+model's posture through the task's null space. The xArm carries a printed end
+effector with both wrist D405s, registers to the overhead D555 through its
+tag cube, and draws with `tatbot ros draw --arm xarm`.
+
+### Ink: Cartridges, Dose and Order
+
+The fitted cartridge and its measured tip are a record on the drawing arm's
+ROS owner (`tatbot ros cartridge fit|status`), and each wrist D405 is
+calibrated on its own. A cartridge is rinsed in the water cap between inks,
+keeps one pen trim through the rinse, and holds its first dip of a new ink
+for twice the dwell. The compile refuses a lighter ink over a darker one's
+mark, reports the line each dip draws against the tool's `mm_per_dip`, writes
+a dose for every point and shades its preview by it, and budgets how much of
+a stencil's markers a design's ink will cover. Stroke ends can be drawn
+moving (`--ends fly`), a stroke's deposition can fade by lifting the pen, and
+a 7RL datasheet joins the tools. Before a person's first dip the pen holds at
+the first stroke so the depth can be set by key; the depth keys trim within
+3.3 mm.
+
+### Tracking a Page That Moves
+
+A shoved sheet is read through the pen's descent, a jump that holds stops
+the stroke, and a move two wrist readings agree on moves the page. A
+reading's markers give the filter the sheet's turn as well as its place.
+Several sheets of one print can share the table: the bridge tells the page
+from its spares by where it stands. `tatbot ros views` photographs chosen
+page points from close-up holds with each wrist camera and the overhead.
+
+### The Lab
+
+`tatbot lab` runs studies of what the rig can tattoo. A study fixes a print
+and bounds the settings its trials may vary; a plan lays trials out in cells
+and writes the runs `tatbot ros draw` draws; `lab capture` and `lab read`
+photograph and measure each cell with the rig's own cameras. A search keeps
+an archive of the marks reached and proposes the next batch. It replaces
+`tatbot research` (`docs/lab.md`).
+
+### Art Pipeline
+
+`tatbot art` and `python/tatbot_art` take a flat-colour image to something
+the robot can draw: an ink catalogue with swatches and predicted renders,
+separation into per-ink DrawingBotV3 layers, offset fills that draw each
+region one pass per mark, whip and pendulum shading, bundles that place
+several designs on one page with one cap map, and a voting wall for rounds of
+proposed designs (`docs/art.md`). The repository ships agent skills for
+colour, DrawingBotV3 recipes and three tattoo styles under `.claude/skills/`.
+
+### Inkmap and Inkgen
+
+Inkmap places a colour design as one layer set, shows the robot's render on
+the body before approval, estimates time, dips and lost detail while sizing,
+says which stencil a size fits, and exports a tattoo brief that `tatbot art`
+separates at its placed width. The paper and cylinder editors are removed.
+Inkgen supports bring-your-own-key image providers.
+
+### Simulator
+
+`tatbot_sim2`'s core takes an arm from its arm model, renders the wrist and
+overhead cameras as sensors of its scene, and prints the rig's tracking
+stencil on a skin that can move, stretch, shear or be shoved while a stroke
+draws. The stack's own stencil tracker reads those frames, so a whole
+tracked run can be traced offline, with depth noise, dropout and blackouts
+as camera faults. Mounts are fixtures of any shape.
+
+### Hardware
+
+The installed palette is a merged print with seventeen caps and its own
+fiducial, and the repository carries its CAD along with the xArm end
+effector, the dual-D405 bracket and half-skin mounts. `tatbot rig check`
+reports each host's CPU governor and whether a wrist D405 may autosuspend.
+
+### Retired
+
+The ballpoint tool and the paper substrates, `tatbot research`, Inkmap's
+paper and cylinder editors, the surface-tracing simulator scene and the ROS
+stack's line-of-code cap are deleted.
+
+### Security
+
+The plugin's filelock is updated for a published advisory.
+
 ## 2026-10-24 — v0.11.0
 
 ### Drawing on Curved Skin

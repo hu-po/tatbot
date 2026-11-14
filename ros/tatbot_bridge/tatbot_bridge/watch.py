@@ -1,7 +1,8 @@
-"""`ros2 run tatbot_bridge page_watch [--seconds 30] [--arm right] [--json]`: the stencil page as the
+"""`ros2 run tatbot_bridge page_watch [--seconds 30] [--arm ARM] [--json]`: the stencil page as the
 bridge would see it, without ROS: subscribe (read only) to tatbot/tracking/target/<pattern_id> on the
 tatbot bus for a while and print each sample's page pose in world and in <arm>/base_link through the
-arm's adopted registration. Bench runbook step 6 ("the stencil pose appears in right/base_link").
+arm's adopted registration, with the bridge's choice among several sheets of the print and where the
+others stand. Bench runbook step 6 ("the stencil pose appears in right/base_link").
 """
 from __future__ import annotations
 
@@ -39,10 +40,24 @@ def describe(sample: dict, world_from_arm_base, now_ns: int) -> dict:
     return row
 
 
+def sheet_rows(sheets: list[dict], chosen: dict | None, world_from_arm_base) -> list[dict]:
+    """Each sheet of the print in view: where its centre stands in the arm's base and how far from the arm, the markers
+    read, and whether it is the page (this watch's choice, started where the bridge's starts)."""
+    rows = []
+    for sheet in sheets:
+        row = {"markers": (sheet["support"].get("markers") or {}).get("read"), "page": sheet is chosen}
+        if world_from_arm_base is not None:
+            bfp = page.base_from_page(world_from_arm_base, sheet["world_from_target"])
+            row["arm_mm"] = round(float(np.linalg.norm(bfp[:3, 3])) * 1000)
+            row["base_xy_mm"] = np.round(bfp[:2, 3] * 1000, 1).tolist()
+        rows.append(row)
+    return rows
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="page_watch", description=__doc__.split("\n\n")[0])
     ap.add_argument("--seconds", type=float, default=30.0)
-    ap.add_argument("--arm", default="right")
+    ap.add_argument("--arm", default="", help="default: the drawing arm (stack.yaml arms)")
     ap.add_argument("--config", default="", help="stack.yaml (default: the installed one)")
     ap.add_argument("--pattern-id", default="", help="default: stack.yaml page.pattern_id")
     ap.add_argument("--registration", default="", help="arm-registration-<arm>-current.json (default: stack.yaml registration.<arm>)")
@@ -50,6 +65,7 @@ def main(argv=None) -> int:
     ap.add_argument("--json", action="store_true", help="one JSON line per sample, then a summary line")
     a = ap.parse_args(argv)
     cfg = stack.load(a.config)
+    a.arm = a.arm or cfg["arms"][0]
     pattern_id = a.pattern_id or cfg["page"]["pattern_id"]
     if a.registration:
         cfg.setdefault("registration", {})[a.arm] = a.registration
@@ -60,11 +76,15 @@ def main(argv=None) -> int:
     print(f"# {page.topic(pattern_id)} on {endpoint} for {a.seconds:g} s (read only); registration "
           f"{reg_path if wfb is not None else 'absent'}", file=sys.stderr)
     rows, lock = [], threading.Lock()
+    chooser = stack.page_chooser(cfg, {a.arm: wfb})
 
     def on_sample(zsample):
         sample = page.parse(zsample.payload.to_bytes(), pattern_id)
         if sample is not None:
-            row = describe(sample, wfb, time.time_ns())
+            sheets = page.copies(sample) if sample["source"] == "measured" else []
+            chosen = chooser.choose(sheets) if sheets else None
+            shown = chosen or {**sample, "source": "lost", "world_from_target": None}
+            row = {**describe(shown, wfb, time.time_ns()), "sheets": sheet_rows(sheets, chosen, wfb)}
             with lock:
                 rows.append(row)
             print(json.dumps(row) if a.json else

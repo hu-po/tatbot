@@ -20,7 +20,6 @@ from tatbot_cli.verbs import (  # noqa: F401
     hardware,
     ink,
     live,
-    research,
     rig,
     rollout,
     ros,

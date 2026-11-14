@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useStore, type ShowcaseSlide } from "../store.ts";
 
 interface ShowcaseManifest {
-  schema_version: 3;
+  schema_version: 5;
   title: string;
   source_commit: string;
   generated_at: string;
@@ -102,7 +102,7 @@ export function ShowcasePanel() {
               {focus ? "full body overview" : "focus tattoo site"}
             </button>
           </div>
-          <p className="hash">artwork {shown.artwork_sha256.slice(0, 16)}…</p>
+          <p className="hash">art {shown.artwork_sha256.slice(0, 16)}…</p>
         </section>
       )}
 

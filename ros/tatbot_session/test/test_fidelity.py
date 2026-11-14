@@ -14,7 +14,7 @@ BORDER = {'scale': [1, 1], 'theta_rad': 0, 'tx_m': 0, 'ty_m': 0, 'sigma': [.0000
 @pytest.fixture
 def drawing():
     p = {'resources': [{'id': 'B', 'tool': {'line_width_m': .0005, 'line_width_status': 'measured'}}], 'design': {'at_m': [0, 0]},
-         'research': {'slot_m': [.026, .026]}, 'ops': [{'op': 'stroke', 'resource_id': 'B', 'closed': False, 'generation_width_m': .0005,
+         'page': {'clear_m': [.026, .026]}, 'ops': [{'op': 'stroke', 'resource_id': 'B', 'closed': False, 'generation_width_m': .0005,
           'src': {'placement': 'p', 'path': 'one'}, 'points_m': [[-.007, -.006], [.006, -.003], [.004, .008], [-.004, .003]]}]}
     mask, _, _ = _expected(p, (320, 320), EXTENT, PPM)
     image = np.full((320, 320), 255, np.uint8)
@@ -49,7 +49,7 @@ def test_missing_ink_and_thick_smear_do_not_win(drawing):
     assert smear['observed_width_proxy_mm'] > result['observed_width_proxy_mm']
 
 
-def test_other_slot_marks_are_excluded_and_unseen_paper_is_invalid(drawing):
+def test_marks_outside_the_clear_area_are_excluded_and_unseen_paper_is_invalid(drawing):
     other = drawing[1].copy()
     other[230:260, 220:255] = 0
     assert score(drawing, other) == score(drawing)
@@ -115,7 +115,7 @@ def test_placement_beyond_two_millimetres_is_measured_not_mistaken_for_missing_i
     np.testing.assert_allclose(result['placement_error_m'], [.0015, -.004])
 
 
-def test_blurred_mid_grey_ballpoint_lines_are_ink(drawing):
+def test_blurred_mid_grey_lines_are_ink(drawing):
     """At ~3.7 px/mm a 0.5 mm line reads 0.54-0.79 of the paper around it, not black."""
     faint = cv2.GaussianBlur(np.where(drawing[1] == 0, 140, 235).astype(np.uint8), (0, 0), 1.0)
     result = score(drawing, faint)
@@ -149,9 +149,3 @@ def test_overlapping_resources_remain_unattributable(drawing):
     assert result['valid'] and result['iou'] == 1
     assert all(v['metrics'] is None and v['unique_footprint_fraction'] == 0 for v in result['per_resource'].values())
 
-
-def test_resource_inspection_without_research_uses_page_clear_area(drawing):
-    program, image = copy.deepcopy(drawing)
-    del program['research']
-    program['page'] = {'clear_m': [.026, .026]}
-    assert score((program, image))['iou'] == 1

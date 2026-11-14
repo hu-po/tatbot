@@ -121,6 +121,16 @@ def test_the_real_arm_senses_the_page_with_its_own_wrist_only():
         gauge.wrist({"hardware": "fake", "sensing": {"wrist": "d405"}})
 
 
+def test_an_arm_without_wrist_cameras_senses_nothing_and_the_pink_arm_its_own():
+    """vision.toml mounts the D405s on the WXAI follower: on real hardware it keeps its wrist, while the xArm, which
+    carries none of them, sets its page up without one."""
+    from tatbot_session import gauge
+
+    assert gauge.wrist({"hardware": "real"}, "right") == "real"
+    assert gauge.wrist({"hardware": "real"}, "xarm") == "none"
+    assert gauge.wrist({"hardware": "fake"}, "right") == "none"
+
+
 def test_a_sim_switch_tells_its_sink_and_its_endpoint_each_change():
     from tatbot_session import machine
 
@@ -133,10 +143,47 @@ def test_a_sim_switch_tells_its_sink_and_its_endpoint_each_change():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind(("127.0.0.1", 0))
         sock.settimeout(2.0)
-        stack = {"machine": {"switch": "sim", "arm": "right", "sim_endpoint": f"udp://127.0.0.1:{sock.getsockname()[1]}"}}
-        switch = machine.from_stack(stack, "right", clock=clock)
+        stack = {"machine": {"switch": "sim", "sim_endpoint": f"udp://127.0.0.1:{sock.getsockname()[1]}"}}
+        switch = machine.from_stack(stack, clock=clock)
         threading.Thread(target=switch.set, args=(True,)).start()
         assert sock.recv(64) == b"machine 1 1 1250000000"
         switch.close()
         assert sock.recv(64) == b"machine 0 2 1250000000"
     assert machine.SimSwitch().wait(True, 0.1)   # mock and fake hardware: nobody to tell
+
+
+def test_a_goal_done_waits_out_the_arms_command_delay_before_anyone_reads_the_joints():
+    """The xArm's measured joints answer a command 95 ms late: read at once, a dip's dwell held the tool 0.95 mm over
+    its dwell height and failed (2026-11-09). The WXAI answers at once, nothing that did not end ok waits, and nor
+    does a goal that ends drawing, which a `continues` op goes on from pen-down."""
+    def io(arm):
+        slept = []
+        return SimpleNamespace(arm=arm, active=None, clearance=None, flag=lambda name: False,
+                               clock=SimpleNamespace(sleep=slept.append)), slept
+
+    lift, draw = ports.Phase.PHASE_LIFT, ports.Phase.PHASE_DRAW
+    for arm, status, last, waits in (("xarm", "ok", lift, [0.095]), ("right", "ok", lift, []),
+                                     ("xarm", "failed", lift, []), ("xarm", "latched", lift, []),
+                                     ("xarm", "ok", draw, [])):
+        port, slept = io(arm)
+        traj = SimpleNamespace(q=[], phase=np.array([ports.Phase.PHASE_TRAVEL, last]))
+        assert ports.execute(port, traj, lambda status=status: (status, 3, "")) == (status, 3, "")
+        assert slept == pytest.approx(waits), (arm, status, last)
+
+
+def test_a_sim_goal_whose_tick_raises_is_cancelled_as_the_real_arms_is():
+    from tatbot_session import sim
+
+    cancels = []
+    arm = sim.SimArm("right", SimpleNamespace(t_ns=0, done=False, jtc=SimpleNamespace(cancel=lambda: cancels.append(1))),
+                     SimpleNamespace(run_until=lambda t_ns, until=None: None, now=lambda: 0.0))
+    arm._send = lambda traj, stamp_ns, first=0: 0.0
+    traj = SimpleNamespace(t=np.array([0.0, 1.0]), q=np.zeros((2, 7)))
+
+    def died(*args):
+        raise RuntimeError("the reader died")
+
+    for callback in ("on_tick", "should_stop"):
+        with pytest.raises(RuntimeError, match="the reader died"):
+            arm.execute(traj, **{callback: died})
+    assert cancels == [1, 1]

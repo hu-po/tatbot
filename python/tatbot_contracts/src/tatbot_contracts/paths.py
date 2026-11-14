@@ -96,9 +96,23 @@ def _elements(elements: list, identifiers: set[str], size: list[float]) -> int:
         if element["kind"] != "path" or element["fill"] is not False or type(element["closed"]) is not bool:
             raise ValueError("drawing requires frozen, unfilled paths with explicit closedness")
         _number(element["width_m"], 0, .02, positive=True)
-        _number(element["deposition"], 0, 1, positive=True)
         count += _points(element["points_m"], size)
+        _deposition(element["deposition"], len(element["points_m"]))
     return count
+
+
+def _deposition(value, points: int) -> None:
+    """The share of full ink a path lays: one value in (0, 1], or one per point in [0, 1] (0: lifted out there),
+    some of it inked, as a whip's fade."""
+    if not isinstance(value, list):
+        _number(value, 0, 1, positive=True)
+        return
+    if len(value) != points:
+        raise ValueError("a path's deposition needs one value per point")
+    for share in value:
+        _number(share, 0, 1)
+    if not any(share > 0 for share in value):
+        raise ValueError("a path's deposition inks none of it")
 
 
 def _points(points: list, size: list[float]) -> int:

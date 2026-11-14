@@ -20,6 +20,7 @@ still ended off the plan one way (Tracker.off_plan), it pauses before the next o
 """
 from __future__ import annotations
 
+import functools
 import itertools
 import json
 import multiprocessing
@@ -29,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tatbot_session import curved, gauge, geometry
+from tatbot_session import curved, gauge, geometry, timing
 from tatbot_session import inspect as ins
 from tatbot_session.page_filter import PageFilter
 from tatbot_session.ports import Event
@@ -76,16 +77,29 @@ def _measure(job: dict) -> dict:
     """In the worker: keep the frame under track/ (unless it is kept already), read it, return the log row. A
     reading the run's page cannot take is tried again from the overhead's page when it has seen the sheet move:
     the markers are read through the page's map, which reaches only a centimetre past the page believed."""
-    import cv2
+    started = time.monotonic()
+    with ThreadPoolExecutor(1) as beside:   # the frame is kept while it is read: packing it took 140 ms before each fit
+        kept = beside.submit(_keep, job)
+        out = _read(job)
+        kept.result()
+    return timing.pipeline.worker_result(job, out, started)
 
+
+def _keep(job: dict) -> None:
     if job.get("png"):
+        import cv2
+
         cv2.imwrite(job["png"], job["bgr"])
         np.savez_compressed(job["npz"], depth_raw=job["depth"], q=job["q"], meta=json.dumps(job["meta"]))
+
+
+def _read(job: dict) -> dict:
     t0, shown = time.perf_counter(), {}   # the fit's own cost, not the session's time; the markers read (shown)
-    out = _fit(job, job["used"], shown)
+    gauged = _gauged(job)
+    out = _fit(job, job["used"], gauged, shown)
     read = out.get("surface", True)   # the gauge read a surface by the tip: no prior helps a frame where it did not
     if read and not out.get("accepted") and job.get("overhead") is not None:
-        again = _fit(job, job["overhead"])
+        again = _fit(job, job["overhead"], gauged)
         if again.get("fit") and again["margin"] > out.get("margin", -1):
             out = {**again, "prior": "overhead"}
     if job.get("seed") or not read:   # the goal's gauge holds read it too: what a later reading is held to
@@ -95,25 +109,33 @@ def _measure(job: dict) -> dict:
         out["error"] += (f"; {out['print_none']}" if "print_none" in out else
                          f"; print {off[0]:+.1f} {off[1]:+.1f} mm off the page by {out['print_markers']} markers")
     if job.get("curved") and job.get("tcp") is not None:
-        out["skin_base"], out["skin_wide_base"] = _skin(job)
+        out["skin_base"], out["skin_wide_base"] = _skin(job, gauged)
     out["fit_s"], out["shown"] = round(time.perf_counter() - t0, 3), shown
     if job.get("utc"):   # a frame taken while the stroke drew (Tracker.while_drawing), at its own time
         out.update(moving=True, utc=job["utc"])
     return out
 
 
+TURN_MARKERS = 3    # a reading's own turn (its markers' layout on the page) is the filter's from this many markers
 SKIN_POINTS = 200   # a curved reading's skin about the tip kept for the executor's skin watch
 WIDE_POINTS = 4000  # ... and all it saw past the tip's 8 mm, for a stroke's ride along its path (curved.skin_along)
 WIDE_KEEP_S = 120.0  # ... kept this long (the executor borrows them for page.surface.rigid.profile_keep_s)
 
 
-def _skin(job: dict) -> tuple[list | None, list | None]:
+def _gauged(job: dict):
+    """The gauge's reading of a job's frame (gauge.measure: the skin under the tip of a curved page), taken at the
+    first call and kept: both fits and the skin watch read the one frame, and its 150 ms was each one's again."""
+    local = {"curved": True} if job.get("curved") else {}
+    return functools.cache(lambda: gauge.measure(job["depth"], job["bgr"], job["meta"], job["cal"], **local))
+
+
+def _skin(job: dict, gauged) -> tuple[list | None, list | None]:
     """A curved page's skin the frame sees 8-20 mm about the tip (gauge.ring), and 8-40 mm (the gauge's support), each
     carried into the base as the gauge holds' patches are (curved.hold_patch: the camera's pose, pinned at the arm's
     tip; turned by the camera tilt the setup's fit took out of them, curved.untilt) and thinned to SKIN_POINTS and
     WIDE_POINTS; None when the gauge reads no skin. The executor reads them against the surface in use
     (ArmExecutor._skin_watch, _ride_over)."""
-    frame = gauge.measure(job["depth"], job["bgr"], job["meta"], job["cal"], curved=True)
+    frame = gauged()
     ring = np.zeros((0, 3)) if frame is None else gauge.ring(frame)
     if len(ring) < 50:
         return None, None
@@ -126,13 +148,12 @@ def _skin(job: dict) -> tuple[list | None, list | None]:
     return carried(ring, SKIN_POINTS), carried(gauge.ring(frame, outer_m=gauge.SUPPORT_M), WIDE_POINTS)
 
 
-def _fit(job: dict, base_from_page, markers=None) -> dict:
+def _fit(job: dict, base_from_page, gauged, markers=None) -> dict:
     """The tip on the print by the print's markers in this frame, on the gauge's surface: inspect.hold_tip, the gauge
     holds' reading. A decoded marker names its place, so a reading needs no gate against band repeats."""
     if _TILE is None:
         return {"fit": None, "error": "no fiducial-tile print installed for the page"}
-    local = {"curved": True} if job.get("curved") else {}   # a curved page reads the skin under the tip
-    frame = gauge.measure(job["depth"], job["bgr"], job["meta"], job["cal"], **local)
+    frame = gauged()
     if frame is None:   # no pen or no surface by the tip: not a reading of the print (print_read reads it)
         return {"fit": None, "surface": False, "error": "gauge read no surface"}
     read = ins.hold_tip([job["bgr"]], [frame], job["meta"], job["tip_cam"],
@@ -140,7 +161,9 @@ def _fit(job: dict, base_from_page, markers=None) -> dict:
                         markers=markers, **({"surface": job["surface"]} if job.get("surface") else {}))
     if read is None:
         return {"fit": None, "error": "no marker of the print seen"}
+    on_page = np.linalg.inv(job["used"]) @ job["base_from_camera"] @ np.asarray(read["cam_from_print"], float)
     return {"fit": "markers", "tip_m": read["tip_m"], "cam_from_print": read["cam_from_print"],
+            "yaw_rad": float(np.arctan2(on_page[1, 0], on_page[0, 0])),   # the print's turn on the page in use
             "inliers": read["markers"], "ids": read["ids"], "score": round(float(read["score"]), 3),
             "margin": round(float(read["margin"]), 3), "rms_m": round(float(read["rms_m"]), 6),
             "accepted": bool(read["accepted"])}
@@ -344,6 +367,7 @@ class Tracker:
     hover_frames = 1
     views: tuple | list = ()   # the filter's further wrist cameras (page.track.cameras, _views)
     _grabber, _grabs, drawing = None, (), None   # the filter's frames while a stroke draws (page.track.stroke_s)
+    _port = None   # a wrist camera that is not the rig's (ports.WristPort)
 
     def __init__(self, ex, cam, pool, cal, cfg, centre=(0.0, 0.0)):
         self.ex, self.cam, self.pool, self.cal = ex, cam, pool, cal
@@ -365,11 +389,13 @@ class Tracker:
                                 **{k: float(v) for k, v in (cfg.get("filter") or {}).items()})
         self._fed = ex.overhead_at   # the overhead's readings fed to the filter up to this
         self.stroke_s = float(cfg.get("stroke_s", 0.0)) if self.correcting else 0.0
-        self._grabber = ThreadPoolExecutor(1) if self.stroke_s > 0 else None
+        port = self._port = getattr(ex, "wrist_port", None)   # a wrist camera that is not the rig's (ports.WristPort)
+        self._grabber = (ThreadPoolExecutor(1) if port is None else port.grabber()) if self.stroke_s > 0 else None
         self._grabs, self._grabbed, self._count, self.drawing = [], -np.inf, itertools.count(1), {}
         self.ends = []          # the stroke ends' offsets from the plan, newest last (off_plan)
         self.off_m, self.off_count = float(cfg.get("off_plan_m", 0.0015)), int(cfg.get("off_plan_count", 2))
         self.pending = []
+        self._timing_applied = {}
         self.print_held, self.printed = [], []   # print_read of the gauge holds, and of the newest op's unread ones
         (ex.run_dir / "track").mkdir(exist_ok=True)
 
@@ -382,13 +408,14 @@ class Tracker:
         `since`, the clock's utc) and wait for them, so the first stroke has a field. `centre`: the drawing's (page
         metres), which the filter's turn and the arm's gradient are about."""
         cfg = ex.stack["page"].get("track") or {}
-        if cfg.get("mode", "off") not in ("log", "correct") or ex.sensing.wrist != "real" or ex.run_dir is None:
+        port, path = getattr(ex, "wrist_port", None), gauge.calibration_path(ex.arm)
+        if cfg.get("mode", "off") not in ("log", "correct") or ex.run_dir is None or (
+                ex.sensing.wrist != "real" and port is None):
             return None
-        path = gauge.calibration_path(ex.arm)
-        if not path.exists():
+        cal = port.calibration(ex.arm) if port is not None else json.loads(path.read_text()) if path.exists() else None
+        if cal is None:
             ex.event(Event.KIND_ERROR, "track: no wrist gauge calibration; not tracking")
             return None
-        cal = json.loads(path.read_text())
         ex._settle()   # the holds' frames written: the seed reads them
         try:   # the setup's own camera, open already (ArmExecutor.setup_camera): ~2 s to open one
             cam = ex.take_camera() or ex.wrist_camera("")   # stack.yaml's (ins.configured_serial)
@@ -396,8 +423,9 @@ class Tracker:
             ex.event(Event.KIND_ERROR, f"track: wrist camera: {error}; not tracking")
             return None
         # three workers read the seed's 9-11 holds at once (one took 6 s, 2026-10-20); drain logs them in order
-        pool = ProcessPoolExecutor(3, mp_context=multiprocessing.get_context("spawn"), initializer=_init,
-                                   initargs=(str(ex.repo), ex.stack["page"]["pattern_id"]))
+        pool = port.readers(ex) if port is not None else ProcessPoolExecutor(
+            3, mp_context=multiprocessing.get_context("spawn"), initializer=_init,
+            initargs=(str(ex.repo), ex.stack["page"]["pattern_id"]))
         try:
             tracker = cls(ex, cam, pool, cal, cfg, centre)
             ex.event(Event.KIND_PAGE, "track: the pen tip on the print after every lift" +
@@ -434,6 +462,16 @@ class Tracker:
         if self.rigid is not None:
             self.rigid.clear()
 
+    def followed(self) -> None:
+        """The page followed the sheet where the filter has it (ArmExecutor._follow_filter), a move a stroke stops
+        for: what was read in the arm base before (the skin about the tip and along the strokes, the holds' print,
+        the stroke ends, the stencil watch's) stood on the sheet's old place. The filter keeps its sheet: the page's
+        follows are in its model."""
+        self.drain(wait=True)
+        self.skin, self.wide, self.ends, self.print_held, self.printed = None, [], [], [], []
+        if self.rigid is not None:
+            self.rigid.clear()
+
     def rebased(self) -> None:
         """The overhead's watch starts again from the sheet as it reads it now (ArmExecutor._rebase, before it
         clears the page's follows): the filter keeps what it predicts on the page in use, the sheet's part reset."""
@@ -441,8 +479,19 @@ class Tracker:
         self.field.rebased(self.ex._followed())
         self._fed = self.ex.clock.now()
 
+    def retracked(self, sheet_m: float, sheet_rad: float) -> None:
+        """The page carried onto the moved sheet (ArmExecutor._retrack, its readings drained before): the filter's sheet
+        starts again within the carry's error, its arm and cameras standing; what was read in the arm base before (the
+        skin about the tip and along the strokes, the holds' print, the stroke ends, the stencil watch's) stood on the
+        sheet's old place."""
+        self.field.retracked(sheet_m, sheet_rad)
+        self.skin, self.wide, self.ends, self.print_held, self.printed = None, [], [], [], []
+        if self.rigid is not None:
+            self.rigid.clear()
+        self._fed = self.ex.clock.now()
+
     def _submit(self, name, end, bgr, depth, meta, q, keep=True, op_id="", stamp_ns=None, camera: int = 0,
-                shown=None, at=None) -> None:
+                shown=None, at=None, capture=None) -> None:
         """A frame into the workers: by the session camera, or by the further view `camera` (1, ...: self.views), whose
         open camera `shown` publishes the markers read in it, as self.cam does the session camera's; `at`, a frame
         taken while the stroke drew: (its clock time, its utc), its skin not read."""
@@ -459,6 +508,8 @@ class Tracker:
                "npz": str(self.ex.run_dir / "track" / f"{name}.npz")}
         tcp = self.tcp_on_print(used, self.ex.kin.fk(q), job["surface"])   # print mm, as the tip's
         follow = self.ex._followed()   # the page the frame was taken on
+        job['pose_observed_t_s'] = at[0] if at else None
+        timing.measurement(self, job, capture, camera, name, op_id)
         future = self.pool.submit(_measure, job)
         if stamp_ns is not None:   # a frame the tap published: its markers onto the viewer's wrist pane once read
             reading = name.removesuffix(f"-{view['role']}") if view else name   # the pane names the camera
@@ -480,7 +531,8 @@ class Tracker:
         from tatbot_session import curved
 
         pose = self.ex.kin.frame(q, ins.camera_frame(self.ex.arm))
-        return curved.camera_pose(pose, self.tip_cam, curved.load_turn(self.ex.arm)) if self.ex._curved() else pose
+        turn = curved.load_turn(self.ex.arm) if self._port is None else self._port.turn
+        return curved.camera_pose(pose, self.tip_cam, turn) if self.ex._curved() else pose
 
     def _overhead(self, used: np.ndarray) -> np.ndarray | None:
         """The run's page moved in its own plane as the overhead reads the sheet moved since setup and the page has not
@@ -528,18 +580,21 @@ class Tracker:
         clock, io = self.ex.clock, self.ex.io
         colors, _ = self.cam.grab_both(1, observe=lambda: (io.q.copy(), clock.now(), clock.utc()), fresh=True)
         q, t, utc = self.cam.capture_timestamps[-1]["joints"]
-        return colors[-1], self.cam.raw_depth[0], self.cam.depth_metadata, q, (t, utc), getattr(self.cam, "stamp_ns", None)
+        return (colors[-1], self.cam.raw_depth[0], self.cam.depth_metadata, q, (t, utc),
+                getattr(self.cam, "stamp_ns", None), list(self.cam.capture_timestamps))
 
     def _take(self, wait: bool = False) -> None:
         """The frames grabbed while a stroke drew into the workers, from the executor's thread (all of them with wait)."""
         while self._grabs and (wait or self._grabs[0][-1].done()):
             name, op_id, plan, future = self._grabs.pop(0)
             try:
-                bgr, depth, meta, q, at, stamp = future.result()
+                payload = future.result()
+                bgr, depth, meta, q, at, stamp = payload[:6]  # arm-model: not joints
+                capture = payload[-1] if len(payload) > 6 else None
             except Exception as error:  # noqa: BLE001 - one frame lost, the stroke and its stops' readings go on
                 self.ex.event(Event.KIND_ERROR, f"track {name}: {error}", op_id)
                 continue
-            self._submit(name, plan, bgr, depth, meta, q, keep=False, op_id=op_id, stamp_ns=stamp, at=at)
+            self._submit(name, plan, bgr, depth, meta, q, keep=False, op_id=op_id, stamp_ns=stamp, at=at, capture=capture)
 
     def at_hover(self, name: str, op_id: str, plan_xy) -> str | None:
         """A fresh frame now (the arm at rest over plan_xy, about to descend), fitted and logged before returning:
@@ -555,14 +610,14 @@ class Tracker:
         # a curved page's frames pooled (gauge.pool): its skin under the tip is read as well as its print (skin watch)
         depth = self.cam.raw_depth[0] if len(self.cam.raw_depth) == 1 else gauge.pool(self.cam.raw_depth)
         self._submit(name, end, colors[-1], depth, self.cam.depth_metadata, self.ex.io.q.copy(), op_id=op_id,
-                     stamp_ns=getattr(self.cam, "stamp_ns", None))
+                     stamp_ns=getattr(self.cam, "stamp_ns", None), capture=getattr(self.cam, "capture_timestamps", []))
         for k, view in enumerate(self.views, 1):   # where the arm stands still: the views read the same place
             cam = self._view_camera(view)
             if cam is not None:
                 colors, _ = cam.grab_both(1, fresh=True)
                 self._submit(f"{name}-{view['role']}", end, colors[-1], cam.raw_depth[0], cam.depth_metadata,
                              self.ex.io.q.copy(), op_id=op_id, stamp_ns=getattr(cam, "stamp_ns", None), camera=k,
-                             shown=cam)
+                             shown=cam, capture=getattr(cam, "capture_timestamps", []))
 
     def _view_camera(self, view: dict):
         return view_camera(self.cam, view)
@@ -570,7 +625,7 @@ class Tracker:
     def snapshot(self) -> PageFilter:
         self.drain()
         self._feed(self.ex.clock.now())
-        return self.field.snapshot(self.ex._followed())
+        return timing.snapshot(self, self.field.snapshot(self.ex._followed()))
 
     def _feed(self, until: float) -> None:
         """The overhead's readings of the print's markers (ArmExecutor._timed_moves: the sheet's move since setup, by
@@ -588,7 +643,7 @@ class Tracker:
         verdict = None
         while self.pending and (wait or self.pending[0][-1].done()):   # in the order taken, whichever worker read it
             item = self.pending.pop(0)
-            logged = self._log(*item[:5], item[-1].result(), follow=item[5], camera=item[6])
+            logged = self._log(*item[:5], item[-1].result(), follow=item[5], camera=item[6])   # arm-model: not joints
             verdict = max(verdict, logged, key=self.VERDICTS.index) if best else logged
         return verdict
 
@@ -632,6 +687,7 @@ class Tracker:
                     self.ends = [*self.ends[-8:], (op_id, off)]
             else:
                 text += " (not accepted)"
+        timing.applied(self, row, camera)
         self._keep_skin(row, op_id, t, primary=not camera and not row.get("moving"))
         self._say(row, text, op_id)
         with open(self.ex.run_dir / "track.jsonl", "a") as f:
@@ -659,6 +715,8 @@ class Tracker:
     def _sample(self, t: float, tcp, resid, row: dict, follow, check: bool, camera: int = 0) -> str:
         """An accepted reading into the filter by `camera`, after the overhead's readings up to it."""
         self._feed(t)
+        if row.get("yaw_rad") is not None and row["inliers"] >= TURN_MARKERS and self.field.turn(t, row["yaw_rad"], follow):
+            row["turned"] = True
         return self.field.add(t, tcp, resid, check, rms=row["rms_m"], markers=row["inliers"], follow=follow,
                               camera=camera, moving=bool(row.get("moving")))
 

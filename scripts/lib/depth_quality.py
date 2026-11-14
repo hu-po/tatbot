@@ -70,23 +70,3 @@ def filter_depth(depth, units, support=None, frames=None, temporal_mad=None, *, 
         'settings': {'min_support_fraction': fraction, 'max_temporal_mad_mm': temporal_limit*1e3,
                      'depth_edge_mm': edge*1e3},
     }
-
-
-def balanced_cells(cell, heights, source, ncells, group_median):
-    """One median per source/cell. Pixel density cannot increase source weight."""
-    labels, ids = np.unique(np.asarray(source), return_inverse=True)
-    combined = ids*ncells + cell
-    med, count = group_median(combined, heights, ncells*len(labels))
-    mad, _ = group_median(combined, np.abs(heights-med[combined]), ncells*len(labels))
-    med, count, mad = (a.reshape(len(labels), ncells) for a in (med, count, mad))
-    present = count > 0
-    # Within-source scatter supplies a relative noise weight, bounded so a
-    # quantized flat view never has infinite authority. This is not accuracy.
-    weight = np.where(present, 1/np.maximum(np.nan_to_num(mad), .0005)**2, 0)
-    weight /= np.maximum(weight.sum(axis=0), 1)
-    value = np.sum(np.nan_to_num(med)*weight, axis=0)
-    value[~present.any(axis=0)] = np.nan
-    lower = np.min(np.where(present, med, np.inf), axis=0)
-    upper = np.max(np.where(present, med, -np.inf), axis=0)
-    disagreement = np.where(present.any(axis=0), upper-lower, 0)
-    return value, present.sum(axis=0), disagreement

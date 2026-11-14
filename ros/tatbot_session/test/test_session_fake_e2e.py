@@ -39,7 +39,7 @@ def _fake_urdf(stack: dict) -> str:
     from tatbot_description import robot_description
 
     # the fake paper lies where the fixed page says and gives like the arm and EE mount
-    stack["fake"] = {"page_z": stack["page"]["fixed"]["right"]["xyz"][2], "page_stiffness_n_m": 1500.0}
+    stack["fake"] = {"page": True, "page_stiffness_n_m": 1500.0}
     return robot_description(sg.repo(), arms=("right",), hardware="fake", ros2_control=stack)
 
 
@@ -52,7 +52,8 @@ def graph(tmp_path_factory):
     urdf = _fake_urdf(stack)
     pico = Pico(port)
     g = sg.Graph(tmp)
-    g.pico, g.page_z, g.page_xyz = pico, stack["fake"]["page_z"], stack["page"]["fixed"]["right"]["xyz"]
+    g.page_xyz = stack["page"]["fixed"]["right"]["xyz"]
+    g.pico, g.page_z = pico, g.page_xyz[2]
     try:
         yield g.up(urdf, stack, motion=sg.fast_motion())
     finally:
@@ -166,10 +167,13 @@ def _flight(graph) -> np.ndarray:
 
 def test_numpad_trims_mid_stroke_replace_the_goal_without_a_step(graph):
     """Presses on /tatbot/keys/right while a stroke draws: each a pen_trim ledger row, the running goal replaced
-    ahead of now on its own time base, so the driver's commanded tip steps 0.1 mm per press along the page normal
-    and nowhere jumps (no restart from the lagging measured pose, no time shift along the path); one goal."""
+    ahead of now on its own time base, so the driver's commanded tip steps motion.yaml's pen.trim step_m per press
+    along the page normal and nowhere jumps (no restart from the lagging measured pose, no time shift along the
+    path); one goal."""
     import tatbot_motion
     from tatbot_description import names
+
+    step = float(tatbot_motion.load_motion()["pen"]["trim"]["step_m"])
 
     before = len(_flight(graph))
     program = sg.square_program(graph.tmp, name="trim", speed_m_s=0.003)
@@ -184,16 +188,16 @@ def test_numpad_trims_mid_stroke_replace_the_goal_without_a_step(graph):
     finally:
         graph.end(proc)
     rows = sg.ledger(sg.last_json((graph.tmp / "trim.log").read_text())["run_dir"])
-    assert [r["trim_m"] for r in rows if r["event"] == "pen_trim"] == pytest.approx([-0.0001, -0.0002, -0.0001])
+    assert [r["trim_m"] for r in rows if r["event"] == "pen_trim"] == pytest.approx([-step, -2 * step, -step])
     assert [r["event"] for r in rows if r["event"] in ("sent", "aborted", "done") and r["op"][0] == "s"] == ["sent", "done"]
     rec = _flight(graph)[before:]
     kin = tatbot_motion.Kinematics.from_repo(arm="right")
     tip = np.array([kin.fk(q)[:3, 3] for q in rec["cmd_q"][rec["phase"] == 1].astype(float)])
     ride = graph.page_z + next(r for r in rows if r["event"] == "page")["page"]["pen"]["height_m"]
-    down = tip[np.abs(tip[:, 2] - ride) < 0.0005]
-    level = [next((trim for trim in (0.0, -0.0001, -0.0002) if abs(z - ride - trim) < 1.5e-5), None) for z in down[:, 2]]
+    down = tip[np.abs(tip[:, 2] - ride) < 2.5 * step]
+    level = [next((trim for trim in (0.0, -step, -2 * step) if abs(z - ride - trim) < 1.5e-5), None) for z in down[:, 2]]
     runs = [(trim, len(list(run))) for trim, run in itertools.groupby(level)]
-    assert [trim for trim, n in runs if trim is not None and n > 100] == [0.0, -0.0001, -0.0002, -0.0001], runs
+    assert [trim for trim, n in runs if trim is not None and n > 100] == [0.0, -step, -2 * step, -step], runs
     smooth = np.stack([np.convolve(down[:, k], np.ones(5) / 5, mode="valid") for k in range(3)], axis=1)
     jump = float(np.linalg.norm(down[2:-2] - smooth, axis=1).max())
     assert jump < 1.5e-5, jump

@@ -7,7 +7,7 @@ import json
 import numpy as np
 import pytest
 import tatbot_ink
-from ink_designs import REPO, artwork, design, element, placement, program, write
+from ink_designs import REPO, artwork, element, program, write
 from tatbot_contracts.canonical import canonical_digest
 from tatbot_ink import CompileError
 from tatbot_ink.__main__ import main
@@ -17,6 +17,39 @@ from tatbot_motion.estimate import drawing_seconds
 
 def line_art(*, width=.0005, closed=False):
     return artwork(program([("pen-1", [element([[.002, .01], [.018, .01]], width=width, closed=closed)])]))
+
+
+def test_a_fading_path_keeps_its_deposition_cut_by_arc(tmp_path):
+    """A whip (deposition 1 to 0 over its last 6 mm) keeps its deposition through every chunk, continuous at each
+    cut, drawn only by a tool whose datasheet records its fade lift; a path at full ink carries none."""
+    import shutil
+
+    import yaml
+    from resource_fixtures import fixture_repo, save
+    from tatbot_motion.timelaw import arc_lengths
+
+    # The fixture's refill records no fade lift and refuses the whip; a copy of it with one draws it. Shipped datasheets
+    # are left out of it: the 3RL has recorded one since 2026-11-03.
+    repo = fixture_repo(tmp_path / "repo")
+    save(repo / "config/tools/fading.yaml", {**yaml.safe_load((repo / "config/tools/refill.yaml").read_text()),
+                                             "fade_lift_mm": .8})
+    (repo / "ros/tatbot_motion/config").mkdir(parents=True)
+    shutil.copyfile(REPO / "ros/tatbot_motion/config/motion.yaml", repo / "ros/tatbot_motion/config/motion.yaml")
+    whip = dict(element([[.002, .01], [.012, .01], [.018, .01]]), deposition=[1., 1., 0.])
+    path = write(tmp_path, artwork(program([("pen-1", [whip])])))
+    with pytest.raises(CompileError, match="fade_lift_mm"):
+        tatbot_ink.compile(path, repo=repo, tool_id="refill")
+    result = tatbot_ink.compile(path, repo=repo, tool_id="fading", max_segment_s=2)
+    assert result["resources"][0]["tool"]["fade_lift_mm"] == .8
+    strokes = [op for op in result["ops"] if op["op"] == "stroke"]
+    assert len(strokes) > 2 and all(b["continues"] for b in strokes[1:])
+    for a, b in zip(strokes, strokes[1:], strict=False):
+        assert a["deposition"][-1] == pytest.approx(b["deposition"][0])
+    for op in strokes:
+        arc = op["src"]["arc_m"][0] + arc_lengths(np.asarray(op["points_m"]))
+        np.testing.assert_allclose(op["deposition"], np.interp(arc, [0, .01, .016], [1, 1, 0]), atol=1e-6)
+    plain = tatbot_ink.compile(write(tmp_path, line_art(), "plain.json"), repo=repo, tool_id="fading")
+    assert not any("deposition" in op for op in plain["ops"])
 
 
 @pytest.mark.parametrize('seconds', [2, 60])
@@ -103,36 +136,6 @@ def test_multicolour_requires_exact_bindings_and_keeps_colour_sequence(tmp_path)
     assert result["stats"]["time_estimate"]["total_s"] is None
 
 
-def test_inlumino_pack_shares_geometry_and_preserves_color_exchanges_without_dips(tmp_path):
-    import yaml
-    from resource_fixtures import manifest, resource
-    from tatbot_ink.input import read_input
-
-    stock = yaml.safe_load((REPO/'config/inventory.yaml').read_text())['cartridges']
-    colors = [row['ink'] for row in stock.values() if row.get('fits') == 'lutin-ballpoint-dot' and row.get('ink')]
-    assert len(colors) == 5
-    # Return to the first color: identical geometry must not merge pigments or
-    # erase the last exchange. Native pen display colors deliberately all match.
-    pens = [f'native-{i}' for i in range(5)]
-    art = artwork(program([(pen, [element([[.002, .002+i*.002], [.018, .002+i*.002]])])
-                           for i, pen in enumerate(pens+[pens[0]])]))
-    path = write(tmp_path, art)
-    inkfile = manifest(tmp_path/'inks.yaml', read_input(art),
-                       [resource(f'color-{i}', tool='lutin-ballpoint-dot', ink=ink) for i, ink in enumerate(colors)],
-                       [(pen, f'color-{i}') for i, pen in enumerate(pens)], substrate='paper_pad')
-    result = tatbot_ink.compile(path, repo=REPO, inks_path=inkfile)
-    rows = result['resources']
-    assert [row['ink_id'] for row in rows] == colors
-    assert all(row['tool'] == rows[0]['tool'] for row in rows)
-    assert rows[0]['tool']['id'] == 'lutin-ballpoint-dot'
-    assert len({row['ink_id'] for row in rows}) == 5
-    assert all(row['activation'] == {'method': 'manual', 'action': 'exchange'}
-               and row['slot'] is row['dip'] is None for row in rows)
-    assert [op['resource_id'] for op in result['ops'] if op['op'] == 'tool_change'] == [f'color-{i}' for i in range(5)]+['color-0']
-    assert [op['ink'] for op in result['ops'] if op['op'] == 'stroke'] == colors+[colors[0]]
-    assert result['stats']['dips'] == 0 and result['stats']['tool_changes'] == 6
-
-
 def test_the_3rl_tattoos_human_skin_exactly_as_it_does_silicone(tmp_path):
     from resource_fixtures import manifest, resource
     from tatbot_ink.input import read_input
@@ -169,21 +172,29 @@ def test_size_change_and_unbound_or_tampered_artwork_refused(tmp_path):
         tatbot_ink.compile(write(tmp_path, art), repo=REPO, at_m=[.044, .05])
 
 
-def test_placed_design_is_verified_before_overrides(tmp_path):
+def test_at_moves_the_acquired_artwork_rigidly_and_only_artwork_compiles(tmp_path):
     art = line_art()
-    doc = design([("p", art["program"], placement((.02, .02), mirrored=True))])
-    result = tatbot_ink.compile(write(tmp_path, doc), repo=REPO, at_m=[.01, .01], width_m=.02)
-    assert result["ops"][1]["points_m"][0][0] > result["ops"][1]["points_m"][-1][0]
-    doc["placements"][0]["placement"]["target"]["anchor_uv_m"] = [.005, .005]
-    with pytest.raises(CompileError, match="digest"):
-        tatbot_ink.compile(write(tmp_path, doc), repo=REPO, at_m=[0, 0])
+    centred = tatbot_ink.compile(write(tmp_path, art), repo=REPO)
+    moved = tatbot_ink.compile(write(tmp_path, art), repo=REPO, at_m=[.01, .01], width_m=.02)
+    np.testing.assert_allclose(np.subtract(moved["ops"][1]["points_m"], centred["ops"][1]["points_m"]),
+                               [[.01, .01], [.01, .01]], atol=1e-15)
+    assert moved["design"]["at_m"] == [.01, .01] and moved["design"]["width_m"] == .02
+    assert moved["page"] == centred["page"] and moved["page"]["kind"] == "stencil"
+    with pytest.raises(CompileError, match="acquired DBV3 artwork"):   # an Inkmap design is no input
+        tatbot_ink.compile(write(tmp_path, {"schema": "tatbot.inkmap-design/1"}, "design.json"), repo=REPO)
 
 
 def test_generation_width_is_not_a_measurement_or_a_geometry_edit(tmp_path, monkeypatch):
-    import tatbot_ink.program as adapter
+    import shutil
 
+    import tatbot_ink.program as adapter
+    from resource_fixtures import fixture_repo
+
+    repo = fixture_repo(tmp_path/'repo')   # its refill records a measured 0.5 mm line; no shipped datasheet does
+    (repo/'ros/tatbot_motion/config').mkdir(parents=True)
+    shutil.copyfile(REPO/'ros/tatbot_motion/config/motion.yaml', repo/'ros/tatbot_motion/config/motion.yaml')
     path = write(tmp_path, line_art(width=.0003))
-    result = tatbot_ink.compile(path, repo=REPO, tool_id="lutin-ballpoint-dot")
+    result = tatbot_ink.compile(path, repo=repo, tool_id="refill")
     assert result["resources"][0]["tool"]["line_width_status"] == "measured"
     assert result["resources"][0]["tool"]["line_width_m"] == .0005
     assert result["preparation"]["generation_widths_m"] == [.0003]

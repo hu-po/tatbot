@@ -186,6 +186,35 @@ def test_gpio_sends_the_contact_at_100_hz_and_goes_silent_on_failure(receiver):
         thread.join(2)
 
 
+def test_an_absent_reader_never_holds_up_anothers_frames(receiver, monkeypatch):
+    """2026-11-08: one blocking socket for every reader waited on the absent arm node's neighbour resolution, and the
+    ros node's frames stalled 0.1-0.9 s every 3.07 s, latching the arm estop_stale. Each reader has its own non-blocking
+    socket: one whose sends would block (its host unresolved, its queue full) drops its frames alone."""
+    absent = ("192.0.2.1", 7640)
+    real_socket = socket.socket
+
+    class Socket(real_socket):
+        def sendto(self, data, dest):
+            assert not self.getblocking()   # never waits on a reader
+            if dest == absent:
+                raise BlockingIOError(11, "Resource temporarily unavailable")
+            return super().sendto(data, dest)
+
+    monkeypatch.setattr(relay.socket, "socket", Socket)
+    line = Line()
+    stop = threading.Event()
+    thread = threading.Thread(target=relay.run_gpio, args=("GPIO17", [absent, receiver.getsockname()]),
+                              kwargs={"stop": stop.is_set, "open_line": line.open}, daemon=True)
+    thread.start()
+    try:
+        drain(receiver, 0.2)
+        got = frames(drain(receiver, 0.5))
+        assert 35 <= len(got) <= 65 and [seq for seq, _ in got] == list(range(got[0][0], got[0][0] + len(got)))
+    finally:
+        stop.set()
+        thread.join(2)
+
+
 def test_every_reader_gets_the_same_frames_and_one_sequence(receiver):
     """One button stops both arms: the ros node's driver and the arm node's monitor each get every
     frame, and a reader that stops receiving goes silent alone."""
@@ -289,6 +318,27 @@ def test_probe_sends_each_edge_at_once_and_its_level_at_50_hz(receiver):
         stop.set()
         thread.join(2)
         other.close()
+
+
+def test_a_normally_open_probe_reads_touched_while_its_line_is_low(receiver):
+    """Merged palette v9's NPN normally-open probe: HIGH at rest on the pull-up, LOW while touched (2026-11-08)."""
+    line = ProbeLine()
+    line.high = True
+    stop = threading.Event()
+    thread = threading.Thread(target=relay.run_probe, args=("GPIO27", [receiver.getsockname()]),
+                              kwargs={"stop": stop.is_set, "open_line": line.open, "touched": "low"}, daemon=True)
+    thread.start()
+    try:
+        drain(receiver, 0.2)
+        assert {state for _, state, _, _ in probe_frames(drain(receiver, 0.2))} == {0}
+        line.edge(111, False)   # touched: pulled to ground
+        assert probe_frames(drain(receiver, 0.01))[0][1:3] == (1, 111)
+        line.edge(222, True)    # released
+        time.sleep(0.05)
+        assert probe_frames(drain(receiver, 0.1))[-1][1:3] == (0, 222)
+    finally:
+        stop.set()
+        thread.join(2)
 
 
 def test_service_unit_template():

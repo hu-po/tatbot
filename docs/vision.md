@@ -130,9 +130,9 @@ scored on holds it was not given:
 
 `tatbot ros chain <run-id>...` pools several registrations of one arm and
 scores each model on the runs it was not fitted to. Neither gates nor adopts
-anything. Pink's layout, solved on 2026-09-19 by the retired PoE cameras,
-sits 6.4, 6.8 and 2.3 mm (x, y, z of `right/gripper_left`) and 1.8° off its
-seat on the four registrations of 2026-09-29. The seat takes a left-out
+anything. The WXAI follower's layout, solved on 2026-09-19 by the retired PoE
+cameras, sits 6.4, 6.8 and 2.3 mm (x, y, z of `right/gripper_left`) and 1.8°
+off its seat on the four registrations of 2026-09-29. The seat takes a left-out
 run's corner median from 1.47 px to 1.01, and to 0.77 px with joint offsets
 of +23, +21, −24 and +1 mrad. The seat alone is written as
 `wrist-layout.json`, the wrist solve that
@@ -145,21 +145,29 @@ candidate is solved from the pen-down joints over it. It must hold upright
 as an inspection view does, and stand clear of the arm's own bodies. Of
 these, the holds are chosen greedily for the information they give the
 camera, the seat and joints 1–4 (D-optimal). The run prints the 1-sigma the
-plan predicts. For pink, 40 holds at heights 0.10–0.22 m predict 1.5–2.2 mrad
-at 0.8 px. The holds of 2026-09-29 predicted 2.3–3.9.
+plan predicts. For the WXAI follower, 40 holds at heights 0.10–0.22 m predict
+1.5–2.2 mrad at 0.8 px. The holds of 2026-09-29 predicted 2.3–3.9.
 
 ## Stock wrist camera geometry
 
-Each wrist D405 sits on the original Trossen bracket. The canonical
-`urdf/tatbot.urdf` contains a fixed chain from each arm's `link_6` to its
-`realsense_color_optical_frame` and `realsense_depth_optical_frame`. Its joint
-origins match the [Trossen WidowX AI model](https://github.com/TrossenRobotics/ManiSkill-WidowX_AI/blob/main/wxai_follower.urdf).
-The bracket pose is nominal CAD geometry, not a measured correction. The right
-wrist carries a second bracket under it: the same chain, its mount joint rolled
-180° about `link_6`'s x axis, as `right/realsense_lower_*`.
+Each wrist D405 sits in a stock Trossen case. Its chain from the case to its
+`<prefix>_color_optical_frame` and `<prefix>_depth_optical_frame` matches the
+[Trossen WidowX AI model](https://github.com/TrossenRobotics/ManiSkill-WidowX_AI/blob/main/wxai_follower.urdf).
+Each case hangs from its arm's last joint on fixed joints alone. On the WXAI
+follower's wrist (`urdf/tatbot.urdf`) the case sits on `link_6` at the original
+bracket's pose, `right/realsense_*`, and a second case sits under it, its mount
+joint rolled 180° about `link_6`'s x axis, as `right/realsense_lower_*`. On the xArm
+(`urdf/xarm7.urdf`) both cases ride `link7` in the dual-D405 bracket's carriers,
+across the pen from each other, named after their cameras:
+`xarm/realsense2_*` and `xarm/realsense1_*`. These poses are nominal CAD
+geometry, not a measured correction. Each case is its own collision mesh and
+each camera link carries a box for the body and a cylinder where the cable
+leaves the case, so the arm's self-collision guard and the station clearance
+checks see the cameras.
 
-The camera registry binds `wrist_upper` and `wrist_lower` to the right arm, each
-naming its own optical frames (two cameras on one arm must). The left arm is the
+The camera registry binds `wrist_2` (D405-2, the session's) and `wrist_1`
+(D405-1) to the xArm, each naming its own optical frames (two cameras on one arm
+must). The WXAI follower carries none since 2026-11-08, and the blue arm is the
 teleop leader alone and is not in the model. Moving an arm changes
 camera pose through that arm's measured joint angles; it does not change the
 fixed mounting transform. Use color optical coordinates for depth explicitly
@@ -194,8 +202,15 @@ tatbot viewer station-install  # on the station (sudo): its load monitor
 `tatbot-viewer-window`: the viewer drops its oldest rows at `--memory-limit`
 (default 1GB), and the unit's `MemoryMax`, the cap plus 1 GiB, is the hard
 ceiling. A window that already runs is left alone, so the station's launcher
-can call it every time; `--restart` closes it first, because a window never
-reconnects to a fleet viewer server that restarted. Once the window maps it is
+can call it every time; `--restart` closes it first, to open it with a new cap
+or on a new path. A Rerun window never reconnects to a fleet viewer server
+that restarted, so the unit keeps it on its server: after 15 s without a
+connection, or without the server answering, it closes the window and opens it
+again once the server answers, at the same address and behind the window that
+has the focus. The new window receives the server's buffer like any other,
+which is small just after a restart. A window that closes by itself ends the
+unit, except the fullscreen demo page, which comes back; `tatbot viewer stop`
+closes it for good. Once the window maps it is
 maximized, or with `--fullscreen` made fullscreen (no title bar, no GNOME top
 bar) and the focus handed back to the window that held it, so the station's
 demo page opens behind its agent terminal and the operator alt-tabs to it.
@@ -288,8 +303,9 @@ fixed **Demo / Session / Telemetry / Calibration** top-level tab bar, in that
 order, with no nested tab stacks. Demo comes first because the Rust blueprint
 cannot select a tab: it is the portrait drawing page (status, the 3D scene in
 the camera world, the design map beside the two upright wrist RGBs, the D555 RGB with the markers the trackers read
-on it and the palette's tag, which the cockpit reads there itself once a second (`subscribe --fiducials`, the
-inventory's `palette` target, outlined green and named), beside CPU and temperatures). The rerun-server installs it once per server generation, and `viewer reset` sends it again. Workflows publish data only, and neither workflow startup nor
+on it and the tags no tracker follows, which the cockpit reads there itself once a second (`subscribe --fiducials`:
+the inventory's `palette` target, and the xArm's cube `xarm_cube` while its layout is nominal, each tag outlined green and
+labelled with its id), beside CPU and temperatures). The rerun-server installs it once per server generation, and `viewer reset` sends it again. Workflows publish data only, and neither workflow startup nor
 recording selection resets the operator's selected tab.
 Every viewer and producer is memory- and rate-capped;
 `scripts/check rerun-caps` refuses a launcher or producer that is not. Python
@@ -304,11 +320,13 @@ capture, tracking, policy, journal, or sensor rates.
 Beneath that cap (`subscribe --max-fps`, default 5 Hz) each stream has its
 own rate: the overhead colour at 5 Hz (`--overhead-color-hz`), its depth at
 1 Hz (`--overhead-depth-hz`), each wrist tap's colour at 2 Hz (`--wrist-hz`).
-The hub streams every row on to the station over a link the pink
-controller's UDP may share, so no image the cockpit logs exceeds 60 KiB (its
+The hub streams every row on to the station over a link the arm
+controllers' packets may share, so no image the cockpit logs exceeds 60 KiB (its
 chunk stays within 64 KiB, about 0.5 ms at 1 Gbps), and images go out one per
 20 ms tick. Colour is re-encoded as a 640x360 JPEG of quality 70 (a lower
-quality, then half the size, only for a frame that would not fit); the depth
+quality, then half the size, only for a frame that would not fit), scaled
+up or down to fill 640x360 keeping its shape, so a smaller wrist preview
+(480x270 on a USB 2.1 link) fills its pane like the rest; the depth
 is decimated to 320x180 by the nearest valid range in each block (zero stays
 invalid) and logged RVL-compressed, lossless (`EncodedDepthImage`, the
 Overhead depth pane). The Demo scene draws that depth instead as an RGB cloud
@@ -322,9 +340,9 @@ The Scene leaves the depth image out, so a window shows the RGB cloud only
 once it holds a blueprint sent since (`tatbot viewer reset`). The wrist tap's
 depth is not logged: the bridge draws the wrist cloud the same way, with a
 warm amber tint, so the two read apart where they overlap. The Demo tab has a
-pane per wrist camera, D405-1 (RealSense 1, the lower) and D405-2 (RealSense 2,
-the upper), each turned upright by its camera's display rotation (the lower is
-the upper's mount turned 180°). Each keeps a draw's last frame under its age
+pane per wrist camera, D405-1 (RealSense 1) and D405-2 (RealSense 2, the
+session's), each turned upright by its camera's display rotation (one's mount is
+the other's turned 180°). Each keeps a draw's last frame under its age
 label; a cockpit that starts
 covers that frame, which it cannot vouch for, with a black one, clears its
 label and shows "no frame yet" until that camera's first frame. The print's
@@ -447,10 +465,11 @@ Each D405 in the vision registry declares a physical `arm` and an `owner_role`.
 The owner role resolves through the node registry and must have exactly one
 owner. It describes the USB host, independently of which computer controls the
 arm or which teleop role that arm takes. Device names and serials remain stable;
-view roles distinguish mounting locations. Both views are on the right arm:
-`wrist_upper` and, under it, `wrist_lower` (the camera that was the left arm's
-`wrist_left` until 2026-10-23). Both are owned by the ROS stack's node, which
-opens them directly; no visiond D405 service runs for them.
+view roles distinguish the cameras. Both views are on the xArm: `wrist_2`,
+D405-2, the session's, and `wrist_1`, D405-1 (on the WXAI follower's wrist
+from 2026-10-23, and before that the left arm's `wrist_left`). Both are owned
+by the ROS stack's node, which opens them directly; no visiond D405 service
+runs for them.
 
 The D405 service resolves its node's cameras and passes explicit, repeatable
 `--sensor` arguments to `capture-realsense-all --group d405`. Unknown names,
@@ -614,7 +633,22 @@ locate views; it judges a moved sheet by the kept markers' rays and measures
 a curved skin at its gauge holds. The view that reads the most
 markers anchors the pose. Fewer than two agreeing markers is no pose for
 that turn (the arm over the sheet hides most of them), published `lost` with
-the reason. The translation sigma is the
+the reason.
+
+Several sheets of one print can stand in the view: other skin mounts and
+spares on the table, the page of the rig beside it. They read the same codes, so nothing in a read says
+which sheet it lies on. Once the largest group is kept, the reads left are
+grouped the same way and each further group is placed too. The target's pose
+is the largest group's, and that is whichever sheet reads the most this turn,
+so with two sheets of about the same size it changes from turn to turn. The
+others ride in `support.copies`, each a pose, its sigmas and a support of its
+own. Which sheet is the page is decided by where it stands, and only a reader
+that knows where its arm is can say: the ROS bridge follows the sheet chosen
+(`--sheet-at`) or set up, and never hands the page to another (`ros/README.md`,
+section 4.3). The viewer draws the target as published. A small-marker tile keeps no read window on a turn that read
+copies, since the window would hide all but one.
+
+The translation sigma is the
 markers' residual floored at 2 mm, and the rotation sigma a fixed 1.5°: the
 depth and registration bias the markers cannot see. An installed reference
 that is not a tile, or fails to load, is published `lost` with the reason
@@ -623,8 +657,8 @@ service publishes each print's pose as `tatbot.target-pose/1` on
 `tatbot/tracking/target/<pattern_id>` with a `support` block: the anchor
 camera, its marker count, ids and residual, both sigmas, the page corners
 (`corners_m`, the pose's flat outline the viewer draws), the kept markers'
-corners (`markers.ids[k]` names `anchor_points_m[4k:4k+4]`), the bundle id,
-and `motion_authority: false`.
+corners (`markers.ids[k]` names `anchor_points_m[4k:4k+4]`), the print's other
+sheets in view (`copies`), the bundle id, and `motion_authority: false`.
 
 Its configured period is one second; `processing_p95_ms` and
 `capture_to_publication_p95_ms` report the achieved rate and age. Per-turn

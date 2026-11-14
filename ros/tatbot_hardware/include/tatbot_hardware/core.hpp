@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,9 +15,9 @@
 namespace tatbot_hardware
 {
 
-inline constexpr size_t kJoints = 7;    // joint_0..joint_5 (rad), then the carriage (m)
-inline constexpr size_t kCarriage = 6;
-inline constexpr size_t kWristRoll = 5;
+// The controller-order joint vector. Both arm models this stack drives have seven controlled joints; what each one
+// is comes from the arm's model (Config::carriage), never from its index.
+inline constexpr size_t kJoints = 7;
 using Vec7 = std::array<double, kJoints>;
 using Vec3 = std::array<double, 3>;
 // base_frame -> tcp_frame for a joint vector (KDL in the adapter, anything in tests): the tip
@@ -39,6 +40,14 @@ struct Feedback
 
 struct Config
 {
+  // The arm's model (config/arm-models, through the hardware parameters `carriage_joint` and `command_delay_s`); the
+  // defaults are the Trossen WXAI's. Its tool carriage, if it has one, is its one prismatic joint (m; every other
+  // joint rad), the joint the contact cap guards and a trip retracts.
+  std::optional<size_t> carriage = 6;
+  // The controller's pure delay from a command to the measurement that answers it: the stall, tip-lag and snag
+  // guards compare the measured joints with the command this long ago, so the delay is never read as lag. 0 on the
+  // WXAI, whose thresholds already absorb its ~70 ms tracking lag.
+  double command_delay_s = 0;
   // Safety numbers: stack.yaml safety.* (README section 8); defaults are the stack.yaml values.
   double step_limit_rad = 0.05, step_limit_m = 0.005, feedback_warmup_s = 0.10;
   double stall_error_rad = 0.35, stall_time_s = 2.0, stall_progress_rad = 0.05;
@@ -60,6 +69,8 @@ struct Config
   double snag_off_m = 0.0015, snag_hold_s = 0.2;
   double landing_takeover_s = 0.5, landing_staged_s = 4.0, landing_sleep_s = 3.0;
   double landing_verify_rad = 0.2, landing_verify_carriage_m = 0.0005, landing_budget_s = 45.0;
+  // The landing's rest pose (config/trossen/tatbot.yaml staged_positions): its staged sweep keeps the measured
+  // carriage, and the sleep that follows ends here.
   Vec7 staged_positions{0, 0, 0, 0, 0, 1.5707963267948966, 0};
   // Joint limits from the URDF; every sent position is clamped into them.
   Vec7 lower{}, upper{};
@@ -90,6 +101,21 @@ struct ProbeStatus
 };
 
 enum class Phase { kInactive, kRunning, kLatched, kRetracting, kLanding, kLanded };
+
+// A joint vector's last kSize samples (2.5 s at 400 Hz), and its value at a past time interpolated between them:
+// the newest for a later time, the oldest for an earlier one, NaN before the first sample.
+class History
+{
+public:
+  void add(double t, const Vec7 & v);
+  Vec7 at(double t) const;
+
+private:
+  static constexpr size_t kSize = 1024;
+  std::array<double, kSize> t_{};
+  std::array<Vec7, kSize> v_{};
+  size_t head_ = 0, size_ = 0;
+};
 
 struct Output
 {
@@ -134,8 +160,8 @@ public:
 
   // Feed every measurement, from configure on: the first command needs feedback_warmup_s of it.
   void observe_feedback(double now, const Feedback & fb);
-  // The measured joints at time t, interpolated from the last kHistory ticks (clamped to their ends).
-  Vec7 joints_at(double t) const;
+  // The measured joints at time t, interpolated from the last ticks (clamped to their ends).
+  Vec7 joints_at(double t) const {return measured_.at(t);}
   Phase phase() const {return phase_;}
   // The GPIO state interfaces in names::kSafetyState order (rt_period_max_ms is the adapter's).
   const std::array<double, names::kSafetyState.size()> & safety() const {return safety_;}
@@ -148,10 +174,19 @@ private:
     kSource, kOk, kAge, kProbe, kLatched, kReason, kGuard, kTripped, kTripQ0, kUnlatchAck = 15,
     kLandAck, kLanding, kLanded, kCtrlError, kRtPeriod
   };
+  // One tick's decision; tick() records what it sends.
+  Output decide(
+    double now, const Feedback & fb, const Commands & cmd, const EstopStatus & estop,
+    bool controller_error, const ProbeStatus & probe);
   void latch(double now, const Feedback & fb, int reason);
   void start_landing(double now, const Feedback & fb);
+  // The command the measured joints answer at `now`: `target` itself, or what was sent command_delay_s before
+  // (a hold, a retract or a landing as much as a tracked target).
+  Vec7 answered(double now, const Vec7 & target) const;
   bool stalled(double now, const Vec7 & target, const Vec7 & q);
   bool guard_tripped(double now, const Vec7 & target, const Feedback & fb);
+  // The carriage contact cap (an arm without a carriage has none): true to latch and retract.
+  bool carriage_pushed(const Feedback & fb, const Vec7 & target, const Vec7 & ff);
   // The armed snag guard: true to stop, the needle held in the work (README section 8).
   bool snagged(double now, const Vec7 & target, const Feedback & fb);
   // The armed probe guard: true to stop. `fault` when it cannot protect (no fresh probe, or the probe
@@ -186,11 +221,8 @@ private:
   double snag_since_ = -1;
   // probe guard: a touch needs the probe seen at rest since arming
   bool probe_clear_ = false;
-  // the measured joints of the last kHistory ticks (2.5 s at 400 Hz), for the probe's edge time
-  static constexpr size_t kHistory = 1024;
-  std::array<double, kHistory> hist_t_{};
-  std::array<Vec7, kHistory> hist_q_{};
-  size_t hist_head_ = 0, hist_size_ = 0;
+  // the measured joints, for the probe's edge time, and the positions sent, for the guards' delay
+  History measured_, sent_;
   // carriage retract and landing profiles
   double motion_t0_ = 0;
   Vec7 from_{}, staged_{}, sleep_{};
@@ -198,10 +230,11 @@ private:
   std::string event_;
 };
 
-// The tip force along the tcp +z axis (toward the paper) that the arm joints' external torques
+// The tip force along the tcp +z axis (toward the paper) that the revolute joints' external torques
 // imply for a point force at the tcp: tau = Jv^T f, so f = (Jv Jv^T)^-1 Jv tau, with Jv the
-// translational Jacobian by finite differences of fk. NaN without fk.
-double tip_force_along_tool(const TipFk & fk, const Vec7 & q, const Vec7 & tau);
+// translational Jacobian over every joint but the carriage, by finite differences of fk. NaN without fk.
+double tip_force_along_tool(
+  const TipFk & fk, std::optional<size_t> carriage, const Vec7 & q, const Vec7 & tau);
 
 // Minimum-jerk blend from a to b: position and velocity at time t of a move lasting duration.
 void min_jerk(const Vec7 & a, const Vec7 & b, double t, double duration, Vec7 & q, Vec7 & qd);

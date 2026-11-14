@@ -4,6 +4,11 @@ Until 2026-08-30 it lived in three places — the golden, scripts/il_recover_arm
 and tatbot_sim/planning.py — and nothing checked they agreed. Rolling the wrist
 90 deg for the fixed EE mount would have moved one of them. Now the other two
 READ the golden; this test fails if a literal copy comes back.
+
+Since 2026-11-07 the WXAI's arm model (config/arm-models/trossen-wxai.yaml) states
+the same pose as its `rest`, which the stack's planner, inspect, calibration and
+collision guard read (an arm without a Trossen golden has its rest there alone).
+The last test holds the two equal.
 """
 
 import re
@@ -49,3 +54,9 @@ def test_no_other_file_carries_a_literal_copy():
             if needle in text:
                 offenders.append(f"{path.relative_to(REPO)}: {needle}")
     assert not offenders, "staged pose copied outside tatbot.yaml:\n  " + "\n  ".join(offenders)
+
+
+def test_the_wxai_arm_model_rests_at_the_golden_staged_pose():
+    import arm_model
+
+    assert list(arm_model.load("trossen-wxai", REPO).rest) == staged_from_golden()

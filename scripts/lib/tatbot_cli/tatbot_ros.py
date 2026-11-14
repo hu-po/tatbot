@@ -43,6 +43,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "scripts" / "lib"))
 from tatbot_cli import nodes as fleet  # noqa: E402
+from tatbot_cli.stack import STACK_YAML, drawing_arm, stack_defaults  # noqa: E402
 
 EXIT_USAGE, EXIT_GATE, EXIT_WRONG_NODE, EXIT_UNREACHABLE, EXIT_BUSY = 2, 3, 4, 5, 6
 # AGENTS.md marks repo/ as a checkout for scripts/lib/tatbot_runlog.py, which then reads config/runlog.json
@@ -59,12 +60,19 @@ UDP_PORT = 7640  # stack.yaml estop.udp_port
 PROBE_PORT = 7641  # stack.yaml probe.udp_port
 UDEV_RULE = "config/udev/99-tatbot-estop.rules"  # /dev/tatbot-estop, wherever a Pico is read
 PRODUCTION_ROOT = "~/tatbot-ros"
-STACK_YAML = "ros/tatbot_bringup/config/stack.yaml"
 # Sim lanes (ros-sim role): roots, ROS domains, router and sim-server ports per lane, and the container runtime.
 SIM_ROLE, SIM_ROOT, SIM_LANES = "ros-sim", "~/tatbot-ros-sim", 40
 SIM_DOMAIN, SIM_ROUTER_PORT, SIM_ENDPOINT_PORT = 60, 7460, 7650
 SIM_RUN = "repo/containers/ros-sim/run.sh"   # in the lane root, as deploy syncs it
 SIM_DEPLOY_DIRS = ("containers/ros-sim",)
+# The deploy's rsync into repo/. --checksum --no-times: a file is sent only when its content differs, and lands
+# with the transfer's time, newer than any build of what it replaced, so the build cannot skip it (a rollback's
+# older file left Touch.action's MODE_VIEW out of the generated Python, 2026-10-22). Copying this checkout's times
+# and touching the sent files on the node after them made each one differ by time alone at the next deploy, which
+# re-sent it and rebuilt every package, tatbot_interfaces among them, so each deploy landed and stopped the stack
+# (2026-11-08).
+SYNC = ("rsync", "-a", "--no-times", "--checksum", "--delete", "--delete-excluded", "--prune-empty-dirs",
+        "--itemize-changes")
 
 
 class VerbError(Exception):
@@ -167,7 +175,7 @@ def sim_lane(hardware: str | None = None) -> int | None:
 def sim_target(lane: int) -> Target:
     """A sim lane on the `ros-sim` role's owner, which never falls back to the `ros` node."""
     node = owner(SIM_ROLE)
-    if node == owner("ros"):   # owner, 2026-10-18: no sim lanes beside the live stack, whatever nodes.json says
+    if node == owner("ros"):   # 2026-10-18: no sim lanes beside the live stack, whatever nodes.json says
         raise VerbError(EXIT_WRONG_NODE, f"{node} holds both {SIM_ROLE} and ros: a sim lane never runs on the ros node")
     named = os.environ.get("TATBOT_ROS_NODE")
     if named and named != node:
@@ -289,15 +297,6 @@ def changed_packages(itemized: str) -> set[str]:
     return packages
 
 
-def synced_sources(itemized: str) -> list[str]:
-    """The ros/ files rsync wrote (`<f` lines sent to the node, `>f` to a local root), which the deploy marks new
-    there: rsync -a keeps the source's mtimes, and a file older than the last build's outputs is not rebuilt. A deploy
-    after a rollback left Touch.action's MODE_VIEW out of the generated Python, every calibration hold refused
-    (2026-10-22)."""
-    paths = (line.split(" ", 1)[1].strip() for line in itemized.splitlines() if line[:2] in ("<f", ">f") and " " in line)
-    return [path for path in paths if path.startswith("ros/")]
-
-
 def buildable(packages: set[str], r: Runner) -> set[str]:
     """The changed packages colcon can build: a COLCON_IGNOREd one (the relay) builds nothing, and a
     removed one leaves its install behind until `deploy --clean`."""
@@ -367,8 +366,7 @@ def deploy(ns, r: Runner) -> None:
     r.step("dirs", t.host(f"mkdir -p {t.root}/repo/config {t.root}/calib {t.root}/inbox {t.root}/deps"))
     # The owner's palette declarations (tatbot ros palette load) stay where they are; a first deploy gets this
     # checkout's.
-    sync = ["rsync", "-a", "--delete", "--delete-excluded", "--prune-empty-dirs", "--itemize-changes",
-            "--filter=P /config/palette_load.yaml", "--exclude=/config/palette_load.yaml"]
+    sync = [*SYNC, "--filter=P /config/palette_load.yaml", "--exclude=/config/palette_load.yaml"]
     if r.dry:  # a dry run starts no process and writes no file: not even git or the filter file
         r.say(f"# the tracked files under {', '.join(dirs)} (git ls-files), as an rsync include filter")
         r.step("sync", [*sync, "--filter=merge <tracked-files filter>", f"{REPO}/", t.dest("repo/")])
@@ -383,8 +381,6 @@ def deploy(ns, r: Runner) -> None:
         finally:
             os.unlink(fh.name)
     changed = buildable(changed_packages(itemized), r)
-    if synced_sources(itemized):
-        r.step("touch", t.host(f"cd {t.root}/repo && xargs -0 touch -c --"), stdin="\0".join(synced_sources(itemized)))
     r.say(f"# changed: {len([ln for ln in itemized.splitlines() if ln.strip()])} paths; ros packages: "
           f"{', '.join(sorted(changed)) or 'none'}" if not r.dry else "# changed: (from rsync --itemize-changes)")
     # Recorded on the node before anything else can fail or be skipped (--no-build, Ctrl-C): the build
@@ -527,33 +523,6 @@ def relay_addr(ns, what: str) -> str:
         raise VerbError(EXIT_USAGE, f"{what} needs the relay's address: pass --relay-addr ADDR, or record the "
                                     "estop-relay node's `lan` in config/nodes.json")
     return relay
-
-
-def stack_defaults() -> dict:
-    """hardware, estop.source, estop.relay_gpio, page.source, page.pattern_id, arms, machine.*, keypad.port and
-    keypad.from_addr from this checkout's stack.yaml (the one deploy sends). A line reader, so the backend stays
-    stdlib."""
-    out, block = {}, None
-    for line in (REPO / STACK_YAML).read_text().splitlines():
-        body = line.split("#", 1)[0].rstrip()
-        key, _, value = body.strip().partition(":")
-        if not body.strip():
-            continue
-        if not body.startswith(" "):
-            block = key
-            if key in ("hardware", "arms"):
-                out[key] = value.strip().strip("[]").replace(" ", "")
-        elif key == "source" and block in ("estop", "page"):
-            out[block] = value.strip()
-        elif key.strip() == "pattern_id" and block == "page":
-            out["pattern_id"] = value.strip()
-        elif key == "relay_gpio" and block in ("estop", "probe"):
-            out["relay_gpio" if block == "estop" else "probe_gpio"] = value.strip().strip('"')
-        elif block == "machine":
-            out[f"machine_{key.strip()}"] = value.strip().strip('"')
-        elif block == "keypad" and key.strip() in ("port", "from_addr"):
-            out["keypad_" + key.strip().removesuffix("_addr")] = value.strip().strip('"')
-    return out
 
 
 def effective(ns) -> str:
@@ -871,13 +840,13 @@ done
 # (`ros up --pattern` writes it into stack.env), not stack.yaml's default, which watched an absent print for 3 min
 # and refused the draw (2026-10-06). At most PAGE_WAIT_S, and then the draw goes on: its set-up places the page
 # from the wrist and the gauge holds, and refuses there when they cannot. An inked print the overhead no longer
-# reads held a person still 3 min here before any set-up began (owner, 2026-10-21).
+# reads held a person still 3 min here before any set-up began (2026-10-21).
 PAGE_WAIT_S = 60
 STACK_PATTERN = r"""pattern=$(sed -n 's/.*pattern_id:=\([^ ]*\).*/\1/p' {root}/stack.env 2>/dev/null)"""
 READY_PAGE = STACK_PATTERN + r"""
 end=$((SECONDS + {wait_s}))
 while [ $SECONDS -lt $end ]; do
-  timeout 10 ros2 run tatbot_bridge page_watch --seconds 2 --json ${{pattern:+--pattern-id "$pattern"}} 2>/dev/null | grep -q '"measured": [1-9]' && exit 0
+  timeout 10 ros2 run tatbot_bridge page_watch --seconds 2 --arm {arm} --json ${{pattern:+--pattern-id "$pattern"}} 2>/dev/null | grep -q '"measured": [1-9]' && exit 0
   sleep 1
 done
 echo "no measured page from the overhead in {wait_s} s: the draw's set-up places it from the wrist"; exit 0
@@ -892,7 +861,7 @@ def page_on_bus(effective: str) -> bool:
 
 
 def ready_wait(root: str, arm: str, page: bool) -> str:
-    return READY_WAIT.format(root=root, arm=shlex.quote(arm)) + (READY_PAGE.format(root=root, wait_s=PAGE_WAIT_S) if page else "exit 0\n")
+    return READY_WAIT.format(root=root, arm=shlex.quote(arm)) + (READY_PAGE.format(root=root, arm=shlex.quote(arm), wait_s=PAGE_WAIT_S) if page else "exit 0\n")
 
 
 def wake(t: Target, r: Runner, arm: str, page: bool = True, rest: bool = False) -> None:
@@ -954,6 +923,8 @@ def down(ns, r: Runner) -> None:
     r.step("stop", t.shell(f"sudo systemctl stop {' '.join(units)}; systemctl is-active {' '.join(t.units)} || true"))
 
 
+# Both scripts take the newest run by its id, which starts with its UTC time: a prune stripping a run's media leaves the
+# directory's own time newer than any run's.
 STATUS_SCRIPT = r"""
 cd {root} 2>/dev/null || {{ echo "missing=1"; exit 0; }}
 echo "root={root_arg}"
@@ -962,9 +933,9 @@ echo "dirty=$(sed -n 2p repo/REVISION 2>/dev/null | cut -d= -f2)"
 echo "args=$(sed -n 's/^TATBOT_ROS_ARGS=//p' stack.env 2>/dev/null)"
 echo "effective=$(sed -n 's/^TATBOT_ROS_EFFECTIVE=//p' stack.env 2>/dev/null)"
 {unit_lines}
-newest=$(ls -1t "${{TATBOT_LOG_ROOT:-$HOME/tatbot-logs}}"/ros-draw 2>/dev/null | grep -v latest | head -1); echo "newest_run=$newest"
+newest=$(ls -1 "${{TATBOT_LOG_ROOT:-$HOME/tatbot-logs}}"/ros-draw 2>/dev/null | grep '^2' | tail -1); echo "newest_run=$newest"
 """ + STACK_PATTERN + r"""
-[ -f env.sh ] && source env.sh && echo "page=$(timeout 10 ros2 run tatbot_bridge page_watch --seconds 2 --json ${{pattern:+--pattern-id "$pattern"}} 2>/dev/null | grep '"summary"')"
+[ -f env.sh ] && source env.sh && echo "page=$(timeout 10 ros2 run tatbot_bridge page_watch --seconds 2 --arm {arm} --json ${{pattern:+--pattern-id "$pattern"}} 2>/dev/null | grep '"summary"')"
 if {unit_up} && [ -f env.sh ]; then
   echo "client=$(timeout 15 ros2 run tatbot_session client status --json 2>&1 | tail -1)"
 fi
@@ -992,6 +963,7 @@ def print_status(report: dict, root_arg: str) -> None:
     print(f"ros node   {report['node']}:{report.get('root', root_arg)}  revision {report.get('revision', '?')[:12]}"
           f"{' (dirty)' if report.get('dirty') == '1' else ''}")
     print(f"runs with  {report.get('effective') or '(stack.yaml defaults: no tatbot ros up yet)'}")
+    print(f"draws with {report.get('arm', '?')} (stack.yaml arms: the arm a verb given no --arm drives)")
     print("units      " + "  ".join(f"{u} {s}" for u, s in report["units"].items()))
     print(f"args       {report.get('args') or '(stack.yaml defaults)'}")
     print(f"newest run {report.get('newest_run') or '-'}")
@@ -1005,14 +977,16 @@ def print_status(report: dict, root_arg: str) -> None:
 
 def status(ns, r: Runner) -> None:
     t = ros_target()
-    script = STATUS_SCRIPT.format(root=t.root, root_arg=t.root_arg, unit_lines=unit_lines(t), unit_up=stack_up(t))
+    arm = drawing_arm()
+    script = STATUS_SCRIPT.format(root=t.root, root_arg=t.root_arg, unit_lines=unit_lines(t), unit_up=stack_up(t),
+                                  arm=arm)
     if r.dry:
         r.step("status", t.shell(script))
         return
     proc = subprocess.run(t.shell(script), capture_output=True, text=True)
     if proc.returncode == 255 or not proc.stdout:
         raise VerbError(EXIT_UNREACHABLE, f"no answer from {t.node}: {proc.stderr.strip()[-300:]}")
-    report = parse_status(proc.stdout, t.node)
+    report = {**parse_status(proc.stdout, t.node), "arm": arm}   # the arm a verb given no --arm drives
     if report.get("missing"):
         raise VerbError(1, f"no workspace at {t.node}:{t.root_arg} (tatbot ros deploy)")
     if ns.json:
@@ -1024,7 +998,7 @@ def status(ns, r: Runner) -> None:
 # The stencil page as the tracker publishes it (page_watch, read only), and the page the newest set-up placed.
 PAGE_SCRIPT = STACK_PATTERN + r"""
 source {root}/env.sh
-echo "setup=$(python3 -c 'import json, sys; p = json.load(open(sys.argv[1])); print(json.dumps({{"run": sys.argv[1].split("/")[-2], "used": p.get("used")}}))' "$(ls -t ~/tatbot-logs/ros-touch/*/page.json 2>/dev/null | head -1)" 2>/dev/null)"
+echo "setup=$(python3 -c 'import json, sys; p = json.load(open(sys.argv[1])); print(json.dumps({{"run": sys.argv[1].split("/")[-2], "used": p.get("used")}}))' "$(ls -1 ~/tatbot-logs/ros-touch/2*/page.json 2>/dev/null | tail -1)" 2>/dev/null)"
 timeout {timeout} ros2 run tatbot_bridge page_watch --seconds {seconds} --arm {arm} --json ${{pattern:+--pattern-id "$pattern"}}
 """
 
@@ -1041,7 +1015,7 @@ def page_moved(base_from_page: list, xyz_mm: list, rpy_deg: list) -> dict:
 def page_report(out: str) -> dict | None:
     """PAGE_SCRIPT's output as a report: the watch's counts, the samples' mean pose and spread, and where it stands from
     the set-up page; None when the watch printed no summary."""
-    setup, samples, summary = None, [], None
+    setup, samples, summary, sheets = None, [], None, []
     for line in out.splitlines():
         if line.startswith("setup="):
             with contextlib.suppress(ValueError):
@@ -1050,12 +1024,14 @@ def page_report(out: str) -> dict | None:
             row = json.loads(line)
             if "summary" in row:
                 summary = row["summary"]
-            elif row.get("base_xyz_mm"):
+                continue
+            sheets = row.get("sheets") or sheets
+            if row.get("base_xyz_mm"):
                 samples.append(row)
     if summary is None:
         return None
     report = {"pattern_id": summary.get("pattern_id"), "seconds": summary.get("seconds"),
-              "measured": summary.get("measured"), "lost": summary.get("lost")}
+              "measured": summary.get("measured"), "lost": summary.get("lost"), "sheets": sheets}
     if not samples:
         return report
     xyz = [row["base_xyz_mm"] for row in samples]
@@ -1070,25 +1046,41 @@ def page_report(out: str) -> dict | None:
     return report
 
 
+def sheet_list(sheets: list) -> str:
+    """The print's sheets in view but the page, in a few words: where each stands in the arm's base, which is what
+    --sheet-at takes."""
+    def at(sheet):
+        xy = sheet.get("base_xy_mm")
+        return f"at {xy[0]:.0f},{xy[1]:.0f} mm" if xy else f"{sheet.get('arm_mm', '?')} mm from the arm"
+    return ", ".join(f"{at(sheet)} ({sheet.get('markers')} markers)" for sheet in sheets if not sheet.get("page"))
+
+
 def print_page(report: dict) -> None:
-    """Three short lines a small agent can repeat as they stand: tracked or not, where (with the surface height the
-    set-up measured, since the overhead alone reads the skin 3-8 mm high), and how far off the set-up page."""
-    seen, n = report["measured"], report["measured"] + report["lost"]
+    """Short lines a small agent can repeat as they stand: tracked or not, where (with the surface height the set-up
+    measured, since the overhead alone reads the skin 3-8 mm high), how far off the set-up page, and the print's other
+    sheets in view, which the page is told from by where they stand."""
+    seen, n, sheets = report["measured"], report["measured"] + report["lost"], report.get("sheets") or []
     if "base_xyz_mm" not in report:
-        print(f"stencil NOT seen: 0 of {n} samples in {report['seconds']:g} s (covered, out of view, or another print)")
+        if sheets:
+            print(f"stencil NOT placed: {len(sheets)} sheet(s) of the print in view, none the page: {sheet_list(sheets)}"
+                  " (none where the page stood, or none chosen: ros draw or touch --sheet-at=X,Y chooses one)")
+        else:
+            print(f"stencil NOT seen: 0 of {n} samples in {report['seconds']:g} s (covered, out of view, or another print)")
         return
     x, y, z = report["base_xyz_mm"]
-    where = f"centre {x:.0f} mm ahead, {abs(y):.0f} mm {'left' if y >= 0 else 'right'} of the arm"
+    where = f"centre {x:.0f} mm ahead, {abs(y):.0f} mm {'left' if y >= 0 else 'right'} of the arm (at {x:.0f},{y:.0f})"
     print(f"stencil tracked: {seen} of {n} samples in {report['seconds']:g} s, steady to {report['spread_mm']:.1f} mm")
     moved = report.get("from_setup")
     if not moved:
         print(f"  {where}; no set-up yet, so its height is the "
               f"overhead's {z:.0f} mm, which reads high")
-        return
-    print(f"  {where}; surface {moved['surface_z_mm']:.0f} mm up (the "
-          f"set-up's; the overhead alone reads {z:.0f})")
-    print(f"  off the set-up page: {moved['x_mm']:+.1f} / {moved['y_mm']:+.1f} mm, {moved['turn_deg']:+.1f} deg "
-          "(1-3 mm is the set-up's own correction; more means the skin moved)")
+    else:
+        print(f"  {where}; surface {moved['surface_z_mm']:.0f} mm up (the "
+              f"set-up's; the overhead alone reads {z:.0f})")
+        print(f"  off the set-up page: {moved['x_mm']:+.1f} / {moved['y_mm']:+.1f} mm, {moved['turn_deg']:+.1f} deg "
+              "(1-3 mm is the set-up's own correction; more means the skin moved)")
+    if len(sheets) > 1:
+        print(f"  also in view, not the page: {sheet_list(sheets)}")
 
 
 def page(ns, r: Runner) -> int:
@@ -1126,9 +1118,13 @@ def compile_argv(design, ns) -> tuple[list[str], dict]:
                        ("--mark-width-mm", "mark_width_mm"), ("--max-stroke-mm", "max_stroke_mm")):
         if getattr(ns, dest, None):
             argv += [flag, getattr(ns, dest)]
+    argv += ["--allow-marker-loss"] if getattr(ns, "allow_marker_loss", False) else []
     # `--at=X,Y` joined: a negative X would otherwise read as a flag
     argv += [f"{flag}={value}" for flag, value in (("--at", getattr(ns, "at", None)), ("--width", getattr(ns, "width", None)),
                                                    ("--keep-region", getattr(ns, "keep_region", None))) if value]
+    argv += [arg for path in getattr(ns, "after", None) or [] for arg in ("--after", path)]
+    argv += [flag for flag, dest in (("--wiped", "wiped"), ("--allow-borrowed-dip", "allow_borrowed_dip"))
+             if getattr(ns, dest, False)]
     from tatbot_paths import DRAWING_ROOTS
 
     env = {"PYTHONPATH": os.pathsep.join([*(str(REPO / root) for root in DRAWING_ROOTS),
@@ -1146,7 +1142,7 @@ def compile_(ns, r: Runner) -> int:
 
 
 def program_file(path: str, ns, r: Runner) -> Path:
-    """The program to send: a program.json as is; acquired artwork or a placed design compiled here first."""
+    """The program to send: a program.json as is; acquired artwork compiled here first."""
     source = Path(path).expanduser()
     if not source.is_file():
         raise VerbError(EXIT_USAGE, f"no such file: {source}")
@@ -1166,7 +1162,7 @@ def program_file(path: str, ns, r: Runner) -> Path:
         if getattr(ns, 'arm', doc['arm']) != doc['arm']:
             raise VerbError(EXIT_USAGE, f"the program was prepared for the {doc['arm']} arm")
         if ns.at or ns.width or ns.speed or ns.stencil:
-            raise VerbError(EXIT_USAGE, "--at, --width, --speed and --stencil apply to artwork or a placed design, "
+            raise VerbError(EXIT_USAGE, "--at, --width, --speed and --stencil apply to acquired artwork, "
                                         "not a compiled program")
         return source
     out = Path("<a new temporary directory>") if r.dry else Path(tempfile.mkdtemp(prefix="tatbot-ros-compile-"))
@@ -1183,23 +1179,36 @@ def program_file(path: str, ns, r: Runner) -> Path:
 def rehearsal_file(program: Path, ns, r: Runner) -> Path:
     """The program drawn in the air (tatbot_contracts.ros_program.rehearsal): the same strokes, page setup, gauge
     holds, hover stops and stencil follow, the pen --standoff-mm over the measured page (default motion.yaml's
-    pen.hover.height_m), the tattoo machine off, no dips. Written beside a temporary copy; the run is its own."""
+    pen.hover.height_m), the tattoo machine off, no dips (--dry-dips or --real-dips keep them). Written beside a
+    temporary copy; the run is its own."""
+    import ink_spec
     from tatbot_contracts.canonical import parse_json
     from tatbot_contracts.ros_program import rehearsal
 
+    from tatbot_cli.ros_palette import aliases
+
+    ALIASES = aliases(ink_spec.load_palette())   # noqa: N806 - the installed palette's caps by short name
     height = None if ns.standoff_mm is None else float(ns.standoff_mm) / 1000.0
     at = "motion.yaml's pen.hover height" if height is None else f"{height * 1e3:g} mm"
+    dry, real = getattr(ns, "dry_dips", None), bool(getattr(ns, "real_dips", False))
+    slot = None if dry is None else ALIASES.get(dry.upper(), dry)
+    if dry is not None and slot not in ALIASES.values():
+        raise VerbError(EXIT_USAGE, f"--dry-dips {dry}: a cap, one of {', '.join(ALIASES)}")
+    if real and dry is not None:
+        raise VerbError(EXIT_USAGE, "--dry-dips or --real-dips, not both")
+    dips = ("its dips and rinses into their own caps" if real else
+            "no dips" if slot is None else f"its dips dry, to {dry.upper()}'s hover and back, not into it")
     if not program.is_file():   # a dry run's design, not compiled
-        r.say(f"# rehearse: the compiled program in the air at {at}, the machine off, no dips")
+        r.say(f"# rehearse: the compiled program in the air at {at}, the machine off, {dips}")
         return program
     source = parse_json(program.read_bytes())
     try:
-        out = rehearsal(source, height)
+        out = rehearsal(source, height, slot, real_dips=real)
     except ValueError as error:
         raise VerbError(EXIT_USAGE, f"rehearse: {error}") from error
-    dips = sum(op["op"] == "dip" for op in source["ops"])
+    left = sum(op["op"] == "dip" for op in source["ops"])
     say = (f"# rehearse: {sum(op['op'] == 'stroke' for op in out['ops'])} strokes in the air at {at}, the machine off, "
-           f"{dips} dip(s) left out, no inspection")
+           + (f"{left} dip(s) left out" if slot is None and not real else dips) + ", no inspection")
     if r.dry:
         r.say(say)
         return program
@@ -1207,6 +1216,54 @@ def rehearsal_file(program: Path, ns, r: Runner) -> Path:
     path.write_text(json.dumps(out, indent=1) + "\n")
     r.say(f"{say}; {path}")
     return path
+
+
+def start_trim_file(program: Path, trim_mm: float, r: Runner) -> Path:
+    """The program with its run starting at the pen trim `trim_mm` (tatbot_contracts.ros_program.started_at)."""
+    from tatbot_contracts.canonical import parse_json
+    from tatbot_contracts.ros_program import started_at
+
+    say = f"# the run starts its cartridge at a pen trim of {trim_mm:+.2f} mm"
+    if r.dry or not program.is_file():   # a dry run's design, not compiled
+        r.say(say)
+        return program
+    try:
+        out = started_at(parse_json(program.read_bytes()), trim_mm / 1000.0)
+    except ValueError as error:
+        raise VerbError(EXIT_USAGE, f"--trim-mm: {error}") from error
+    path = Path(tempfile.mkdtemp(prefix="tatbot-ros-trim-")) / "program.json"
+    path.write_text(json.dumps(out, indent=1) + "\n")
+    r.say(f"{say}; {path}")
+    return path
+
+
+def ends_file(program: Path, ends: str, r: Runner) -> Path:
+    """The program with its run's stroke ends drawn `ends` (tatbot_contracts.ros_program.ends_drawn)."""
+    from tatbot_contracts.canonical import parse_json
+    from tatbot_contracts.ros_program import ends_drawn
+
+    say = f"# the run draws its stroke ends {ends} (over motion.yaml draw.ends)"
+    if r.dry or not program.is_file():   # a dry run's design, not compiled
+        r.say(say)
+        return program
+    try:
+        out = ends_drawn(parse_json(program.read_bytes()), ends)
+    except ValueError as error:
+        raise VerbError(EXIT_USAGE, f"--ends: {error}") from error
+    path = Path(tempfile.mkdtemp(prefix="tatbot-ros-ends-")) / "program.json"
+    path.write_text(json.dumps(out, indent=1) + "\n")
+    r.say(f"{say}; {path}")
+    return path
+
+
+def run_options_file(program: Path, ns, r: Runner) -> Path:
+    """The program with a new run's own options written into it: --trim-mm's start trim, --ends' stroke ends."""
+    trim_mm, ends = getattr(ns, "trim_mm", None), getattr(ns, "ends", None)
+    if trim_mm is not None:
+        program = start_trim_file(program, trim_mm, r)
+    if ends and ns.resume:
+        raise VerbError(EXIT_USAGE, "--ends starts a new run: a resume draws its program as it was sent")
+    return ends_file(program, ends, r) if ends else program
 
 
 def exec_remote(t: Target, command: str, r: Runner, *, tty: bool) -> int:
@@ -1266,11 +1323,17 @@ def draw(ns, r: Runner) -> int:
         raise VerbError(EXIT_USAGE, "draw needs a program (or --progress)")
     if getattr(ns, "standoff_mm", None) is not None and not ns.rehearse:
         raise VerbError(EXIT_USAGE, "--standoff-mm is a rehearsal's height: add --rehearse")
+    if (getattr(ns, "dry_dips", None) is not None or getattr(ns, "real_dips", False)) and not ns.rehearse:
+        raise VerbError(EXIT_USAGE, "--dry-dips and --real-dips dip a rehearsal: add --rehearse")
+    trim_mm = getattr(ns, "trim_mm", None)
+    if trim_mm is not None and ns.resume:
+        raise VerbError(EXIT_USAGE, "--trim-mm starts a new run: a resume keeps its ledger's trim")
     t = ros_target()
     program = program_file(ns.program, ns, r)
     stem = Path(ns.program).name.split(".")[0]
     if getattr(ns, "rehearse", False):
         program, stem = rehearsal_file(program, ns, r), f"{stem}-rehearse"
+    program = run_options_file(program, ns, r)
     name = f"{stem}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.json"
     copy = ["cp", str(program), t.dest(f"inbox/{name}")] if t.local else ["scp", "-q", "-o", "BatchMode=yes", str(program),
                                                                             t.dest(f"inbox/{name}")]
@@ -1280,7 +1343,7 @@ def draw(ns, r: Runner) -> int:
     if resume != (ns.resume or ""):
         r.say(f"# --resume {ns.resume} is this node's tatbot ros draw; its drawing on the ros node is {resume}")
     extra = "".join(f" {flag} {shlex.quote(value)}" for flag, value in (("--from-op", ns.from_op), ("--run-id", resume))
-                    if value)
+                    if value) + sheet_at_flag(ns)
     arm = shlex.quote(ns.arm)
     if ns.wake:
         wake(t, r, ns.arm)
@@ -1299,6 +1362,11 @@ def draw(ns, r: Runner) -> int:
     return rc
 
 
+def sheet_at_flag(ns) -> str:
+    """The client's --sheet-at, written with `=` so a negative x is never read as a flag."""
+    return f" --sheet-at={shlex.quote(ns.sheet_at)}" if getattr(ns, "sheet_at", None) else ""
+
+
 def touch(ns, r: Runner) -> int:
     extra = "".join(f" {flag} {' '.join(shlex.quote(str(v)) for v in value)}" for flag, value in
                     (("--start", ns.start), ("--rpy", ns.rpy), ("--direction", ns.direction)) if value)
@@ -1306,6 +1374,7 @@ def touch(ns, r: Runner) -> int:
                      (("--prior", ns.prior), ("--speed", ns.speed), ("--max-travel", ns.max_travel)) if value)
     extra += " --probe" if ns.probe else ""
     extra += " --move" if ns.move else ""
+    extra += sheet_at_flag(ns)
     return run_cancellable(ros_target(), f"exec ros2 run tatbot_session client touch --arm {shlex.quote(ns.arm)}{extra}",
                            r)
 
@@ -1324,20 +1393,40 @@ def inspect(ns, r: Runner) -> int:
                        r, tty=True)
 
 
-def evidence(ns, r: Runner) -> int:
-    command = shlex.join(["python3", "-m", "tatbot_session.research", "--page", ns.page, "--slot", ns.slot])
-    t = ros_target()
-    if r.dry:
-        r.say(f"[evidence] {shlex.join(t.shell(t.in_env(command)))}")
-        return 0
-    result = subprocess.run(t.shell(t.in_env(command)), capture_output=True, text=True, check=True)
-    print(result.stdout, end="")
-    return 0
+VIEWS_DIR = "tatbot-logs/ros-views"   # under the ros node's home: one directory a capture, named by its label
+VIEW_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}")
 
 
-def ready(ns, r: Runner) -> None:
-    """Complete the ordinary draw's wake-up before a caller freezes its runtime."""
-    wake(ros_target(), r, ns.arm)
+def views(ns, r: Runner) -> int:
+    """The lab's views (tatbot_session.views, docs/lab.md): `client views` on the ros node into
+    ~/tatbot-logs/ros-views/<label>, with --overhead the overhead D555's view first; the arm woken first unless
+    --no-wake and landed after unless --hold, and not touched at all with --no-wrist; with --fetch the frames and
+    views.json are then copied into that directory here."""
+    if not VIEW_LABEL.fullmatch(ns.label or ""):
+        raise VerbError(EXIT_USAGE, "--label names the views: letters, digits and _ . - only")
+    if not (ns.wrist or ns.overhead):
+        raise VerbError(EXIT_USAGE, "--no-wrist leaves only the overhead: add --overhead")
+    t, arm = ros_target(), shlex.quote(ns.arm)
+    out = f"{VIEWS_DIR}/{ns.label}"
+    if ns.wake and ns.wrist:
+        wake(t, r, ns.arm)
+    extra = "".join(f" {flag}={shlex.quote(str(value))}" for flag, value in
+                    (("--points", ns.points), ("--run", ns.run), ("--frames", ns.frames),
+                     ("--overhead-pages", ns.overhead_pages), ("--sheet-at", ns.sheet_at),
+                     ("--seconds", getattr(ns, "seconds", None))) if value)
+    extra += (" --overhead" if ns.overhead else "") + ("" if ns.wrist else " --no-wrist")
+    extra += f" --hover={float(ns.hover_mm) / 1000.0:g}" if ns.hover_mm is not None else ""
+    capture = f"ros2 run tatbot_session client views --arm {arm} --out ~/{out}{extra}"
+    land = f"timeout 150 ros2 run tatbot_session client land --arm {arm} || rc=1; " if ns.land and ns.wrist else ""
+    rc = run_cancellable(t, f"{capture}; rc=$?; {land}exit $rc" if land else f"exec {capture}", r)
+    if rc or not ns.fetch:
+        return rc
+    here = Path(ns.fetch).expanduser()
+    if not r.dry:
+        here.mkdir(parents=True, exist_ok=True)
+    there = f"{Path.home() / out}/" if t.local else f"{t.ssh}:{out}/"
+    code, _ = r.step("fetch", ["rsync", "-a", there, f"{here}/"])
+    return code
 
 
 STATION_REFUSED = {1: "the station moved since the fix it was compared with: the data taken between them is not used",
@@ -1428,29 +1517,83 @@ def chain(ns, r: Runner) -> int:
 
 
 def calib_apply(ns, r: Runner) -> int:
+    """A calib run's or sweep's tip into the fitted cartridge's record on the ROS owner (ros_cartridge adopt), then a
+    running stack restarted to plan with it; a calib wristcam run's palette tag seat into this checkout's palette.
+    A run that is adopted already changes nothing, which is said, and the stack keeps running.
+    With --derive-gauges each wrist gauge's tip follows the adopted tip through its camera's hand-eye (gauge_derive);
+    without it the gauges stay and what each would become is said."""
     if not ns.run:
         raise VerbError(EXIT_USAGE, "calib apply needs --run <ros-calib run id>")
     t = ros_target()
     _, text = r.step("candidate", t.shell(f"cat $HOME/tatbot-logs/ros-calib/{shlex.quote(ns.run)}/candidate.json"),
                      capture=True)
-    if r.dry:
+    if not r.dry and "tag_seat" in json.loads(text):   # a calib wristcam run: the palette roof tag's seat
+        return apply_tag_seat(ns, r, json.loads(text))
+    if not r.dry:
+        ros_busy(t)
+    report = owner_cartridge(t, r, "adopt", "--arm", ns.arm, "--run", ns.run,
+                             *(["--across-only"] if getattr(ns, "across_only", False) else []),
+                             *(["--derive-gauges"] if getattr(ns, "derive_gauges", False) else []))
+    if report is None:
+        reload_stack(t, r, "the stack plans with the tip it started with")
         return 0
-    import probe_calibration_adopt
+    if not report.get("changed", True):   # an owner deployed before the key reports every apply as one
+        r.say(f"# already adopted: {ns.run} is the {ns.arm} arm's {report['tool_id']} tip on {t.node} "
+              f"({report['record']}); nothing changed")
+        return 0
+    dx, dy, dz = report["moved_mm"]
+    along = f" and {dz:+.2f} mm along it" if dz else " (its length kept)"
+    r.say(f"# adopted {ns.run}: the {ns.arm} arm's {report['tool_id']} tip moved ({dx:+.2f}, {dy:+.2f}) mm across "
+          f"its axis{along}, on {t.node} ({report['record']})")
+    for line in gauge_lines(report.get("gauges_followed") or {}):
+        r.say(f"# {line}")
+    reload_stack(t, r, "the stack plans with the tip it started with")
+    for line in report["next"]:
+        r.say(f"# next: {line}")
+    return 0
 
-    candidate = json.loads(text)
-    if candidate.get("arm") != ns.arm:
-        raise VerbError(EXIT_USAGE, f"run {ns.run} calibrated the {candidate.get('arm')} arm, not {ns.arm}")
-    path = REPO / "config" / "workspace.yaml"
-    edited, why = probe_calibration_adopt.apply(candidate, path.read_text())
-    if why:
-        r.say("# not adopted: " + "; ".join(why))
+
+def gauge_lines(followed: dict) -> list[str]:
+    """What `calib apply` says of each wrist gauge against the tip it adopted (ros_cartridge.follow_gauges)."""
+    lines = []
+    for role, gauge in followed.items():
+        if "why" in gauge:
+            lines.append(f"wrist gauge {role}: cannot follow the tip: {gauge['why']}")
+            continue
+        x, y, z = gauge["tip_moved_cam_mm"]
+        height = gauge["along_normal_mm"]
+        moved = (f"its tip ({x:+.2f}, {y:+.2f}, {z:+.2f}) mm in its camera"
+                 + ("" if height is None else f", {height:+.2f} mm along its plane's normal"))
+        lines.append(f"wrist gauge {role}: derived from the tip, {moved}" if gauge["derived"] else
+                     f"wrist gauge {role}: kept as measured; --derive-gauges would move {moved}")
+    return lines
+
+
+def apply_tag_seat(ns, r: Runner, candidate: dict) -> int:
+    """calib apply of a calib wristcam run: the palette roof tag's seat it measured, into the palette's design and
+    urdf/palette.urdf (palette_tag_adopt)."""
+    import ink_spec
+    import palette_tag_adopt
+
+    arm = candidate.get("gauge", {}).get("arm")
+    if arm != ns.arm:
+        raise VerbError(EXIT_USAGE, f"run {ns.run} measured on the {arm} arm, not {ns.arm}")
+    design = REPO / ink_spec.palette_geometry(REPO)["cad_design"]
+    urdf = REPO / "urdf" / "palette.urdf"
+    try:
+        design_text, urdf_text, lines = palette_tag_adopt.apply(candidate, design.read_text(), urdf.read_text())
+    except ValueError as error:
+        r.say(f"# not adopted: {error}")
         return 3
-    path.write_text(edited)
-    tip, tip0 = candidate["fit"]["tip_m"], candidate["tip0_m"]
-    length = (f" and {(tip[2] - tip0[2]) * 1000:+.2f} mm along it" if candidate["fit"].get("length_measured") else "")
-    r.say(f"# adopted {ns.run}: the {ns.arm} tip moved ({(tip[0] - tip0[0]) * 1000:+.2f}, "
-          f"{(tip[1] - tip0[1]) * 1000:+.2f}) mm across its axis{length} in {path} (commit and land it; `tatbot ros "
-          "deploy` carries it to the stack)")
+    if (design_text, urdf_text) == (design.read_text(), urdf.read_text()):
+        r.say(f"# {lines[0]}; nothing changed")
+        return 0
+    design.write_text(design_text)
+    urdf.write_text(urdf_text)
+    for line in lines:
+        r.say(f"# adopted {ns.run}: {line}")
+    r.say(f"# {design.relative_to(REPO)} and {urdf.relative_to(REPO)} changed: commit and land them, `tatbot ros "
+          "deploy`, then touch the station again (its fix's yaw moved with the tag)")
     return 0
 
 
@@ -1462,22 +1605,128 @@ def palette(ns, r: Runner) -> int:
     return exec_remote(ros_target(), command, r, tty=False)
 
 
-# A still on the palette camera's node: full resolution, focus fixed at the ball, exposure and gain fixed.
-STILL = ("timeout 60 rpicam-still -n --mode 4624:3472:10 --autofocus-mode manual --lens-position 15 --shutter 60000 "
-         "--gain 8 -o {path}")
+def owner_cartridge(t: Target, r: Runner, *args: str) -> dict | None:
+    """scripts/lib/tatbot_cli/ros_cartridge.py on the ROS owner: its report, or VerbError with its refusal. None in a
+    dry run."""
+    command = 'PYTHONPATH="$TATBOT_REPO/scripts/lib:$PYTHONPATH" ' + shlex.join(
+        ['python3', '-m', 'tatbot_cli.ros_cartridge', *args])
+    argv = t.shell(t.in_env(command))
+    r.say(f"[cartridge] {shlex.join(argv)}")
+    if r.dry:
+        return None
+    proc = subprocess.run(argv, capture_output=True, text=True)
+    if proc.returncode == 255:
+        raise VerbError(EXIT_UNREACHABLE, f"no answer from {t.node}: {proc.stderr.strip()[-300:]}")
+    try:
+        report = json.loads(proc.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        raise VerbError(1, f"no report from {t.node}: {(proc.stderr or proc.stdout).strip()[-600:]}") from None
+    if not report.get("ok"):
+        raise VerbError(report.get("code") or 1, report.get("message") or "refused")
+    return report
+
+
+def print_cartridge(report: dict) -> None:
+    tip = report["tip"]
+    touch = tip.get("touchoff") or {}
+    instance = f" ({report['instance']})" if report.get("instance") else ""
+    print(f"{report['arm']}: {report['tool_id']}{instance}, fitted {report.get('fitted_utc') or 'before the record'}")
+    offset = ", ".join(f"{v * 1000:.3f}" for v in tip["pen_tip_offset_m"])
+    print(f"  tip ({offset}) mm: {tip['state']}"
+          + (f", {touch.get('method')} ({touch.get('session')}); {touch.get('note')}" if touch.get("session") else ""))
+    station = report["station_touch"]
+    if station.get("tool_id"):
+        print(f"  station touch: {station['tool_id']}, {station['measured_utc']}, height "
+              f"{station.get('height_source') or 'from the touches alone'}"
+              + ("; before this cartridge was fitted" if station["before_fit"] else ""))
+    for role, gauge in report["gauges"].items():
+        print(f"  wrist gauge {role}: {gauge['measured_with']}, {gauge['utc']}"
+              + (f"; derived from the tip of {gauge['derived']}" if gauge.get("derived") else "")
+              + ("" if gauge["current"] else "; not measured with this cartridge"))
+    for line in report["next"]:
+        print(f"  next: {line}")
+
+
+def cartridge(ns, r: Runner) -> int:
+    """`cartridge status` reads the arm's fitted cartridge on the ROS owner; `cartridge fit` records the one now in the
+    mount, then restarts a running stack so it plans with it."""
+    t = ros_target()
+    if ns.action == "fit":
+        if not ns.tool:
+            raise VerbError(EXIT_USAGE, "cartridge fit needs the cartridge's datasheet id (tatbot tool list)")
+        if not r.dry:
+            ros_busy(t)
+        report = owner_cartridge(t, r, "fit", ns.tool, "--arm", ns.arm,
+                                 *(["--instance", ns.instance] if ns.instance else []))
+        reload_stack(t, r, "the stack plans with the cartridge it started with")
+    else:
+        report = owner_cartridge(t, r, "status", "--arm", ns.arm)
+    if report is None:
+        return 0
+    if ns.json:
+        print(json.dumps(report, sort_keys=True))
+    else:
+        print_cartridge(report)
+    return 0
+
+
+def reload_stack(t: Target, r: Runner, why: str) -> None:
+    """A running stack reads the fitted cartridge and its tip when it starts: restart it with its own flags
+    (stack.env), its arms landed first as `up` lands them."""
+    if r.dry:
+        r.say(f"# then, if the stack runs: {why}, so it restarts with its own flags, its arms landed first")
+        return
+    if subprocess.run(t.shell(stack_up(t)), capture_output=True).returncode != 0:
+        r.say("# the stack is not running: `tatbot ros up` starts it with these")
+        return
+    r.say(f"# {why}: restarting it with its own flags")
+    faulted = land_before_stop(t, r, argparse.Namespace(hold=False))
+    restart(t, r)
+    for arm in faulted:
+        land_after_fault(t, r, arm)
+
+
+# A still on the palette camera's node: full resolution, focus fixed at the ball, exposure and gain held for the run
+# (the change finder compares its stills). The run's first still meters the room (`meter`): a dark room takes
+# STILL_MAX, the 60 ms at gain 8 the finders were tuned on, a brighter one its own auto-exposure, never more light
+# than that (2026-10-27: a lit venue's stills under STILL_MAX clipped half of each frame and the park read the pen on
+# the ball).
+STILL = ("timeout 60 rpicam-still -n --mode 4624:3472:10 --autofocus-mode manual --lens-position 15 "
+         "--shutter {shutter} --gain {gain} -o {path}")
+METER = ("timeout 60 rpicam-still -n --mode 4624:3472:10 --autofocus-mode manual --lens-position 15 "
+         "--metadata {path} -o /dev/null >/dev/null 2>&1 && cat {path}")
+STILL_MAX = (60000, 8.0)   # shutter (us), analogue gain
 STILL_TMP = "/tmp/tatbot-sweep-still.jpg"
+METER_TMP = "/tmp/tatbot-sweep-meter.json"
 
 
 def _at(t: Target, path: str) -> str:
     return path if t.local else f"{t.ssh}:{path}"
 
 
-def still(cam: Target, ros: Target, dest: str, r: Runner) -> str:
+def meter(cam: Target, r: Runner) -> tuple[int, float]:
+    """The run's shutter (us) and gain: the palette camera's auto-exposure of the scene now, or STILL_MAX when that
+    asks for more light or cannot be read."""
+    try:
+        _, out = r.step("meter", cam.shell(METER.format(path=METER_TMP)), capture=True)
+        meta = json.loads(out)
+        metered = (int(meta["ExposureTime"]), float(meta["AnalogueGain"]))
+    except (VerbError, ValueError, KeyError) as error:
+        r.say(f"# meter: {error}; the stills take {STILL_MAX[0]} us at gain {STILL_MAX[1]:g}")
+        return STILL_MAX
+    exposure = min(metered, STILL_MAX, key=lambda e: e[0] * e[1])
+    r.say(f"# meter: the camera meters {metered[0]} us at gain {metered[1]:g} ({meta.get('Lux', 0):.0f} lux); "
+          f"the stills take {exposure[0]} us at gain {exposure[1]:g}")
+    return exposure
+
+
+def still(cam: Target, ros: Target, dest: str, r: Runner, exposure: tuple[int, float] = STILL_MAX) -> str:
     """One palette-camera still into `dest` on the ros node, by way of this node, which reaches the camera's node
     (the ros node holds no key there): "ok", or why not."""
     local = Path(tempfile.gettempdir()) / f"tatbot-sweep-{os.getpid()}.jpg"
     try:
-        r.step("still", cam.shell(STILL.format(path=STILL_TMP)), capture=True)
+        command = STILL.format(shutter=exposure[0], gain=f"{exposure[1]:g}", path=STILL_TMP)
+        r.step("still", cam.shell(command), capture=True)
         r.step("fetch", ["scp", "-q", "-o", "BatchMode=yes", _at(cam, STILL_TMP), str(local)])
         r.step("send", ["scp", "-q", "-o", "BatchMode=yes", str(local), _at(ros, dest)])
     except VerbError as error:
@@ -1503,16 +1752,18 @@ def calib_sweep(ns, r: Runner) -> int:
                              f"{opening}/station.json --run-started {started:.3f}{tool}{yaw}{height}"))
     r.say(f"[sweep] {shlex.join(argv)}")
     if r.dry:
-        r.say(f"# at each hold: {shlex.join(cam.shell(STILL.format(path=STILL_TMP)))}, fetched here and sent into "
-              "the run's stills/")
+        held = STILL.format(shutter="<metered>", gain="<metered>", path=STILL_TMP)
+        r.say(f"# at the first hold: {shlex.join(cam.shell(METER.format(path=METER_TMP)))}; at each hold: "
+              f"{shlex.join(cam.shell(held))}, fetched here and sent into the run's stills/")
         return 0
     t.reachable(r)
     proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    done = {}
+    done, exposure = {}, None
     for line in proc.stdout:
         r.say(line.rstrip("\n"))
         if line.startswith('{"still"'):
-            proc.stdin.write(still(cam, t, json.loads(line)["still"], r) + "\n")
+            exposure = exposure or meter(cam, r)
+            proc.stdin.write(still(cam, t, json.loads(line)["still"], r, exposure) + "\n")
             proc.stdin.flush()
         elif line.startswith('{"ok"'):
             done = json.loads(line)
@@ -1522,18 +1773,20 @@ def calib_sweep(ns, r: Runner) -> int:
 
 
 def calib_wristcam(ns, r: Runner) -> int:
-    """`calib wristcam`: where the wrist camera sits on the tool mount, from the palette's roof tag seen at several
-    holds, in the frame the station touch placed the ball in (tatbot_calib.wristcam); a check that adopts nothing:
-    its holds put the gauge's tip within 1-2 mm, and `calib gauge` measures it. Needs this registration's station touch and its height (`calib run --station-only`,
-    `calib height`)."""
+    """`calib wristcam`: where a wrist camera (`--camera`, its vision.toml role; the session's by default) sits on the
+    tool mount, from the palette's tag seen at several holds, in the frame the station touch placed the ball in
+    (tatbot_calib.wristcam). Its holds put the gauge's tip within 1-2 mm, and `calib gauge` measures it; `--adopt`
+    installs the camera's gauge file, which a camera's first `calib gauge` needs. Needs this registration's station
+    touch and its height (`calib run --station-only`, `calib height`)."""
     started = time.time()
     t = ros_target()
     opening = station_fix(ns.arm, "", r)
     wake(t, r, ns.arm, page=False, rest=True)
-    tool = f" --tool {shlex.quote(ns.ee_tool)}" if ns.ee_tool else ""
+    extra = (f" --tool {shlex.quote(ns.ee_tool)}" if ns.ee_tool else "") + \
+        (f" --camera {shlex.quote(ns.camera)}" if ns.camera else "") + (" --adopt" if ns.adopt else "")
     _, out = r.step("wristcam", t.shell(t.in_env(
         f"exec ros2 run tatbot_calib wristcam --arm {shlex.quote(ns.arm)} --station {opening}/station.json "
-        f"--run-started {started:.3f}{tool}")))
+        f"--run-started {started:.3f}{extra}")))
     done = next((json.loads(line) for line in reversed(out.splitlines()) if line.startswith('{"ok"')), {})
     return 0 if done.get("ok", r.dry) else 1
 
@@ -1546,10 +1799,11 @@ def calib_gauge(ns, r: Runner) -> int:
     t = ros_target()
     opening = station_fix(ns.arm, "", r)
     wake(t, r, ns.arm, page=False, rest=True)
-    tool = f" --tool {shlex.quote(ns.ee_tool)}" if ns.ee_tool else ""
+    extra = (f" --tool {shlex.quote(ns.ee_tool)}" if ns.ee_tool else "") + \
+        (f" --camera {shlex.quote(ns.camera)}" if ns.camera else "")
     _, out = r.step("gauge", t.shell(t.in_env(
         f"exec ros2 run tatbot_calib gaugecal --arm {shlex.quote(ns.arm)} --station {opening}/station.json "
-        f"--run-started {started:.3f}{tool} --adopt")))
+        f"--run-started {started:.3f}{extra} --adopt")))
     done = next((json.loads(line) for line in reversed(out.splitlines()) if line.startswith('{"ok"')), {})
     return 0 if done.get("ok", r.dry) else 1
 
@@ -1599,8 +1853,8 @@ def calib(ns, r: Runner) -> int:
     """`calib run`: the arm's fitted tool tip across its axis, from side pairs on the station probe at upright yaws
     after a fresh station fix from the overhead D555. The stack must be up with the arm and --probe. A tool the
     station cannot probe is refused (exit 3) before anything moves. It writes candidate.json and report.md; `calib
-    apply --run ID` writes that tip into this checkout's config/workspace.yaml when asked. `calib sweep` measures it
-    contact-free (calib_sweep)."""
+    apply --run ID` adopts that tip as the fitted cartridge's on the ROS owner when asked (calib_apply). `calib
+    sweep` measures it contact-free (calib_sweep)."""
     if ns.action == "apply":
         return calib_apply(ns, r)
     if ns.action in ("sweep", "height"):
@@ -1729,7 +1983,7 @@ def _read_draw_line(line: str, out: dict) -> None:
 def draw_program(argv: list[str]) -> str | None:
     """The program a `tatbot ros draw` run was given (its first operand), from its argv."""
     takes = {"--arm", "--from-op", "--resume", "--speed", "--at", "--width", "--stencil", "--run-id", "--ee-tool",
-             "--standoff-mm", "--from"}
+             "--standoff-mm", "--from", "--trim-mm", "--dry-dips", "--ends"}
     rest = argv[argv.index("draw") + 1:] if "draw" in argv else []
     skip = False
     for arg in rest:
@@ -1949,9 +2203,7 @@ def setup(ns, r: Runner) -> int:
     (CALIBRATION_TUNING), the page on the role's own after a restart; a setup that stops before it restarts the stack
     on those too, once the arm has landed."""
     t = ros_target()
-    stack = {"hardware": ns.hardware, "estop": ns.estop, "relay_addr": ns.relay_addr, "arms": ns.arms, "probe": True,
-             "no_touch": False, "rerun": ns.rerun, "hold": False, "pattern": ns.pattern, "surface": ns.surface,
-             "tuning": CALIBRATION_TUNING}
+    stack = setup_stack(ns, t, r)
     timings = []
 
     def timed(label, body):
@@ -1986,20 +2238,38 @@ def setup(ns, r: Runner) -> int:
     return 0
 
 
+def setup_stack(ns, t: Target, r: Runner) -> dict:
+    """The `up` flags setup's restarts share, the print by its full id, which every step then reads (calib overhead
+    names no print by the digits on its sheet, 2026-11-10). The stack they bring up drives the arm being set up
+    unless --arms says otherwise, so `setup --arm right` needs no second flag to reach the WXAI follower."""
+    if ns.pattern:
+        ns.pattern = installed_pattern(t, r, ns.pattern)
+    return {"hardware": ns.hardware, "estop": ns.estop, "relay_addr": ns.relay_addr, "arms": ns.arms or ns.arm,
+            "probe": True,
+            "no_touch": False, "rerun": ns.rerun, "hold": False, "pattern": ns.pattern, "surface": ns.surface,
+            "tuning": CALIBRATION_TUNING}
+
+
 def setup_steps(ns, r: Runner, t: Target, stack: dict) -> list:
     """(--from key or None, label, body) for each setup step, in order: a failed step names its key, so a re-run
     starts there instead of re-registering (three setups re-ran ten minutes of registration for a later step's
     failure, 2026-10-16)."""
 
-    def calib_step(action, station_only=False):
+    def calib_step(action, station_only=False, adopt=False):
         return lambda: calib(argparse.Namespace(action=action, run="", arm=ns.arm, ee_tool=ns.ee_tool, attitudes="",
-                                                heading_deg="", station_only=station_only), r)
+                                                heading_deg="", station_only=station_only, camera="", adopt=adopt), r)
 
     def page():
         wake(t, r, ns.arm)
         return run_cancellable(t, f"exec ros2 run tatbot_session client touch --arm {shlex.quote(ns.arm)}", r)
 
     def gauge():
+        # A camera's first gauge file is the wrist hand-eye's (calib wristcam --adopt): calib gauge refines a file it
+        # reads with, and the xArm's cameras came with none (2026-11-08).
+        _, have = r.step("gauge file", t.shell(f"test -f $HOME/tatbot-ros/calib/wrist-gauge-{shlex.quote(ns.arm)}.json "
+                                                "&& echo yes || echo no"), capture=True)
+        if not r.dry and have.strip() == "no":
+            calib_step("wristcam", adopt=True)()
         # A reading its holds do not agree on (exit 3) keeps the installed gauge: the probe's top reads 1-4 mm apart
         # within one still hold (the arm moved under 0.25 mm), which no person at the station can fix (2026-10-16 and
         # 10-22 setups stopped here, the page never set up).
@@ -2083,27 +2353,28 @@ def deploy_if_behind(t: Target, r: Runner) -> None:
 
 
 def measured_lines(t: Target, arm: str, r: Runner) -> list[str]:
-    """What positions the needle, each as measured (when, by what) or not: the tip in the mount (workspace.yaml's
-    touch-off record), the ball's height (the station touch) and the wrist camera's tip (the gauge file). A setup
+    """What positions the needle, each as measured (when, by what) or not: the fitted cartridge's tip, the ball's
+    height (the station touch) and each wrist camera's tip (its gauge file), from the ROS owner's record. A setup
     that passed says nothing about a number it did not measure (2026-10-13: a 3RL tip and gauge stood in for the
     11RL through many passing setups)."""
-    import tool_spec
+    import probe_calibration_adopt
 
-    record = tool_spec.parse_simple_yaml((REPO / "config" / "workspace.yaml").read_text())[arm]
-    touch, fitted = record.get("touchoff") or {}, record.get("tool_id")
-    length = "measured" if "length, both measured" in str(touch.get("note", "")) else "NOT measured (the installed one)"
-    lines = [f"tip across its axis: {touch.get('method', '?')} ({touch.get('session', '?')}); its length {length}"]
     try:
-        gauge, station_touch = (json.loads(r.step("measured", t.shell(
-            f"cat $HOME/tatbot-ros/calib/{name}-{shlex.quote(arm)}.json"), capture=True)[1])
-            for name in ("wrist-gauge", "station-touch"))
-    except (VerbError, ValueError):
-        return [*lines, "the wrist gauge and the station touch could not be read"]
-    with_ = gauge.get("measured_with")
-    lines.append("wrist camera's tip: " + (f"measured with {with_} ({gauge.get('utc')})" if with_ == fitted else
-                                            f"NOT measured with {fitted} ({gauge.get('note') or gauge.get('source')})"))
-    lines.append("ball height: " + (station_touch.get("height_source") or "NOT measured (a needle's touch never trips "
-                                                                       "on its top)"))
+        report = owner_cartridge(t, r, "status", "--arm", arm)
+    except VerbError as error:
+        return [f"the fitted cartridge could not be read ({error})"]
+    tip, touch = report["tip"], report["tip"].get("touchoff") or {}
+    length = "measured" if touch.get("note") == probe_calibration_adopt.LENGTH_NOTE else "NOT measured (the installed one)"
+    lines = [f"{report['tool_id']}'s tip across its axis: {tip['state']}, {touch.get('method', '?')} "
+             f"({touch.get('session', '?')}); its length {length}"]
+    for role, gauge in report["gauges"].items():
+        how = f"derived from {gauge['derived']}'s tip, not measured, for" if gauge.get("derived") else "measured with"
+        lines.append(f"wrist camera {role}'s tip: " + (f"{how} {gauge['measured_with']} ({gauge['utc']})"
+                                                       if gauge["current"] else
+                                                       f"NOT measured with this cartridge ({gauge['measured_with']}, "
+                                                       f"{gauge['utc']})"))
+    lines.append("ball height: " + (report["station_touch"].get("height_source")
+                                    or "NOT measured (a needle's touch never trips on its top)"))
     return lines
 
 
@@ -2155,7 +2426,11 @@ def probe_install(ns, r: Runner) -> None:
     gpio = stack_defaults().get("probe_gpio") or "GPIO27"
     if not re.fullmatch(r"\w+", gpio):
         raise VerbError(EXIT_USAGE, f"{STACK_YAML} probe.relay_gpio wants a GPIO line name such as GPIO27, not {gpio!r}")
-    args = f"--probe {gpio}" + "".join(f" --dest {d}" for d in dests) + (f" --bind {ns.bind}" if ns.bind else "")
+    touched = stack_defaults().get("probe_touched") or "high"
+    if touched not in ("high", "low"):
+        raise VerbError(EXIT_USAGE, f"{STACK_YAML} probe.touched is high or low, not {touched!r}")
+    args = (f"--probe {gpio} --probe-touched {touched}" + "".join(f" --dest {d}" for d in dests)
+            + (f" --bind {ns.bind}" if ns.bind else ""))
     install_instance(r, "probe", args, PROBE_UNIT, "tatbot station probe relay (PRB1 -> UDP)")
 
 
@@ -2281,6 +2556,7 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="tatbot ros", description=__doc__.split("\n\n")[0])
     p.add_argument("--dry-run", action="store_true", help="print every command; run nothing")
     sub = p.add_subparsers(dest="verb", required=True)
+    arm = drawing_arm()   # what --arm means when it is not given
     s = sub.add_parser("deploy")
     s.add_argument("--no-build", action="store_true")
     s.add_argument("--units", action="store_true")
@@ -2305,12 +2581,12 @@ def parser() -> argparse.ArgumentParser:
     s = sub.add_parser("status")
     s.add_argument("--json", action="store_true")
     s = sub.add_parser("page")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--seconds", type=float, default=5.0)
     s.add_argument("--json", action="store_true")
     s = sub.add_parser("compile")
     s.add_argument("design", nargs="+")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--ee-tool")
     s.add_argument("--speed")
     s.add_argument("--inks")
@@ -2323,8 +2599,13 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--width")
     s.add_argument("--stencil")
     s.add_argument("--keep-region")
+    s.add_argument("--after", action="append")
+    s.add_argument("--wiped", action="store_true")
+    s.add_argument("--allow-borrowed-dip", action="store_true")
+    s.add_argument("--allow-marker-loss", action="store_true")
     s = sub.add_parser("draw")
     s.add_argument("program", nargs="?")
+    s.add_argument("--sheet-at", dest="sheet_at")
     s.add_argument("--detach", action="store_true")
     s.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
     s.add_argument("--from", dest="start", choices=("register", "overhead", "station", "height", "gauge", "page"))
@@ -2334,7 +2615,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--width")
     s.add_argument("--stencil")
     s.add_argument("--speed")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--ee-tool")
     s.add_argument("--from-op")
     s.add_argument("--resume")
@@ -2343,17 +2624,23 @@ def parser() -> argparse.ArgumentParser:
                    help="draw it in the air: the pen held over the page, the machine off, no dips, no inspection")
     s.add_argument("--standoff-mm", dest="standoff_mm", type=float,
                    help="with --rehearse: the pen this far over the measured page (default motion.yaml pen.hover)")
+    s.add_argument("--dry-dips", dest="dry_dips", metavar="CAP",
+                   help="with --rehearse: keep the program's dips, each to this cap's hover and back (L1 ... S2)")
+    s.add_argument("--real-dips", dest="real_dips", action="store_true",
+                   help="with --rehearse: keep the program's dips and rinses, each into its own cap, the machine off")
+    s.add_argument("--trim-mm", dest="trim_mm", type=float,
+                   help="start the run's cartridge at this pen trim, mm (- is deeper): no race for Fn+S before line 1")
+    s.add_argument("--ends", choices=("stop", "fly"),
+                   help="draw this run's stroke ends stopping or moving, over motion.yaml draw.ends; a new run only")
     s.add_argument("--hold", dest="land", action="store_false",
                    help="leave the arm holding at rest after the draw instead of landing it (idle)")
     s.add_argument("--no-wake", dest="wake", action="store_false",
                    help="use the current runtime without automatically restarting a landed arm")
-    s = sub.add_parser("ready")
-    s.add_argument("--arm", default="right")
     s = sub.add_parser("station")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--against", default="")
     s = sub.add_parser("register")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--center", type=float, nargs=2)
     s.add_argument("--table-z", dest="table_z", type=float)
     s.add_argument("--spread", type=float)
@@ -2364,7 +2651,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--adopt", action="store_true")
     s.add_argument("--plan-only", dest="plan_only", action="store_true")
     s = sub.add_parser("setup")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--ee-tool", dest="ee_tool", default="")
     s.add_argument("--hardware", choices=("mock", "fake", "real"))
     s.add_argument("--estop", choices=("none", "serial", "udp"))
@@ -2380,23 +2667,32 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--json", action="store_true")
     s = sub.add_parser("chain")
     s.add_argument("runs", nargs="+")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s = sub.add_parser("calib")
     s.add_argument("action", choices=("run", "sweep", "height", "wristcam", "gauge", "overhead", "apply"))
     s.add_argument("--run", default="")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--ee-tool", dest="ee_tool", default="")
     s.add_argument("--attitudes", default="")
     s.add_argument("--heading-deg", dest="heading_deg", default="")
     s.add_argument("--station-only", dest="station_only", action="store_true")
+    s.add_argument("--across-only", dest="across_only", action="store_true")
+    s.add_argument("--derive-gauges", dest="derive_gauges", action="store_true")
     s.add_argument("--pattern", default="")
+    s.add_argument("--camera", default="")
     s.add_argument("--adopt", action="store_true")
+    s = sub.add_parser("cartridge")
+    s.add_argument("action", choices=("status", "fit"))
+    s.add_argument("tool", nargs="?", default="")
+    s.add_argument("--arm", default=arm)
+    s.add_argument("--instance", default="")
+    s.add_argument("--json", action="store_true")
     s = sub.add_parser('palette')
     s.add_argument('action', choices=('status', 'load'))
     s.add_argument('caps', nargs='*')
     s.add_argument('--level-mm', action='append', default=[])
     s = sub.add_parser("touch")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--start", type=float, nargs=3)
     s.add_argument("--rpy", type=float, nargs=3)
     s.add_argument("--direction", type=float, nargs=3)
@@ -2405,20 +2701,33 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--move", action="store_true")
     s.add_argument("--speed", type=float)
     s.add_argument("--max-travel", dest="max_travel", type=float)
+    s.add_argument("--sheet-at", dest="sheet_at")
     s = sub.add_parser("jog")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--joint", type=int, required=True)
     s.add_argument("--delta", type=float, required=True)
     s.add_argument("--speed", type=float)
     s = sub.add_parser("inspect")
     s.add_argument("--depth-only", action="store_true")
-    s.add_argument("--arm", default="right")
+    s.add_argument("--arm", default=arm)
     s.add_argument("--run")
     s.add_argument("--frames", type=int)
     s.add_argument("--poses", type=int)
-    s = sub.add_parser("evidence")
-    s.add_argument("--page", required=True)
-    s.add_argument("--slot", required=True)
+    s = sub.add_parser("views")
+    s.add_argument("--arm", default=arm)
+    s.add_argument("--label", required=True)
+    s.add_argument("--points", default="")
+    s.add_argument("--run", default="")
+    s.add_argument("--frames", type=int)
+    s.add_argument("--fetch", default="")
+    s.add_argument("--hold", dest="land", action="store_false")
+    s.add_argument("--no-wake", dest="wake", action="store_false")
+    s.add_argument("--overhead", action="store_true")
+    s.add_argument("--no-wrist", dest="wrist", action="store_false")
+    s.add_argument("--hover-mm", type=float)
+    s.add_argument("--overhead-pages", default="")
+    s.add_argument("--sheet-at", dest="sheet_at", default="")
+    s.add_argument("--seconds", type=float)
     s = sub.add_parser("decide")
     s.add_argument("arm")
     s.add_argument("decision", choices=("continue", "land", "skip", "redraw"))
@@ -2437,9 +2746,9 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
-LOGGED = {"deploy": deploy, "up": up, "down": down, "relay-install": relay_install, "ready": ready, "station": station,
-          "calib": calib, "register": register, "setup": setup}
-DIRECT = {"evidence": evidence, "status": status, "page": page, "compile": compile_, "draw": draw, "touch": touch, "jog": jog, "inspect": inspect, "decide": decide,
+LOGGED = {"deploy": deploy, "up": up, "down": down, "relay-install": relay_install, "station": station,
+          "calib": calib, "register": register, "setup": setup, "cartridge": cartridge}
+DIRECT = {"status": status, "page": page, "compile": compile_, "draw": draw, "touch": touch, "jog": jog, "inspect": inspect, "views": views, "decide": decide,
           "cancel": cancel, "logs": logs, "chain": chain, "palette": palette}
 
 

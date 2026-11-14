@@ -309,7 +309,7 @@ void ProbeReader::accept(long seq, int state, int64_t edge_ns, int64_t sent_ns, 
   offsets_head_ = (offsets_head_ + 1) % kClockWindow;
   offsets_n_ = std::min(offsets_n_ + 1, kClockWindow);
   offset_ns_.store(*std::min_element(offsets_.begin(), offsets_.begin() + static_cast<long>(offsets_n_)));
-  if (edge_ns != last_edge_ && edge_ns > 0) {   // a new edge: a rising one when the line reads touched
+  if (edge_ns != last_edge_ && edge_ns > 0) {   // a new edge: the touching one when the frame reads touched
     last_edge_ = edge_ns;
     if (state == 1) {rise_relay_ns_.store(edge_ns);}
   }

@@ -33,7 +33,7 @@ def page():
 def forearm(page):
     """A forearm of radius 40 mm under the page, its crest along page y through the page's origin."""
     xy = np.stack(np.meshgrid(np.linspace(-0.022, 0.022, 23), np.linspace(-0.03, 0.03, 21)), -1).reshape(-1, 2)
-    return PageSurface(page, fit_height(np.c_[xy, np.sqrt(R ** 2 - xy[:, 0] ** 2) - R], degree=4))
+    return PageSurface(page, fit_height(np.c_[xy, np.sqrt(R ** 2 - xy[:, 0] ** 2) - R]))
 
 
 def _seed(kin, page):
@@ -77,6 +77,14 @@ def test_a_stroke_round_a_forearm_rides_its_curve_along_each_points_normal(kin, 
     assert 30.0 < angle < 40.0                                              # 24 mm of arc at 40 mm: 34 deg
     uv = forearm.chart.to_chart((np.linalg.inv(page) @ np.c_[traj.tip[drawing], np.ones(drawing.sum())].T).T[:, :2])
     assert np.isclose(uv[0, 0], -0.012, atol=2e-4) and np.isclose(uv[-1, 0], 0.012, atol=2e-4)   # print mm, not shadow
+
+
+def test_a_fading_stroke_round_a_forearm_rises_along_each_points_normal(forearm):
+    """Round a curve a whip's deposition lift goes along each point's own normal, as the pen's height does."""
+    whip = dict(_stroke(ACROSS), deposition=[1.0, 0.0])
+    points, _ = tm.plan.surface_points(whip, forearm, 0.0, 0.002)
+    gaps = np.array([forearm.height_over(p)[0] for p in points])
+    np.testing.assert_allclose(gaps, np.linspace(0.0, 0.002, len(points)), atol=2e-5)
 
 
 def test_the_approach_and_the_hover_come_down_the_starts_normal(kin, motion, page, forearm):
@@ -147,3 +155,28 @@ def test_a_liftoff_with_no_foot_under_the_tip_rises_the_standoff_up_the_pages_no
     standoff = float(motion["approach"]["standoff_m"])
     assert len(legs) == 1 and np.allclose(legs[0].p[-1], tip + standoff * page[:3, 2], atol=1e-6)
     assert np.allclose(legs[0].axis, page[:3, 2])
+
+
+def test_flying_ends_on_a_forearm_come_down_along_the_ends_normals(kin, motion, page, forearm):
+    """draw.ends: fly on a curved page: between the insets the pen is on the skin, outside the stroke it is over the
+    marking band, and it is at the draw speed wherever it is inside the band."""
+    flying = {**motion, "draw": {**motion["draw"], "ends": "fly"}}
+    fly = tm.plan.stroke_ends(flying)
+    q0 = _seed(kin, page)
+    traj = tm.plan_op(_stroke(ACROSS), base_from_page=page, q_seed=q0, kin=kin, motion=flying, speed_m_s=SPEED,
+                      surface=forearm, clear_m=[0.1, 0.1])
+    assert traj.info["surface"] and traj.info["ends"] == {"start": "fly", "end": "fly", "why": []}
+    gaps = np.array([forearm.height_over(tip)[0] for tip in traj.tip])
+    drawn = traj.phase == tm.plan.PHASE_DRAW
+    arc = traj.arc_m[drawn]
+    length = arc[-1]
+    between = (arc > fly.inset_m + 2e-4) & (arc < length - fly.inset_m - 2e-4)
+    assert np.abs(gaps[drawn][between]).max() < 1e-4
+    dt = traj.t[1] - traj.t[0]
+    speed = np.r_[0.0, np.linalg.norm(np.diff(traj.tip, axis=0), axis=1) / dt]
+    assert speed[gaps < fly.band_m - 1e-4].min() > 0.98 * SPEED
+    assert gaps[speed < 0.5 * SPEED].min() > fly.band_m          # every ease and vertical leg over the band
+    assert gaps.min() > -1e-4 and gaps[-1] == pytest.approx(motion["approach"]["standoff_m"], abs=5e-4)
+    turned = np.einsum("nij,j->ni", np.array([kin.fk(q)[:3, :3] for q in traj.q[drawn][::200]]), [0.0, 0.0, 1.0])
+    normals = np.array([forearm.height_over(tip)[1] for tip in traj.tip[drawn][::200]])
+    assert np.einsum("ni,ni->n", turned, -normals).min() > 0.999   # the pen along each point's normal as it draws

@@ -19,7 +19,7 @@ def test_nothing_known_reads_unknown_or_off():
     assert states(items) == {"run": "off", "op": "off", "phase": "off", "trim": "off", "ink": "off", "estop": "warn",
                              "probe": "off", "machine": "off", "latch": "warn", "wrist": "off"}
     assert items["estop"] == ("e-stop: no state", "warn") and items["probe"] == ("probe disabled", "off")
-    assert items["wrist"] == ("wrist: no frame yet (opens in a draw)", "off")
+    assert items["wrist"] == ("wrist: no frame yet", "off")
 
 
 def test_a_live_draw_is_green_and_its_ages_stay_off_the_board():
@@ -95,6 +95,11 @@ def test_the_trim_cell_shows_the_cartridges_trim_and_its_limit_and_turns_yellow_
     held = status.items(100.0, run=RUN, trim={"m": -0.004, "limit_m": 0.004, "used_m": -0.00265})["trim"]
     assert held == ("trim -4.0 · held -2.65 mm", "warn") and len(held[0]) <= 26   # a press the skin read holds back
     assert status.items(100.0, run=RUN, trim={"m": -0.002, "limit_m": 0.004, "used_m": -0.002})["trim"][1] == "ok"
+    # the depth hold: the depth the keys set and the key that takes it, yellow until taken; or where the skin holds it
+    hold = {"m": 0.00075, "limit_m": 0.004, "used_m": 0.00075, "hold": True}
+    assert status.items(100.0, run=RUN, trim=hold)["trim"] == ("depth +0.75 · Fn+E takes", "warn")
+    capped = status.items(100.0, run=RUN, trim={**hold, "m": -0.00275, "used_m": -0.0025})["trim"]
+    assert capped == ("depth -2.75 held -2.50 mm", "warn") and len(capped[0]) <= 26
 
 
 def test_board_cells_tile_the_canvas_and_the_card_names_states():

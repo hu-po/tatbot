@@ -592,7 +592,7 @@ const out = {
   },
   builder: {
     name: "web/inkmap/tools/build_atlas.ts",
-    version: 2,
+    version: 3,
     source_sha256: await sha256Hex(toolBuffer),
   },
   frame: { front: "-y", left: "+x", up: "+z" },

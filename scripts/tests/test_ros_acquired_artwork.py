@@ -14,7 +14,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 def test_bundled_native_acquisition_keeps_source_recipe_pen_and_traversal(tmp_path):
     from tatbot_contracts.ros_program import validate_for_execution
-    source = REPO/'web/inkmap/public/designs/dbv3-orbit/artwork.json'
+    source = REPO/'config/sim2/acquired/dbv3-orbit/artwork.json'
     art = json.loads(source.read_text())
     result = tatbot_ink.compile(source, repo=REPO)
     validate_for_execution(result)

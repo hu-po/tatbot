@@ -13,7 +13,7 @@ use tatbot_visiond::{
         AprilTagDetectorFactory, EstimatorConfig, FiducialInventory, RustEeTracker, WristLayout,
     },
 };
-use trackd::{evidence, merge_auxiliary};
+use trackd::{evidence, merge_auxiliary, now_unix_ns, p95};
 
 #[derive(Parser)]
 struct Args {
@@ -60,8 +60,8 @@ struct Args {
     max_sets: u64,
 }
 
-/// The physical arm whose end effector a wrist target rides, the pink
-/// (right) one; other targets are tracked scene objects.
+/// The physical arm whose end effector a wrist target rides, the WXAI
+/// follower (right); other targets are tracked scene objects.
 fn tracked_arm(target: &str) -> Option<&'static str> {
     (target == "wrist").then_some("right")
 }
@@ -112,8 +112,7 @@ fn main() -> Result<()> {
         &bus,
         producer.clone(),
         &match tracked_arm(&args.target) {
-            Some("right") => "trackd".into(),
-            Some(arm) => format!("trackd-{arm}"),
+            Some(_) => "trackd".into(),
             None => format!("trackd-target-{}", args.target),
         },
         vec![if tracked_arm(&args.target).is_some() {
@@ -185,8 +184,6 @@ fn main() -> Result<()> {
             );
         }
         if window_started.elapsed() >= Duration::from_secs(1) {
-            let mut sorted = latencies.iter().copied().collect::<Vec<_>>();
-            sorted.sort_by(f64::total_cmp);
             *lease.metrics.lock().unwrap() = BTreeMap::from([
                 (
                     "pose_fps".into(),
@@ -196,28 +193,16 @@ fn main() -> Result<()> {
                 ("dropped_sets".into(), dropped as f64),
                 ("auxiliary_used_sets".into(), auxiliary_used as f64),
                 ("auxiliary_missed_sets".into(), auxiliary_missed as f64),
-                (
-                    "processing_p95_ms".into(),
-                    sorted
-                        .get(sorted.len().saturating_sub(1) * 95 / 100)
-                        .copied()
-                        .unwrap_or(0.0),
-                ),
+                ("processing_p95_ms".into(), p95(&latencies)),
                 ("capture_age_ms".into(), last_age_ms),
-                (
-                    "updated_unix_ms".into(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)?
-                        .as_secs_f64()
-                        * 1000.0,
-                ),
+                ("updated_unix_ms".into(), now_unix_ns()? as f64 / 1e6),
                 ("last_processed_unix_ms".into(), last_processed_unix_ms),
                 ("stale_sets".into(), stale_sets as f64),
                 (
                     "measured_pose_fps".into(),
                     window_measured as f64 / window_started.elapsed().as_secs_f64(),
                 ),
-                ("processing_samples".into(), sorted.len() as f64),
+                ("processing_samples".into(), latencies.len() as f64),
             ]);
             window_started = Instant::now();
             window_processed = 0;
@@ -264,12 +249,10 @@ fn main() -> Result<()> {
                     == Some(calibration.bundle_id.as_str())),
             "capture calibration differs from tracker"
         );
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_nanos() as i128;
+        let now = now_unix_ns()?;
         let age_ms = (now - set.timestamp_ns) as f64 / 1e6;
         last_age_ms = age_ms;
-        if age_ms < 0.0 || age_ms > args.max_age_ms {
+        if !capture_is_current(age_ms, args.max_age_ms) {
             stale_sets += 1;
             if last_stale_log.is_none_or(|last| last.elapsed() >= Duration::from_secs(5)) {
                 eprintln!(
@@ -404,6 +387,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+// The capture stamp is the camera's clock mapped onto this host's, so a fresh frame can read a
+// fraction of a millisecond ahead of the clock here. That is the mapping's jitter, not a stale frame.
+const CLOCK_AHEAD_MS: f64 = 5.0;
+
+fn capture_is_current(age_ms: f64, max_age_ms: f64) -> bool {
+    (-CLOCK_AHEAD_MS..=max_age_ms).contains(&age_ms)
+}
+
 // A previous measured pose is only an initializer while its capture clock is
 // monotonic and recent. Reacquire after gaps, even if no lost estimate was emitted.
 fn initializer_is_recent(previous: Option<i128>, current: i128, max_age_ms: f64) -> bool {
@@ -414,7 +405,16 @@ fn initializer_is_recent(previous: Option<i128>, current: i128, max_age_ms: f64)
 
 #[cfg(test)]
 mod initializer_tests {
-    use super::initializer_is_recent;
+    use super::{capture_is_current, initializer_is_recent};
+
+    #[test]
+    fn a_capture_stamped_just_ahead_of_this_clock_is_current() {
+        assert!(capture_is_current(-0.64, 250.0));
+        assert!(capture_is_current(250.0, 250.0));
+        assert!(!capture_is_current(-5.1, 250.0));
+        assert!(!capture_is_current(250.1, 250.0));
+        assert!(!capture_is_current(f64::NAN, 250.0));
+    }
 
     #[test]
     fn requires_recent_monotonic_measured_capture() {

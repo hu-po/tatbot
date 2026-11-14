@@ -100,8 +100,7 @@ int main(int argc, char ** argv)
       }
       std::cout << ',' << carriage_m << ']';
       std::cout << ",\"tool_model\":{\"arm_prefix\":" << std::quoted(file.arm)
-                << ",\"source\":" << std::quoted(tip_seen ? "bound-input" :
-        (file.arm == "right" ? "compiled-default" : "samples-header"))
+                << ",\"source\":" << std::quoted(tip_seen ? "bound-input" : "samples-header")
                 << ",\"tip_in_link6\":[";
       for (size_t i = 0; i < 3; ++i) {
         if (i) {std::cout << ',';}

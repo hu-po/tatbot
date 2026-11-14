@@ -23,19 +23,19 @@ def save(path, value):
 
 def fixture_repo(path):
     config = path / 'config'
-    save(config / 'substrates.yaml', {'paper': {}, 'practice': {}, 'cylinder': {'shape': 'cylinder'}})
+    save(config / 'substrates.yaml', {'flat': {}, 'practice': {}})
     # Equal display colors deliberately do not imply equal physical inks.
     save(config / 'inks.yaml', {key: {'rgb': rgb} for key, rgb in
                               [('black', [0, 0, 0]), ('other-black', [0, 0, 0]), ('red', [255, 0, 0]),
                                ('water', [170, 210, 235])]})
-    save(config / 'palette.yaml', {'slots': {'inkcap_medium_1': {'arm': 'right'},
-                                           'inkcap_medium_2': {'arm': 'left'}, 'inkcap_large_1': {'arm': 'right'}}})
-    ball = {'substrate': 'paper', 'substrates': ['paper'], 'line': {'width_mm': .5, 'status': 'measured'},
-            'ink': {'mode': 'cartridge'}, 'stroke_mm': 3.5, 'tip_out_at_top_mm': 2}
+    save(config / 'palette.yaml', {'slots': {'inkcap_medium_1': {}, 'inkcap_large_1': {}}})
+    # A self-inking cartridge (ink.mode cartridge): exchanged by hand, never dipped.
+    refill = {'substrate': 'flat', 'substrates': ['flat'], 'line': {'width_mm': .5, 'status': 'measured'},
+              'ink': {'mode': 'cartridge'}, 'stroke_mm': 3.5, 'tip_out_at_top_mm': 2}
     needle = {'substrate': 'practice', 'line': {'width_mm': .3, 'status': 'assumed'},
               'ink': {'mode': 'real', 'mm_per_dip': 999999}, 'dip': dip_block(),
               'stroke_mm': 3.5, 'tip_out_at_top_mm': 1.5}
-    for identity, sheet in [('ball', ball), ('round-3', needle), ('round-5', copy.deepcopy(needle))]:
+    for identity, sheet in [('refill', refill), ('round-3', needle), ('round-5', copy.deepcopy(needle))]:
         save(config / 'tools' / f'{identity}.yaml', sheet)
     return path
 
@@ -44,7 +44,7 @@ def drawing(layers):
     return read_input(artwork(program(layers)))
 
 
-def resource(identity, *, tool='ball', ink='black', mode='press', **extra):
+def resource(identity, *, tool='refill', ink='black', mode='press', **extra):
     result = {'id': identity, 'tool_id': tool, 'ink_id': ink, 'pen_mode': mode,
               'activation': {'method': 'manual', 'action': 'exchange'}, **extra}
     if tool.startswith('round-'):
@@ -52,7 +52,7 @@ def resource(identity, *, tool='ball', ink='black', mode='press', **extra):
     return result
 
 
-def manifest(path, design, resources, assignments, *, substrate='paper'):
+def manifest(path, design, resources, assignments, *, substrate='flat'):
     digest = next(iter(design['artworks'].values()))['content_sha256']
     document = {'format': 'tatbot-inks', 'version': 3, 'substrate': substrate, 'resources': resources,
                 'bindings': [{'artwork_sha256': digest, 'pen_id': pen, 'resource_id': identity}

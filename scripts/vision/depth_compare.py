@@ -23,7 +23,7 @@ def compare(capture, candidates, truth=None):
         raise ValueError('comparison requires 1..32 filter candidates')
     results, intrinsics = [], {}
     with np.load(capture, allow_pickle=False) as data:
-        for role in ('wrist_upper', 'wrist_lower'):
+        for role in ('wrist_2', 'wrist_1'):
             if f'raw_depth_{role}' not in data:
                 continue
             raw = data[f'raw_depth_{role}']

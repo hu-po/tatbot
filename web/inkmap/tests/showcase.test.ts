@@ -8,8 +8,8 @@ const read = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta
 const manifest = read("../public/showcase/manifest.json");
 const collection = read("../public/designs/manifest.json");
 
-test("the showcase places collection artwork on one SOMA body in all five tattoo-session poses", () => {
-  assert.equal(manifest.schema_version, 3);
+test("the showcase places the collection's art on one SOMA body in all five tattoo-session poses", () => {
+  assert.equal(manifest.schema_version, 5);
   assert.equal(manifest.validation.placements, manifest.slides.length);
   assert.equal(manifest.validation.body_asset_sha256, REST_ASSET_SHA256);
   assert.equal(manifest.validation.pose_asset_sha256, POSE_CATALOG.pose_asset.sha256);
@@ -22,9 +22,8 @@ test("the showcase places collection artwork on one SOMA body in all five tattoo
     assert.ok(POSE_CATALOG.pose_ids.includes(slide.pose_id), slide.id);
     assert.equal(slide.placement.design_id, slide.artwork_id, slide.id);
     const entry = collection.designs.find((design: { id: string }) => design.id === slide.artwork_id);
-    assert.ok(entry, `${slide.id}: ${slide.artwork_id} is in the artwork collection`);
-    const artwork = read(`../public/${entry.path}`);
-    assert.equal(artwork.source_sha256, slide.artwork_sha256, `${slide.id}: the slide names the collection's bytes`);
+    assert.ok(entry, `${slide.id}: ${slide.artwork_id} is in the art collection`);
+    assert.equal(entry.sha256, slide.artwork_sha256, `${slide.id}: the slide names the collection's bytes`);
     assert.equal(slide.placement.anchor.barycentric.length, 3);
     assert.ok(Number.isInteger(slide.placement.anchor.face));
     poses.add(slide.pose_id);

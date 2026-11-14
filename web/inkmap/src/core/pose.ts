@@ -97,12 +97,14 @@ export function poseRecord(poseId: string): PoseRecord {
   return pose;
 }
 
-/** The poses the editor offers: standing, and reclined in the tattoo chair.
- *  The catalog keeps every named session pose for the showcase and the
- *  simulator; the picker shows these two, plus whatever pose a recovered
- *  project already holds. */
-export const EDITOR_POSE_IDS = ["standing-neutral", "reclined-seated"] as const;
-export const EDITOR_POSE_LABELS: Record<(typeof EDITOR_POSE_IDS)[number], string> = { "standing-neutral": "Standing", "reclined-seated": "Reclined seated" };
+/** The poses the editor offers: standing, and reclined in the tattoo chair, with either arm on its rest for an arm
+ *  tattoo. The catalog keeps every named session pose for the showcase and the simulator; the picker shows these,
+ *  plus whatever pose a recovered project already holds. */
+export const EDITOR_POSE_IDS = ["standing-neutral", "reclined-seated", "reclined-left-arm-supported", "reclined-right-arm-supported"] as const;
+export const EDITOR_POSE_LABELS: Record<(typeof EDITOR_POSE_IDS)[number], string> = {
+  "standing-neutral": "Standing", "reclined-seated": "Reclined seated",
+  "reclined-left-arm-supported": "Reclined, left arm supported", "reclined-right-arm-supported": "Reclined, right arm supported",
+};
 export function editorPoseOptions(current: string): { id: string; label: string }[] {
   const listed: { id: string; label: string }[] = EDITOR_POSE_IDS.filter((id) => id in POSE_CATALOG.poses).map((id) => ({ id, label: EDITOR_POSE_LABELS[id] }));
   if (current in POSE_CATALOG.poses && !listed.some((option) => option.id === current)) listed.push({ id: current, label: poseRecord(current).label });

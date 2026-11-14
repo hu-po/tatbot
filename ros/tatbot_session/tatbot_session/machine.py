@@ -172,12 +172,12 @@ class SimSwitch:
             self._sock.close()
 
 
-def from_stack(stack: dict, arm: str, clock=None, sink=None):
-    """stack.yaml `machine`: the switch of the arm it names, or None. A sim switch tells `sink` (an in-process
-    simulator), else machine.sim_endpoint, each change on `clock`."""
+def from_stack(stack: dict, clock=None, sink=None):
+    """stack.yaml `machine`: the switch of the drawing arm's machine (the one arm the stack drives), or None. A sim
+    switch tells `sink` (an in-process simulator), else machine.sim_endpoint, each change on `clock`."""
     cfg = stack.get("machine") or {}
     kind = cfg.get("switch", "none")
-    if kind == "none" or cfg.get("arm") != arm:
+    if kind == "none":
         return None
     if kind == "sim":
         return SimSwitch(sink, None if sink is not None else cfg.get("sim_endpoint"), clock)

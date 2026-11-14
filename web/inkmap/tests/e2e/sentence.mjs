@@ -1,11 +1,10 @@
 // Browser contract: placement-only InkLang, explicit ambiguity, legacy full
-// sentence compatibility, truthful provenance, atlas overlay, and v6 export.
+// sentence compatibility, truthful provenance, atlas overlay, and v7 export.
 import { chromium } from "playwright";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SvgDOMParser } from "../../tools/svg-dom.ts";
-import { acquiredArtwork } from "../acquired-artwork.ts";
 Object.assign(globalThis, { DOMParser: SvgDOMParser });
 
 const url = process.argv[2] ?? "http://127.0.0.1:4181/";
@@ -110,7 +109,7 @@ try {
   // A placement-only intent waits for the operator to pick a design, then
   // places that design at the exact already-resolved anchor.
   const lineSvg = "<svg viewBox='0 0 20 20'><path d='M2 10h16' stroke='black' fill='none'/></svg>";
-  const lineArtwork = await acquiredArtwork();
+  const lineArtwork = JSON.parse(readFileSync(new URL("../../../../config/inkmap/examples/forearm-placement-v7.json", import.meta.url), "utf8")).designs.ring;
   await page.evaluate(embedded => window.__inkmap.getState().addDesign({
     id: "e2e-line",
     name: "E2E Line",
@@ -129,7 +128,7 @@ try {
 
   // A syntactically valid legacy sentence targeting an explicitly unsupported
   // atlas site refuses instead of placing or painting through a bad chart.
-  await page.fill(".sentence input", "a fine line dbv3-ridges on the left shoulder blade");
+  await page.fill(".sentence input", "a fine line snake on the left shoulder blade");
   await page.click(".sentence button.primary");
   await page.waitForFunction(() => window.__inkmap.getState().pending?.resolution.status === "rejected");
   const rejected = await page.evaluate(() => window.__inkmap.getState().pending);
@@ -139,19 +138,19 @@ try {
 
   // Legacy full tattoo sentences remain compatible on a reviewed site and
   // resolve through the same canonical TS core and exact resolution object.
-  await page.fill(".sentence input", "a fine line dbv3-ridges on the left thigh");
+  await page.fill(".sentence input", "a fine line snake on the left thigh");
   await page.click(".sentence button.primary");
   await page.waitForFunction(() => window.__inkmap.getState().placements.length === 2, null, { timeout: 10_000 });
   const second = await page.evaluate(() => window.__inkmap.getState().placements[1]);
   check(second.site?.id === "thigh" && second.site?.laterality === "left", `legacy sentence landed at ${JSON.stringify(second.site)}`);
-  check(second.language?.intent?.description === "a fine line dbv3-ridges on the left thigh", "exact request text was not retained");
+  check(second.language?.intent?.description === "a fine line snake on the left thigh", "exact request text was not retained");
   check(second.language?.resolution?.anchor?.face === second.anchor.face, "legacy placement bypassed canonical resolution");
   log(`legacy-compatible: “${second.language.sentence}” at face ${second.anchor.face}`);
   await page.getByRole("button", { name: "✓ Accept", exact: true }).click();
 
   // Relative language must preserve the requested relation while the actual
   // leaf-site label records where the computed point landed.
-  await page.fill(".sentence input", "an dbv3-ridges beside the left thigh");
+  await page.fill(".sentence input", "a snake beside the left thigh");
   await page.click(".sentence button.primary");
   await page.waitForFunction(() => window.__inkmap.getState().placements.length === 3, null, { timeout: 10_000 });
   const third = await page.evaluate(() => window.__inkmap.getState().placements[2]);
@@ -166,9 +165,9 @@ try {
   await page.screenshot({ path: `${out}/sentence.png` });
 
   const file = await page.evaluate(() => window.__inkmap.getState().toFile());
-  check(file.schema_version === 6, `expected PlacementFile v6, got ${file.schema_version}`);
+  check(file.schema_version === 7, `expected PlacementFile v7, got ${file.schema_version}`);
   check(typeof file.body.rest_surface_sha256 === "string" && file.body.rest_surface_sha256 === second.language.resolution.body.rest_surface_sha256, "export surface identity differs from resolution");
-  check(file.placements.every(placement => file.designs?.[placement.design_id]?.program), "export omitted frozen artwork");
+  check(file.placements.every(placement => file.designs?.[placement.design_id]?.schema === "tatbot.inkmap-art/1"), "export omitted the placed art");
   check(file.placements.every((placement) => placement.language?.resolution?.status === "resolved"), "export contains placement without canonical resolution");
   writeFileSync(`${out}/sentence-placement.json`, JSON.stringify(file, null, 2));
   check(pageErrors.length === 0, `browser errors: ${pageErrors.join("; ")}`);
@@ -201,11 +200,11 @@ try {
       "unsupported atlas site refusal",
       "relative surface resolution",
       "atlas overlay",
-      "PlacementFile v6 export",
+      "PlacementFile v7 export",
     ],
     result: "pass",
   }, null, 2) + "\n");
-  log("saved v6 placement file with canonical InkLang provenance");
+  log("saved v7 placement file with canonical InkLang provenance");
 } finally {
   await browser.close();
 }

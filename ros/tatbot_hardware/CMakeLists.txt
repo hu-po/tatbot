@@ -50,6 +50,53 @@ if(TATBOT_ARM_SDK)
   endif()
 endif()
 
+# UFACTORY's C++ SDK (xArm-CPLUS-SDK, BSD-3-Clause) for an xArm's commands (src/xarm_backend.cpp), pinned by commit
+# and built from source as a static library, cached under FETCHCONTENT_BASE_DIR like the Trossen SDK: a cache at the
+# commit is used as is, offline. With no cache and no network, or with TATBOT_XARM_SDK OFF, an xArm runs fake and sim
+# only. Firmware 2.7.0 (this arm's) streams the reports this backend reads; no update is needed.
+set(TATBOT_XARM_SDK_COMMIT f36794320a285c0b4bf1cd8ef181cbff6e3b794a)   # 1.18.2, 2026-10-20
+option(TATBOT_XARM_SDK "Build the xArm backend (fetches xArm-CPLUS-SDK ${TATBOT_XARM_SDK_COMMIT})" ON)
+set(XARM_SDK_AVAILABLE OFF)
+if(TATBOT_XARM_SDK)
+  include(FetchContent)
+  set(_deps "${FETCHCONTENT_BASE_DIR}")
+  if(NOT _deps)
+    set(_deps "${CMAKE_BINARY_DIR}/_deps")
+  endif()
+  set(_cached "${_deps}/xarm_cplus_sdk-src")
+  set(_cached_commit "")
+  if(EXISTS "${_cached}/include/xarm/wrapper/xarm_api.h")
+    execute_process(COMMAND git -C "${_cached}" rev-parse HEAD
+      OUTPUT_VARIABLE _cached_commit OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+  endif()
+  if(_cached_commit STREQUAL TATBOT_XARM_SDK_COMMIT)
+    set(FETCHCONTENT_SOURCE_DIR_XARM_CPLUS_SDK "${_cached}")
+    set(XARM_SDK_AVAILABLE ON)
+  else()
+    execute_process(COMMAND git ls-remote -q https://github.com/xArm-Developer/xArm-CPLUS-SDK.git HEAD
+      RESULT_VARIABLE _probe OUTPUT_QUIET ERROR_QUIET TIMEOUT 20)
+    if(_probe EQUAL 0)
+      set(XARM_SDK_AVAILABLE ON)
+    endif()
+  endif()
+  if(XARM_SDK_AVAILABLE)
+    # Its CMakeLists predates CMP0077: NEW lets these plain variables stand over its option() defaults.
+    set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+    set(BUILD_SHARED_LIBS OFF)
+    set(XARM_BUILD_EXAMPLES OFF)
+    set(XARM_ENABLE_INSTALL OFF)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)   # linked into this shared plugin
+    FetchContent_Declare(xarm_cplus_sdk
+      GIT_REPOSITORY https://github.com/xArm-Developer/xArm-CPLUS-SDK.git
+      GIT_TAG ${TATBOT_XARM_SDK_COMMIT}
+      SYSTEM)   # its headers' warnings are its own
+    FetchContent_MakeAvailable(xarm_cplus_sdk)
+    unset(BUILD_SHARED_LIBS)
+  else()
+    message(WARNING "xArm-CPLUS-SDK unavailable (no cache, no network): sdk=real on an xArm is not built")
+  endif()
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(kdl_parser REQUIRED)
@@ -59,8 +106,8 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
-  src/core.cpp src/estop.cpp src/runtime.cpp src/fake_backend.cpp src/sdk_backend.cpp
-  src/tatbot_arm.cpp)
+  src/core.cpp src/estop.cpp src/runtime.cpp src/fake_backend.cpp src/sdk_backend.cpp src/xarm_backend.cpp
+  src/xarm_report.cpp src/tatbot_arm.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
@@ -78,6 +125,11 @@ if(TROSSEN_SDK_AVAILABLE)
     "${trossen_arm_sdk_SOURCE_DIR}/lib/linux/${_arch}/libtrossen_arm.a")
   target_compile_definitions(${PROJECT_NAME} PRIVATE TATBOT_HAVE_SDK)
   message(STATUS "tatbot_hardware: sdk=real built against trossen_arm ${TATBOT_ARM_SDK_TAG} (${_arch})")
+endif()
+if(XARM_SDK_AVAILABLE)
+  target_link_libraries(${PROJECT_NAME} PRIVATE xarm)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE TATBOT_HAVE_XARM_SDK)
+  message(STATUS "tatbot_hardware: sdk=real on an xArm built against xArm-CPLUS-SDK ${TATBOT_XARM_SDK_COMMIT}")
 endif()
 # sdk=sim, the simulator's lockstep backend, is private: a tree without src/sim_backend.cpp builds the stub in
 # tatbot_arm.cpp and refuses sdk=sim at configure.
@@ -115,6 +167,9 @@ if(BUILD_TESTING)
     target_compile_definitions(test_hw_sim PRIVATE
       SIM_WIRE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/test/sim_wire_golden.bin")
   endif()
+  ament_add_gtest(test_hw_xarm_report test/test_hw_xarm_report.cpp TIMEOUT 60)   # frames recorded from the arm
+  target_link_libraries(test_hw_xarm_report ${PROJECT_NAME})
+  target_compile_definitions(test_hw_xarm_report PRIVATE XARM_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/test")
   ament_add_gtest(test_hw_relay test/test_hw_relay.cpp TIMEOUT 120)
   target_link_libraries(test_hw_relay ${PROJECT_NAME} util)
   target_compile_definitions(test_hw_relay PRIVATE

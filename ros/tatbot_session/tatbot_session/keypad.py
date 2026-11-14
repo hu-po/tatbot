@@ -1,5 +1,5 @@
 """`ros2 run tatbot_session keypad`: the operator's drawing keys (stack.yaml `keypad`) as names.KEYS presses on
-/tatbot/keys/<arm>. The keys are pressed on the station keyboard, whose relay (ros/tatbot_keys_relay) sends each
+/tatbot/keys/<arm>, for the one arm the stack drives. The keys are pressed on the station keyboard, whose relay (ros/tatbot_keys_relay) sends each
 press as one `TBK1 <key>` UDP datagram to `keypad.port` here, which takes them from `keypad.from_addr` alone (the
 station's `lan`, or this host when unset), as the e-stop reader takes frames from its relay alone. ros/README.md
 4.4, the pen trim, and 6, the dip scale.
@@ -33,13 +33,14 @@ def main(argv=None) -> int:
     rclpy.init(args=argv)
     node = Node(names.KEYPAD_NODE)
     node.declare_parameter("stack", "")
-    cfg = config.load_stack(node.get_parameter("stack").value or None)["keypad"]
-    pub, log = node.create_publisher(String, names.keys_topic(cfg["arm"]), 10), node.get_logger()
+    stack = config.load_stack(node.get_parameter("stack").value or None)
+    cfg, (arm,) = stack["keypad"], stack["arms"]   # the launch starts it for a stack that drives one arm
+    pub, log = node.create_publisher(String, names.keys_topic(arm), 10), node.get_logger()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", int(cfg["port"])))
     sock.settimeout(0.5)
     station = sender_ok(cfg)
-    log.info(f"UDP :{cfg['port']}: the station keyboard's keys for the {cfg['arm']} arm, from {station} only")
+    log.info(f"UDP :{cfg['port']}: the station keyboard's keys for the {arm} arm, from {station} only")
     try:   # a stop signal can arrive anywhere
         while rclpy.ok():
             try:

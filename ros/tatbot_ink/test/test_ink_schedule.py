@@ -8,13 +8,13 @@ from resource_fixtures import SPEED, drawing, fixture_repo, manifest, resource
 from tatbot_ink.errors import CompileError
 from tatbot_ink.place import placed_strokes
 from tatbot_ink.resources import bind_resources
-from tatbot_ink.schedule import physical_sections, schedule_ops
+from tatbot_ink.schedule import line_per_dip, physical_sections, schedule_ops
 from tatbot_ink.segment import arc_lengths, resample
 from tatbot_motion import load_motion
 from tatbot_motion.estimate import drawing_seconds, estimate_duration
 
 
-def schedule(tmp_path, layers, resources, assignments, *, substrate='paper', max_seconds=60, max_stroke_m=None):
+def schedule(tmp_path, layers, resources, assignments, *, substrate='flat', max_seconds=60, max_stroke_m=None):
     doc = drawing(layers)
     repo = fixture_repo(tmp_path / 'repo')
     path = manifest(tmp_path / 'inks.yaml', doc, resources, assignments, substrate=substrate)
@@ -26,7 +26,7 @@ def schedule(tmp_path, layers, resources, assignments, *, substrate='paper', max
                          max_stroke_m=max_stroke_m), table, strokes)
 
 
-def test_ballpoint_sequence_preserves_repeats_and_reversals_without_dips(tmp_path):
+def test_cartridge_sequence_preserves_repeats_and_reversals_without_dips(tmp_path):
     layers = [(pen, [element([[.002, y], [.018, y]])])
               for pen, y in [('black', .002), ('red', .01), ('black', .018)]]
     layers[-1][1][0]['points_m'].reverse()
@@ -158,3 +158,31 @@ def test_a_path_longer_than_max_stroke_is_drawn_as_lifted_strokes_covering_it_on
     np.testing.assert_allclose([op['src']['arc_m'] for op in actual], [[0., .005], [.005, .01], [.01, .015]], atol=1e-9)
     np.testing.assert_allclose(actual[0]['points_m'][0], strokes[0].points_m[0])
     np.testing.assert_allclose(actual[-1]['points_m'][-1], strokes[0].points_m[-1])
+
+
+def test_line_per_dip_reports_what_each_dip_draws_against_what_it_carries(tmp_path):
+    """Three 4 mm strokes and a 25 mm one on a tool that carries 10 mm a dip: five dips, one of them for 4 mm."""
+    layers = [('three', [element([[.002, y], [.006, y]]) for y in (.002, .004, .006)]
+               + [element([[.002, .010], [.002, .015], [.017, .015], [.017, .010]])])]
+    ops, table, _ = schedule(tmp_path, layers, [resource('N3', tool='round-3', mode='ride')], [('three', 'N3')],
+                             substrate='practice')
+    report = line_per_dip(ops, table)['N3']
+    assert report['mm_per_dip'] == 10 and report['dips'] == sum(op['op'] == 'dip' for op in ops) == 5
+    # 8 mm (two strokes), 4 mm (the third, which the 2 mm left could not draw), then the 25 mm in three equal parts
+    assert report['line_mm'] == {'min': 4.0, 'median': 8.3, 'max': 8.3, 'total': 37.0}
+    assert report['fill'] == 0.833 and report['under_half'] == 1 and report['strokes_per_dip'] == 1.0
+    assert report['first_stroke_mm'] == {'min': 4.0, 'median': 8.3} and report['stroke_mm'] == 6.2
+    dry, table, _ = schedule(tmp_path / 'dry', layers, [resource('B')], [('three', 'B')])
+    assert line_per_dip(dry, table) == {}
+
+
+def test_the_reds_dips_of_2026_11_10_drew_from_a_millimetre_to_a_full_load():
+    import json
+    from pathlib import Path
+
+    pair = json.loads((Path(__file__).parent / 'fixtures/chicano_pair.json').read_text())
+    red = line_per_dip(pair['red']['ops'], pair['red']['resources'])['bright_red']
+    black = line_per_dip(pair['black']['ops'], pair['black']['resources'])['true_black']
+    assert (red['dips'], red['mm_per_dip'], red['stroke_mm'], red['under_half']) == (64, 60.0, 6.8, 8)
+    assert red['line_mm']['total'] == pytest.approx(2949.1, abs=0.5) and red['line_mm']['min'] < 2
+    assert (black['dips'], black['mm_per_dip'], black['under_half']) == (28, 120.0, 1)

@@ -1,7 +1,7 @@
-"""Runtime evidence for paired research: startup sources and loaded controller code.
+"""Runtime evidence for every run: startup sources and loaded controller code.
 
-This is provenance, not a motion interlock. Missing or changing evidence makes
-a research comparison inadmissible; ordinary drawing keeps its existing rules.
+This is provenance, not a motion interlock: a run records what drew it, and a lab trial (docs/lab.md) finds that
+record by its run id.
 """
 from __future__ import annotations
 
@@ -49,13 +49,3 @@ def current(identity):
         return None
     return {**identity, 'controller': controller_identity(identity.get('controller_reference')), 'source_status': source_status(identity)}
 
-
-def validate_research(program, observed, recorded):
-    if not program.get('research'):
-        return
-    if observed.get('schema') != 'tatbot.ros-runtime/2' or not observed.get('controller', {}).get('complete'):
-        raise ValueError('research requires identified loaded controller code')
-    if not observed.get('source_status', {}).get('complete'):
-        raise ValueError('research source differs from its startup snapshot')
-    if observed != recorded:
-        raise ValueError('research runtime changed since the run started; comparison is inconclusive')

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from tatbot_motion.clik import Kinematics, PlanError
 from tatbot_motion.plan import (
+    FLY,
     HOVER,
     PHASE_DESCEND,
     PHASE_DRAW,
@@ -18,6 +19,7 @@ from tatbot_motion.plan import (
     PHASE_TRAVEL,
     PRESS,
     RIDE,
+    STOP,
     PenDown,
     Trajectory,
     blend_start,
@@ -34,7 +36,7 @@ from tatbot_motion.plan import (
     probe_travel_m,
     to_knots,
 )
-from tatbot_motion.trim import Trim, compose
+from tatbot_motion.trim import Trim, compose, dwell, slow_from_s
 
 MOTION_FORMAT = "tatbot-motion"
 MOTION_VERSION = 1
@@ -44,7 +46,7 @@ __all__ = [
     "plan_lift", "plan_touch",
     "probe_travel_m", "to_knots", "blend_start", "dispatch_drift", "guard_arm_time_s", "joins", "PenDown", "pen_down", "PRESS", "RIDE", "HOVER",
     "PHASE_TRAVEL", "PHASE_DESCEND", "PHASE_SETTLE", "PHASE_DRAW", "PHASE_LIFT", "PHASE_TOUCH",
-    "Trim", "compose",
+    "Trim", "compose", "dwell", "slow_from_s",
 ]
 
 
@@ -67,7 +69,30 @@ def load_motion(path: str | Path | None = None) -> dict:
     if (motion.get("format"), motion.get("version")) != (MOTION_FORMAT, MOTION_VERSION):
         raise ValueError(f"{path}: not {MOTION_FORMAT} version {MOTION_VERSION}")
     _check_pen(motion["pen"], path)
+    _check_draw(motion, path)
     return motion
+
+
+def _check_draw(motion: dict, path) -> None:
+    """motion.yaml `draw.ends` and its `fly` block, `corners.blend_radius_m` and `machine.rate_hz`, where present."""
+    draw = motion["draw"]
+    if draw.get("ends", STOP) not in (STOP, FLY):
+        raise ValueError(f"{path}: draw.ends must be {STOP} or {FLY}, got {draw.get('ends')!r}")
+    if draw.get("ends") == FLY or "fly" in draw:
+        fly = draw.get("fly") or {}
+        values = [float(fly.get(key, math.nan)) for key in ("band_m", "clear_m", "glide_m", "inset_m", "ease_s")]
+        band, clear, glide, inset, ease = values
+        standoff = float(motion["approach"]["standoff_m"])
+        # over the band and under the standoff the pen lifts to; the glide long enough to come down in
+        if not (all(math.isfinite(v) for v in values) and band > 0.0 and clear > 0.0 and band + clear < standoff
+                and 0.0 < glide <= 0.020 and 0.0 <= inset <= glide and 0.0 < ease <= 5.0):
+            raise ValueError(f"{path}: draw.fly needs 0 < band_m, 0 < clear_m, band_m + clear_m under approach.standoff_m, "
+                             "0 < glide_m <= 0.020, 0 <= inset_m <= glide_m and 0 < ease_s <= 5")
+    radius = float(motion["corners"].get("blend_radius_m", 0.0))
+    if not 0.0 <= radius <= 0.002:
+        raise ValueError(f"{path}: corners.blend_radius_m must be in [0, 0.002], got {radius}")
+    if "machine" in motion and not 10.0 <= float(motion["machine"].get("rate_hz", math.nan)) <= 200.0:
+        raise ValueError(f"{path}: machine.rate_hz must be in [10, 200]")
 
 
 def _check_pen(pen: dict, path) -> None:
@@ -90,3 +115,7 @@ def _check_pen(pen: dict, path) -> None:
     if not 0.0 < float(trim["step_m"]) <= float(trim["limit_m"]) or not all(
             float(trim[key]) > 0.0 for key in ("speed_m_s", "min_s", "lead_s")):
         raise ValueError(f"{path}: pen.trim needs 0 < step_m <= limit_m and positive speed_m_s, min_s and lead_s")
+    hold = trim.get("hold")
+    if hold is not None and not (abs(float(hold["start_m"])) <= float(trim["limit_m"]) and float(hold["window_s"]) > 0.0
+                                 and isinstance(hold["substrates"], list)):
+        raise ValueError(f"{path}: pen.trim.hold needs substrates, a start_m within limit_m and a positive window_s")

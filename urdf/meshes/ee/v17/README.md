@@ -14,7 +14,7 @@ axis and CAD tip are preserved: carriage tip `(115.539, -11.521, -0.564)` mm.
 `right/tool_mount` is now the first clamp bore band, station 73 mm behind that
 tip; its +z points toward the tip. The datasheet uses the same datum.
 
-The pink/right compact carrier carries 47 mm 36h11 IDs 2/3/4. The blue/left
+The WXAI follower's (right) compact carrier carries 47 mm 36h11 IDs 2/3/4. The blue/left
 arm carries IDs 5/30/1 and the palette carries 81 mm ID 22, all from `config/fiducials.json`.
 CAD artwork was placeholder artwork and does not determine marker identity.
 Fresh calibration must assign measured tag poses. Both wrist layout records

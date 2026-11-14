@@ -98,6 +98,24 @@ export function frameAt(g: THREE.BufferGeometry, anchor: Anchor, rotationRad = 0
   return { p, n, u, v };
 }
 
+/** The design's frame on a posed surface: the rest surface's directions carried through the anchor's triangle, so it
+ *  turns with the skin. A frame made on the posed surface would measure up against the pose, not the chart. */
+export function posedFrame(rest: THREE.BufferGeometry, posed: THREE.BufferGeometry, anchor: Anchor, rotationRad = 0): Frame {
+  const { v } = frameAt(rest, anchor, rotationRad);
+  const corners = (g: THREE.BufferGeometry) => {
+    const position = g.getAttribute("position");
+    const [a, b, c] = faceVertexIndices(g, anchor.face).map((index) => new THREE.Vector3().fromBufferAttribute(position, index));
+    return [b.clone().sub(a), c.clone().sub(a)];
+  };
+  const [e1, e2] = corners(rest), [f1, f2] = corners(posed);
+  const [g11, g12, g22, b1, b2] = [e1.dot(e1), e1.dot(e2), e2.dot(e2), v.dot(e1), v.dot(e2)];
+  const determinant = g11 * g22 - g12 * g12;
+  const { p, n } = anchorToPoint(posed, anchor);
+  const carried = f1.multiplyScalar((b1 * g22 - b2 * g12) / determinant).addScaledVector(f2, (b2 * g11 - b1 * g12) / determinant);
+  carried.addScaledVector(n, -carried.dot(n)).normalize();
+  return { p, n, u: new THREE.Vector3().crossVectors(carried, n).normalize(), v: carried };
+}
+
 /**
  * Smooth vertex normals keyed by *position*, so a non-indexed mesh (which is
  * what Loop subdivision hands back) still gets a continuous normal field across

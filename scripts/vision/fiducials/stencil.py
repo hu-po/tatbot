@@ -386,7 +386,10 @@ def rgbd_pose(image: np.ndarray, depth_m: np.ndarray, rays: np.ndarray, t: Tile,
     pose: under the arm one stray read decoded off the wrist-tag cube is as likely as one of the print's.
     `roi_xyxy`, `contrast`: find_all's. {"found", "camera_from_target", "markers", "ids", "seen", "rms_m" (the
     corners about that layout), "radius_m" (the skin's, inf flat), "points_camera" (the kept markers' corners,
-    ids[k]'s at rows 4k:4k+4), "pixels" (the same corners in the image)} or {"found": False, "reason"}."""
+    ids[k]'s at rows 4k:4k+4), "pixels" (the same corners in the image), "copies"} or {"found": False, "reason"}.
+    Several sheets of one print read the same codes, and no marker says which sheet it is on: the reads left once the
+    largest group is kept are grouped the same way, and each further group is one of `copies`, largest first, a dict
+    of the same keys but "found" and "copies". Which copy matters is its reader's to say, by where it stands."""
     # keyed (id, n): a code can read in more than one place, a false decode elsewhere beside the print's own
     seen = {(d.tag_id, n): d.corners_px for n, d in enumerate(find_all(image, t, det, roi_xyxy, contrast=contrast))}
     if not seen:
@@ -401,14 +404,21 @@ def rgbd_pose(image: np.ndarray, depth_m: np.ndarray, rays: np.ndarray, t: Tile,
         why = [f"{len(lifted)} reads of its codes off the print (not its printed size on the depth)"] if lifted else []
         why += [f"{len(seen) - len(lifted)} without depth under them"] if len(seen) > len(lifted) else []
         return {"found": False, "reason": "no marker of the print read: " + ", ".join(why)}
-    keep = _consensus(t, sized, tol_m, radius_m)
-    if len(keep) < min_markers:
+    placed, left = [], dict(sized)
+    while left:
+        keep = _consensus(t, left, tol_m, radius_m)
+        if len(keep) < min_markers:
+            break
+        ids, points = [k[0] for k in keep], np.concatenate([left[k] for k in keep])
+        pose, radius, rms, _ = bent(t, ids, points, kabsch(np.concatenate([target_corners(t, i) for i in ids]), points))
+        placed.append({"camera_from_target": pose, "markers": len(keep), "ids": ids, "seen": len({i[0] for i in seen}),
+                       "rms_m": rms, "radius_m": radius, "points_camera": points,
+                       "pixels": np.concatenate([seen[k] for k in keep])})
+        for key in keep:
+            del left[key]
+    if not placed:
         return {"found": False, "reason": f"{len(sized)} reads of its codes at its printed size, {len(keep)} agreeing"}
-    ids, points = [k[0] for k in keep], np.concatenate([sized[k] for k in keep])
-    pose, radius, rms, _ = bent(t, ids, points, kabsch(np.concatenate([target_corners(t, i) for i in ids]), points))
-    return {"found": True, "camera_from_target": pose, "markers": len(keep), "ids": ids,
-            "seen": len({i[0] for i in seen}), "rms_m": rms, "radius_m": radius, "points_camera": points,
-            "pixels": np.concatenate([seen[k] for k in keep])}
+    return {"found": True, **placed[0], "copies": placed[1:]}
 
 
 def _printed_size(corners: np.ndarray, side_m: float, tol: float = 0.15) -> bool:

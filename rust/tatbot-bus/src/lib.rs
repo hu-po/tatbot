@@ -1,4 +1,4 @@
-//! Versioned bus envelope and bounded latest-value test transport.
+//! Versioned bus envelope, its Zenoh transport and fleet roles.
 //! This bus is never part of the e-stop control path.
 pub mod fleet;
 #[cfg(feature = "zenoh")]

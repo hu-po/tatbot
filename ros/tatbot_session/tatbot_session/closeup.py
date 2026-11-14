@@ -17,7 +17,6 @@ HOLD_RADIUS_M = 0.025    # page within this of a hold's tip is kept: farther, th
 INK_DELTA_E = 25.0       # distance in OpenCV's 8-bit Lab from the paper's local colour that reads as ink
 BACKGROUND_MM = 3.0      # the paper's local colour: the median over a square this wide (a 0.5 mm line is not it)
 SAMPLE_M = 0.0005        # a stroke is scored at points this far apart
-PEN_HUE = gauge.PEN_HUE  # the pen's teal is masked out of every frame before it is put on the page
 
 
 def _turn(a, b) -> np.ndarray:
@@ -105,15 +104,6 @@ def extent(program: dict, margin_m: float = HOLD_RADIUS_M) -> tuple[float, float
     return float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1])
 
 
-def pen_mask(image_bgr) -> np.ndarray:
-    """The pen's teal in a camera frame, grown a little: it is no paper."""
-    import cv2
-
-    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    teal = ((hsv[..., 0] >= PEN_HUE[0]) & (hsv[..., 0] <= PEN_HUE[1]) & (hsv[..., 1] > 90)).astype(np.uint8)
-    return cv2.dilate(teal, np.ones((9, 9), np.uint8)).astype(bool)
-
-
 def ink_score(page_bgr, valid, px_per_mm: float) -> np.ndarray:
     """Each page pixel's Lab distance from the paper's local colour (0 off the views): ink of any colour, and
     the arm's soft shadows drop out with the local median."""
@@ -195,6 +185,13 @@ def coverage(program: dict, score, valid, extent_m, px_per_mm: float, *, tol_m: 
 
     strokes, resources = rows((0.0, 0.0))
     shifted, shifted_resources = rows(best)
+    # a shift is named only where it finds more ink than the plan does: over a stencil's printed markers the sharp
+    # search lands on their edges, and the drawing itself reads worse there than where it was planned
+    def inked(per) -> float:
+        return sum(r["seen_points"] * (r["ink"] or 0.0) for r in per.values())
+
+    if inked(shifted_resources) <= inked(resources):
+        best, shifted, shifted_resources = (0.0, 0.0), strokes, resources
     return {"strokes": strokes, "resources": resources, "threshold": threshold, "tol_m": tol_m,
             "best_shift_m": list(best), "at_best_shift": {"strokes": shifted, "resources": shifted_resources}}
 

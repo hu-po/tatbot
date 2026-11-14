@@ -47,8 +47,8 @@ FLOOR_UNDER_TOP_M = 0.010
 FIX_HEIGHT_M = 0.002
 # The search's end plane under the fix's ball, over the floor: the stylus (ball, shaft, cone: 22.6 mm over the
 # collar) stands in the tool's way there for a fix up to 5 mm high and FIX_HEIGHT_M low. A tool whose side height is
-# lower searches SEARCH_OVER_SIDE_M over it: a ballpoint's tip at its side height passes over the ball from a fix
-# 2 mm high, and 1 mm higher it meets the tip or the body's end from a fix 2 mm off either way.
+# lower searches SEARCH_OVER_SIDE_M over it: a narrow tip touched 0.8 mm up passes over the ball at its side height
+# from a fix 2 mm high, and 1 mm higher it meets the tip or the body's end from a fix 2 mm off either way.
 SEARCH_BELOW_M = 0.004
 SEARCH_STEP_DOWN_M = 0.003     # a search that met nothing goes once more this much lower (Calibration.s1)
 SEARCH_OVER_SIDE_M = 0.001
@@ -58,7 +58,7 @@ SEARCH_OVER_SIDE_M = 0.001
 SEARCH_ACROSS_M = 0.012
 # When the way from where the arm stands to over the ball is not planned, a staging pose on the way in: the tool
 # upright, this far along from the tool toward the station (nearest the middle first), at the tool's height and this
-# much over it, turned these degrees from the base heading. 2026-09-30: at v11 the joint move from rest swept pink's
+# much over it, turned these degrees from the base heading. 2026-09-30: at v11 the joint move from rest swept the WXAI's
 # wrist 9-16 mm (over the bubbles) from the landed blue wrist, under the guard's 20 mm, while a stop at
 # (200, 180, 170) mm kept 104 mm on the way in and 29-49 mm on over the ball.
 STAGING_ALONG = (0.5, 0.3, 0.7)
@@ -66,9 +66,12 @@ STAGING_OVER_M = (0.0, 0.05)
 STAGING_TURN_DEG = (-30.0, 0.0, 30.0, -60.0, 60.0)
 SEARCH_MARGIN_M = 0.002
 # A seed from the arm's last touch (search_seed) is used only within these of it: the tip's error across the axis
-# turns with the heading (pink's 3RL met the ball 7 mm apart at headings 0 and -30, 2026-10-08).
+# turns with the heading (the WXAI's 3RL met the ball 7 mm apart at headings 0 and -30, 2026-10-08).
 SEED_TURN_DEG = 5.0
 SEED_MAX_M = 0.02
+# Across another registration the touched ball itself starts the search (across_seed) when the fix stands within this
+# of it: twice the 3.0-3.3 mm the overhead put the fix off the touched ball through two setups (2026-10-23, 10-25)
+SEED_ACROSS_M = 0.006
 # When nothing meets the search's line, further lines run this many side radii apart: a pass meets the stylus
 # within about the tool's side radius across its line (the wall and the ball, the tool widening above them), so
 # the lines leave no gap. The laser's reach covers the prior's 12 mm from one line; a cartridge's tube needs more.
@@ -807,13 +810,14 @@ def run(args) -> int:
     fix = station.StationFix.from_dict(json.loads(Path(args.station).expanduser().read_text()))
     station.require_fresh(fix, args.run_started, max_age_s=args.max_age_s)
     kin = Kinematics(robot_description(None, arms=(args.arm,)), args.arm)
-    mount_from_tcp = np.linalg.inv(kin.frame(np.zeros(7), f"{args.arm}/tool_mount")) @ kin.fk(np.zeros(7))
+    zero = np.zeros(kin.n)
+    mount_from_tcp = np.linalg.inv(kin.frame(zero, f"{args.arm}/tool_mount")) @ kin.fk(zero)
     tip0 = mount_from_tcp[:3, 3]
     run_log = tatbot_runlog.init(WORKFLOW, meta={"arm": args.arm, "tool": tool.tool_id, "station": args.station},
                                  attach_logging=False, argv=["tatbot_calib", "calib", "run", "--arm", args.arm])
     motion = load_motion()
     posts = [reach.overhead_post(fix.detail["overhead_camera_m"])] if fix.detail.get("overhead_camera_m") else []
-    guard, guard_text = _guard(repo, motion)
+    guard, guard_text = _guard(repo, motion, args.arm)
     base = world_from_base(repo, args.arm)
     station_ok = None
     if guard is not None and base is not None:   # the arm's bodies clear of the station at each heading's poses
@@ -857,16 +861,18 @@ def run(args) -> int:
     return code
 
 
-def _guard(repo: Path, motion: dict):
-    """The stack's two-arm collision guard, built as the stack builds it (its stack.yaml's registrations), so that the
-    goals this run plans are the ones the executor sends: (the guard or None, a line saying which)."""
+def _guard(repo: Path, motion: dict, arm: str):
+    """The collision guard of the arm this run calibrates, built as the stack builds it for the arm it drives (its
+    stack.yaml's registration), so that the goals this run plans are the ones the executor sends: (the guard or None,
+    a line saying which). The installed stack.yaml's own `arms` is the WXAI's, not the stack's launch arguments,
+    so the xArm's run found no guard of its own (KeyError 'xarm', 2026-11-08)."""
     try:
         from tatbot_motion.collision import Guard
 
         from tatbot_calib.cli import _stack
     except ImportError as error:
         return None, f"arm clearance not checked here ({error})"
-    return Guard.from_stack(repo, _stack(repo), motion)
+    return Guard.from_stack(repo, {**_stack(repo), "arms": [arm]}, motion)
 
 
 # The station's parts keep this far from every body of the arm but its tool (Calibration.palette_check), and the
@@ -914,39 +920,54 @@ def _latched(cal: Calibration) -> bool:
     return s is None or s.latched or not s.estop_ok
 
 
-def touched_fix(cal: Calibration, fix: station.StationFix, tool_id: str) -> station.StationFix:
+def touched_fix(cal: Calibration, fix: station.StationFix, tool_id: str, *,
+                camera_height: bool = False) -> station.StationFix:
     """The fix carried onto the arm's station touch while the touch speaks for now (station.touched_palette: the
     tool, joint model, registration and palette unchanged), so S1's prior, the sweep's park and its camera's
     prediction, and the way checks stand where this arm's tip meets the ball. Through the registration the overhead's
     ball stands 3-10 mm off it: on 2026-10-07 the 3RL's sweep parks stood ~10 mm aside the ball (the detector took
     the stylus for the tip), and S1's lines from the fix met nothing out to 9 mm. The fix as it is when no touch
-    speaks; a new touch still records the overhead fix it started from."""
+    speaks; a new touch still records the overhead fix it started from.
+
+    `camera_height`: the caller measures the ball's height under the palette camera (the sweep, calib height), so a
+    touch whose height no camera measured still places the ball across, at the overhead fix's height as S1 takes it.
+    Its touches settle the top a fixed depth under the overhead's, which only a dip must refuse: refused, the xArm's
+    sightings stood 3.6 mm off the touched ball along the camera's line of sight, the tube blurred (2026-11-09)."""
     import dataclasses
 
     urdf = cal.repo / "urdf" / "palette.urdf"
     try:
         touch = station.load_touch(cal.arm)
+        across = camera_height and "palette camera" not in touch.height_source
         base_from_palette = station.touched_palette(touch, fix, tool_id=tool_id, tcp_m=cal.tip0,
                                                     joint_offsets=station.joint_offsets(cal.repo, cal.arm),
                                                     palette_urdf=urdf,
-                                                    same_body=station.same_machine(cal.repo, touch.tool_id, tool_id))
+                                                    same_body=station.same_machine(cal.repo, touch.tool_id, tool_id),
+                                                    check_height=not across)
     except station.StaleStationError as error:
         cal.say(f"S0: the station prior is the overhead fix: {error}")
         return fix
     ball = base_from_palette[:3, :3] @ station.ball_in_palette(urdf) + base_from_palette[:3, 3]
+    if across:
+        base_from_palette = base_from_palette.copy()
+        base_from_palette[2, 3] += float(fix.ball[2] - ball[2])
+        ball[2] = float(fix.ball[2])
     cal.say(f"S0: the station prior is the touch {touch.run}: the ball "
-            f"{np.round((ball - np.asarray(fix.ball, float)) * 1000, 1).tolist()} mm from the overhead fix")
+            f"{np.round((ball - np.asarray(fix.ball, float)) * 1000, 1).tolist()} mm from the overhead fix"
+            + (", at its height: no camera has measured the touch's" if across else ""))
     return dataclasses.replace(fix, base_from_palette=base_from_palette, ball=ball)
 
 
-def search_seed(cal: Calibration, fix: station.StationFix, tool_id: str) -> np.ndarray | None:
-    """Where S1's search starts when no touch speaks for now: the fix's ball moved by where the arm's last touch
-    found the ball from its own fix, when that touch held this tool (or a cartridge of its machine) at this heading.
-    The overhead puts the ball off the arm's touches by an error of the arm and its tool, not of the layout: pink's
-    11RL and 3RL met it 9.0 and 9.2 mm across the fix at heading -30 a week and a re-layout apart (2026-10-05,
-    2026-10-12), so a search from the fix swept 7 empty lines (8 of its 17 minutes) first. The search verifies the
-    seed, and _stages falls back to the fix when it finds nothing there. None when no such touch exists, or it was
-    touched under another registration."""
+def _camera_height(cal: Calibration) -> bool:
+    """Whether the arm's station touch carries a height the palette camera measured (calib height)."""
+    try:
+        return "palette camera" in station.load_touch(cal.arm).height_source
+    except station.StaleStationError:
+        return False
+
+
+def _last_touch(cal: Calibration, tool_id: str):
+    """(the last touch, the tcp moved since) when it held this tool (or a cartridge of its machine) at this heading."""
     try:
         touch = station.load_touch(cal.arm)
     except (station.StaleStationError, ValueError, KeyError):
@@ -954,9 +975,24 @@ def search_seed(cal: Calibration, fix: station.StationFix, tool_id: str) -> np.n
     rotation = halo.tool_pose(np.zeros(3), cal.heading)[:3, :3]
     turned = math.degrees(math.acos(np.clip((np.trace(rotation.T @ touch.rotation) - 1.0) / 2.0, -1.0, 1.0)))
     same = touch.tool_id == tool_id or station.same_machine(cal.repo, touch.tool_id, tool_id)
+    if touch.arm != cal.arm or not same or turned > SEED_TURN_DEG:
+        return None
     # through the tcp in use: the same joints put a tcp moved since by d a rotation of d further on
     # (station.touched_palette); the 1011RL's adopted tip moved it 10 mm (2026-10-12)
-    moved = np.asarray(getattr(cal, "tip0", touch.tcp_m), float) - np.asarray(touch.tcp_m, float)
+    return touch, np.asarray(getattr(cal, "tip0", touch.tcp_m), float) - np.asarray(touch.tcp_m, float)
+
+
+def search_seed(cal: Calibration, fix: station.StationFix, tool_id: str) -> np.ndarray | None:
+    """Where S1's search starts when no touch speaks for now: the fix's ball moved by where the arm's last touch
+    found the ball from its own fix, when that touch held this tool (or a cartridge of its machine) at this heading.
+    The overhead puts the ball off the arm's touches by an error of the arm and its tool, not of the layout: the WXAI's
+    11RL and 3RL met it 9.0 and 9.2 mm across the fix at heading -30 a week and a re-layout apart (2026-10-05,
+    2026-10-12), so a search from the fix swept 7 empty lines (8 of its 17 minutes) first. The search verifies the
+    seed, and _stages falls back to the fix when it finds nothing there. None when no such touch exists, or it was
+    touched under another registration (across_seed)."""
+    if (last := _last_touch(cal, tool_id)) is None:
+        return None
+    touch, moved = last
     offset = np.asarray(touch.ball, float) + np.asarray(touch.rotation, float) @ moved - np.asarray(touch.fix.ball, float)
     halo_tip = getattr(cal, "halo", None)
     if halo_tip is None or halo_tip.edges_trip:
@@ -972,12 +1008,46 @@ def search_seed(cal: Calibration, fix: station.StationFix, tool_id: str) -> np.n
     # old one's error (2026-10-22: the wrist's registration took out the cube's ~9 mm, and the cube's offset sent
     # the search 13.5 mm over the ball)
     registered = touch.fix.detail.get("registration_sha256") == fix.detail.get("registration_sha256")
-    if (touch.arm != cal.arm or not same or not registered or turned > SEED_TURN_DEG
-            or float(np.linalg.norm(offset)) > SEED_MAX_M):
+    if not registered or float(np.linalg.norm(offset)) > SEED_MAX_M:
         return None
     cal.say(f"S1: the search starts {np.round(offset * 1000, 1).tolist()} mm from the fix, where the touch "
             f"{touch.run} met the ball from its own")
     return np.asarray(fix.ball, float) + offset
+
+
+# Every setup re-registers, and the touched ball stood within 0.1 mm across two setups whose fixes moved 2.6 mm
+# (2026-10-23, 10-25): each search through the fix met nothing for ~1.8 min before a line 3.1 mm over met the stylus.
+# Not a seed (Calibration.seeded, its height in doubt): the search runs from here as from the fix, its lines reaching it.
+def across_seed(cal: Calibration, fix: station.StationFix, tool_id: str) -> np.ndarray | None:
+    """Where S1's search starts across another registration: the ball the arm last touched, by FK (no registration in
+    it), across only at the fix's height, when the fix stands within SEED_ACROSS_M of it."""
+    if (last := _last_touch(cal, tool_id)) is None:
+        return None
+    touch, moved = last
+    across = np.asarray(touch.ball, float) + np.asarray(touch.rotation, float) @ moved - np.asarray(fix.ball, float)
+    if float(np.hypot(*across[:2])) > SEED_ACROSS_M:
+        return None
+    cal.say(f"S1: the search starts {np.round(across[:2] * 1000, 1).tolist()} mm across from the fix, where the touch "
+            f"{touch.run} met the ball under another registration")
+    return np.r_[np.asarray(fix.ball, float)[:2] + across[:2], fix.ball[2]]
+
+
+def wrist_camera(repo: Path, arm: str, role: str = "") -> tuple[str, str, Path]:
+    """(serial, colour optical frame, gauge file) of the wrist D405 vision.toml mounts on `arm` as `role`, or of the
+    session camera (stack.yaml page.locate.camera) when `role` is empty: its gauge file is wrist-gauge-<arm>.json, any
+    other's wrist-gauge-<arm>-<role>.json (tatbot_session.gauge.calibration_path)."""
+    import wrist_cameras
+    from tatbot_description import load_stack
+    from tatbot_session import gauge
+
+    session = (load_stack()["page"].get("locate") or {}).get("camera") or ""
+    chosen = role or session
+    mounted = {camera["role"]: camera for camera in wrist_cameras.mounted_for_arm(repo, arm)}
+    if chosen not in mounted:
+        raise ValueError(f"vision.toml mounts no wrist camera {chosen or '(none named)'!r} on the {arm} arm: "
+                         f"{', '.join(sorted(mounted)) or 'none'}")
+    frame = wrist_cameras.optical_frames(repo, arm=arm, stream="color")[chosen]
+    return mounted[chosen]["serial"], frame, gauge.calibration_path(arm, "" if chosen == session else chosen)
 
 
 def place_station(cal: Calibration, fix: station.StationFix) -> None:
@@ -996,22 +1066,29 @@ def place_station(cal: Calibration, fix: station.StationFix) -> None:
 def _stages(cal: Calibration, fix: station.StationFix, args) -> int:
     _preflight(cal)
     prior = touched_fix(cal, fix, args.tool)
-    if prior is not fix and not cal.halo.edges_trip:
+    if prior is not fix and not cal.halo.edges_trip and not _camera_height(cal):
         # No edge pass trips, so S1 settles the top at its search height, a fixed depth under the prior's: from a
         # touch's ball that walks 4.8 mm lower each run (2026-10-12: 80.6 -> 75.8 mm, and every further yaw then
-        # stood under the floor). The overhead's height does not walk (80.1-80.6 mm over four registrations).
+        # stood under the floor). The overhead's height does not walk (80.1-80.6 mm over four registrations). A height
+        # the palette camera measured does not walk either, and it is the arm's own: on the xArm rig the overhead's
+        # stood 8.9 mm under it, and S1's passes from it met the stylus under the ball (2026-11-09).
         prior = dataclasses.replace(prior, ball=np.array([*prior.ball[:2], fix.ball[2]], float))
         cal.say("S1: the prior's height is the overhead fix's: this tool's edge passes cannot measure the top")
+    elif prior is not fix and not cal.halo.edges_trip:
+        cal.say("S1: the prior's height is the touch's, which the palette camera measured (calib height)")
     place_station(cal, prior)
     seed = search_seed(cal, fix, args.tool) if prior is fix else None
+    across = across_seed(cal, fix, args.tool) if prior is fix and seed is None else None
     floor = cal.floor_z
     if seed is not None:
         cal.ball, cal.seeded = seed.copy(), True
         # the floor 10 mm under the seed's top when that is lower than the fix's (a needle's height seed)
         cal.floor_z = min(floor, float(seed[2]) + halo.BALL_RADIUS_M - FLOOR_UNDER_TOP_M + FIX_HEIGHT_M)
+    elif across is not None:
+        cal.ball = across.copy()
     cal.approach(cal.ball)
     found = cal.s1()
-    if not found and seed is not None and not cal.stuck and not _latched(cal):
+    if not found and (seed is not None or across is not None) and not cal.stuck and not _latched(cal):
         cal.say("S1: nothing at the seed; searching from the fix")
         cal.ball, cal.seeded, cal.floor_z = np.asarray(fix.ball, float).copy(), False, floor
         found = cal.s1()
@@ -1090,7 +1167,7 @@ def _fit_args(cal: Calibration) -> dict:
 
 def _fit(cal: Calibration) -> solve.Fit:
     """The fit so far. Its side radius plans the next touches only once two yaws are in: one cannot separate the
-    tip from the ball, and after S1 alone (2026-09-30, pink at v11) its side radius so fattened the tool that a
+    tip from the ball, and after S1 alone (2026-09-30, the WXAI at v11) its side radius so fattened the tool that a
     touch straight down over the ball read as meeting the palette camera 122 mm away; S1's half-span stands."""
     fitted = cal.fitted = solve.fit(cal.contacts, _frame_at(cal.kin, cal.arm), **_fit_args(cal))
     if len({contact.group for contact in cal.contacts}) >= 2:

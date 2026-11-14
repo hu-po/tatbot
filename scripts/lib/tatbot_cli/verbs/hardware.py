@@ -185,7 +185,7 @@ def _tool_show_args(p):
 
 
 @verb(effects=('read_files',), noun="tool", verb="show", tier=OFFLINE, summary="print a datasheet as the code sees it",
-      wraps=("scripts/lib/tool_spec.py",), args=_tool_show_args, example=("lutin-ballpoint-dot",), doc="docs/tools.md")
+      wraps=("scripts/lib/tool_spec.py",), args=_tool_show_args, example=("lutin-3rl-bugpin",), doc="docs/tools.md")
 def tool_show(ctx, ns, rest):
     return py(ctx, "scripts/lib/tool_spec.py", *ns.tool_id, *rest)
 
@@ -196,7 +196,7 @@ def tool_sync(ctx, ns, rest):
     return py(ctx, "scripts/check_tool_sync.py", *tool_flag(ctx), *rest)
 
 
-@verb(effects=('read_files', 'write_config'), noun="tool", verb="urdf", tier=MUTATES_CONFIG, summary="put the fitted tool into urdf/tatbot.urdf so FK sees it",
+@verb(effects=('read_files', 'write_config'), noun="tool", verb="urdf", tier=MUTATES_CONFIG, summary="put each drawing arm's fitted tool into its model's URDF so FK sees it",
       wraps=("scripts/gen_tool_urdf.py",), passthrough="gen_tool_urdf.py", example=("--", "--check"), doc="docs/tools.md")
 def tool_urdf(ctx, ns, rest):
     return py(ctx, "scripts/gen_tool_urdf.py", *rest)

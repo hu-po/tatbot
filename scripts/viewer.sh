@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `tatbot viewer <start|stop|status|open|reset|view|install|station-install|serve|sysmon>`:
+# `tatbot viewer <start|stop|status|open|reset|view|install|station-install|serve|window|sysmon>`:
 # the one fleet Rerun viewer every workflow streams into (docs/vision.md).
 #
 #   start     on the rerun-server node: headless server on :9876 (+ web :9090)
@@ -11,6 +11,7 @@
 #   install   on the rerun-server node: enable tatbot-viewer@ and its tatbot-sysmon@ (sudo)
 #   station-install  on the station: enable its tatbot-sysmon@ (sudo)
 #   serve     run the server in the foreground (what tatbot-viewer@ execs)
+#   window    keep this node's window on its hub in the foreground (what tatbot-viewer-window runs)
 #   sysmon    stream this host's load and temperature in the foreground (what tatbot-sysmon@ execs)
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,7 +20,7 @@ source "$REPO/scripts/lib/cli_hint.sh"; cli_hint::note "tatbot viewer"
 # shellcheck source=scripts/vision/rerun_session.sh
 source "$REPO/scripts/vision/rerun_session.sh"
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; }
 cmd="${1:-status}"; shift || true
 SERVER="$(rerun_session::fleet_server)" || true
 SERVER_NODE="${SERVER%% *}"
@@ -226,11 +227,14 @@ PY
     sudo systemctl start "tatbot-viewer@$USER.service"
     install_sysmon
     echo "the hub restarted empty and producers never redial it: its start restarted the cockpit here;" \
-      "on the station run tatbot viewer open --restart; the drawing stack's bridge rejoins by itself within ~15 s"
+      "the station's window and the drawing stack's bridge rejoin by themselves within ~20 s"
     ;;
   station-install)
     rerun_session::require_pin || exit 3
     install_sysmon
+    ;;
+  window)
+    rerun_session::keep_window "$@"
     ;;
   sysmon)
     py="$(rerun_session::sdk_python)" || exit 1

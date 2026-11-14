@@ -1,9 +1,10 @@
 """Generated wrist-fiducial blocks in the shared URDF, as text: stdlib only.
 
-One block per fiducial target sits in urdf/tatbot.urdf between marker
-comments. export_wrist_tags.py renders a block from a layout; the arm-scoped
-adopter splices it into whatever URDF the destination holds, leaving the rest
-byte for byte. Both use these helpers.
+One block per fiducial target sits in its arm's URDF (urdf/tatbot.urdf,
+urdf/xarm7.urdf) between marker comments. export_wrist_tags.py renders a block
+from a layout; the arm-scoped adopter splices it into whatever URDF the
+destination holds, leaving the rest byte for byte, and gen_arm_urdf.py carries
+the blocks over when it regenerates its URDF. All use these helpers.
 """
 from __future__ import annotations
 
@@ -49,4 +50,19 @@ def replace_urdf_block(text: str, block: str, target: str = DEFAULT_TARGET) -> s
         if begin < 0 or end < 0:
             raise ValueError("URDF has neither generated nor recognized legacy wrist block")
         return text[:begin] + block + text[end:]
-    raise ValueError(f"URDF has no generated block for the {target} target")
+    end = text.rfind("</robot>")   # a target's first block closes the robot
+    if end < 0:
+        raise ValueError(f"URDF has no </robot> to close with the {target} target's block")
+    return text[:end] + block + text[end:]
+
+
+def urdf_blocks(text: str) -> str:
+    """Every generated block in a URDF's text, in order, each with its closing newline."""
+    blocks, at = [], 0
+    while (begin := text.find(BEGIN_PREFIX, at)) >= 0:
+        end = text.find(END_MARKER, begin)
+        if end < 0:
+            raise ValueError("URDF generated wrist block has no end marker")
+        at = end + len(END_MARKER) + 1
+        blocks.append(text[begin:at])
+    return "".join(blocks)

@@ -24,11 +24,14 @@ Silence on the wire is what stops the arm, so a dead relay, Pi, Pico or link is 
 device that fails goes silent and is reopened every 0.5 s. `--bind` pins the source address the
 driver accepts (`estop_relay_addr`) when the Pi has more than one interface.
 
-`--probe NAME` is the station's normally-closed touch probe on that header line (the palette:
-GPIO27, header pin 13, through a 10 kOhm pull-up and a Schottky diode). It runs as a separate
-instance so that nothing about the probe can touch the e-stop. It sends
+`--probe NAME` is the station's touch probe on that header line (the palette: GPIO27, header pin
+13, through a 10 kOhm pull-up and a Schottky diode). `--probe-touched` is the line's level while it
+is touched: high for a normally-closed probe, which opens on contact (and a broken wire reads
+touched), low for a normally-open NPN probe, which pulls the line to ground on contact (and a
+broken wire reads untouched: merged palette v9's, 2026-11-08). It runs as a separate instance so
+that nothing about the probe can touch the e-stop. It sends
 `PRB1 <seq> <state> <edge_ns> <now_ns>\\n` to every `--dest`:
-- `state` is 1 while the line is HIGH (touched, or a broken wire) and 0 at rest;
+- `state` is 1 while the probe is touched and 0 at rest;
 - `edge_ns` is the kernel's CLOCK_MONOTONIC stamp of the latest edge, taken in the GPIO interrupt
   (0 before the first);
 - `now_ns` is the relay's CLOCK_MONOTONIC when it sends, which lets the driver map relay time onto
@@ -188,7 +191,33 @@ def parse_dest(text: str) -> tuple[str, int]:
     return host, int(port)
 
 
-def pump(fd: int, sock: socket.socket, dests: list[tuple[str, int]], stop) -> None:
+class Out:
+    """The frames' way out: one non-blocking UDP socket for each destination, so that none can hold up another's
+    frames. One blocking socket for them all waited on an absent host's neighbour resolution once that host's queued
+    packets filled it: on 2026-11-08 the arm node, off the rig network, stalled the e-stop's frames to the ros node
+    0.1-0.9 s every 3.07 s, and each stall latched the arm estop_stale. A frame that would block, or that cannot go,
+    is dropped: silence at that destination, which reads it as a stop."""
+
+    def __init__(self, dests: list[tuple[str, int]], bind: str | None = None):
+        self.ways = []
+        for dest in dests:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.setblocking(False)
+            if bind:
+                sock.bind((bind, 0))
+            self.ways.append((sock, dest))
+
+    def __call__(self, frame: bytes) -> None:
+        for sock, dest in self.ways:
+            with contextlib.suppress(OSError):   # an unreachable or backed-up reader is silence there: a stop
+                sock.sendto(frame, dest)
+
+    def close(self) -> None:
+        for sock, _ in self.ways:
+            sock.close()
+
+
+def pump(fd: int, out: Out, stop) -> None:
     """Forward lines to every destination until the device fails or stop() is true."""
     buffer = b""
     while not stop():
@@ -200,20 +229,15 @@ def pump(fd: int, sock: socket.socket, dests: list[tuple[str, int]], stop) -> No
             return   # EOF: the device went away
         lines, buffer = split_lines(buffer, chunk)
         for line in lines:
-            for dest in dests:
-                with contextlib.suppress(OSError):   # an unreachable reader is silence there: a stop
-                    sock.sendto(line, dest)
+            out(line)
 
 
-def heartbeat(read, sock: socket.socket, dests: list[tuple[str, int]], stop, seq) -> None:
+def heartbeat(read, out: Out, stop, seq) -> None:
     """A frame from read() to every destination every 10 ms until read() fails or stop() is true; seq
     numbers them, one sequence for all destinations."""
     deadline = time.monotonic_ns()
     while not stop():
-        frame = b"EST1 %d %d\n" % (next(seq), 0 if read() else 1)
-        for dest in dests:
-            with contextlib.suppress(OSError):
-                sock.sendto(frame, dest)
+        out(b"EST1 %d %d\n" % (next(seq), 0 if read() else 1))
         deadline += FRAME_PERIOD_NS
         delay = deadline - time.monotonic_ns()
         if delay > 0:
@@ -222,19 +246,16 @@ def heartbeat(read, sock: socket.socket, dests: list[tuple[str, int]], stop, seq
             deadline = time.monotonic_ns()   # late: carry on from now, never burst
 
 
-def probe_frames(line, sock: socket.socket, dests: list[tuple[str, int]], stop, seq) -> None:
-    """PRB1 frames: one per kernel edge as it arrives, and the line's level every 20 ms, until the
-    line fails or stop() is true."""
+def probe_frames(line, out: Out, stop, seq, touched_high: bool = True) -> None:
+    """PRB1 frames: one per kernel edge as it arrives, and whether it is touched every 20 ms, until
+    the line fails or stop() is true. `touched_high`: the line is HIGH while touched."""
     fd, level = line
     edge_ns = 0   # the latest edge's kernel stamp, carried by every frame after it
 
-    def send(state: int) -> None:
-        frame = b"PRB1 %d %d %d %d\n" % (next(seq), state, edge_ns, time.monotonic_ns())
-        for dest in dests:
-            with contextlib.suppress(OSError):
-                sock.sendto(frame, dest)
+    def send(high: bool) -> None:
+        out(b"PRB1 %d %d %d %d\n" % (next(seq), int(high == touched_high), edge_ns, time.monotonic_ns()))
 
-    send(int(level()))
+    send(level())
     due = time.monotonic_ns() + PROBE_PERIOD_NS
     while not stop():
         ready, _, _ = select.select([fd], [], [], max(0, due - time.monotonic_ns()) / 1e9)
@@ -244,17 +265,15 @@ def probe_frames(line, sock: socket.socket, dests: list[tuple[str, int]], stop, 
                 raise OSError(errno.EIO, "the probe line closed")
             for stamp, high in parse_events(data):
                 edge_ns = stamp
-                send(int(high))
+                send(high)
             continue
-        send(int(level()))
+        send(level())
         due = time.monotonic_ns() + PROBE_PERIOD_NS
 
 
 def serve(label: str, opener, send, dests: list[tuple[str, int]], bind: str | None, stop) -> None:
     """Open the source, send from it until it fails, reopen every REOPEN_S; silence in between."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    if bind:
-        sock.bind((bind, 0))
+    out = Out(dests, bind)
     reported = None
     try:
         while not stop():
@@ -270,14 +289,14 @@ def serve(label: str, opener, send, dests: list[tuple[str, int]], bind: str | No
                   flush=True)
             reported = None
             try:
-                send(handle, sock)
+                send(handle, out)
             except OSError as error:
                 print(f"tatbot_estop_relay: {label}: {error.strerror}; reopening", file=sys.stderr, flush=True)
             finally:
                 close()
             time.sleep(REOPEN_S)
     finally:
-        sock.close()
+        out.close()
 
 
 def run(device: str, dests: list[tuple[str, int]], bind: str | None = None, stop=lambda: False) -> None:
@@ -285,22 +304,23 @@ def run(device: str, dests: list[tuple[str, int]], bind: str | None = None, stop
     def opener():
         fd = open_device(device)
         return fd, lambda: os.close(fd)
-    serve(device, opener, lambda fd, sock: pump(fd, sock, dests, stop), dests, bind, stop)
+    serve(device, opener, lambda fd, out: pump(fd, out, stop), dests, bind, stop)
 
 
 def run_gpio(name: str, dests: list[tuple[str, int]], bind: str | None = None, stop=lambda: False,
              open_line=open_gpio) -> None:
     """Send the NC contact on a GPIO line as EST1 frames at 100 Hz to every destination."""
     seq = itertools.count()   # advances across reopens
-    serve(name, lambda: open_line(name), lambda read, sock: heartbeat(read, sock, dests, stop, seq), dests, bind,
-          stop)
+    serve(name, lambda: open_line(name), lambda read, out: heartbeat(read, out, stop, seq), dests, bind, stop)
 
 
 def run_probe(name: str, dests: list[tuple[str, int]], bind: str | None = None, stop=lambda: False,
-              open_line=open_probe) -> None:
-    """Send the station probe on a GPIO line as PRB1 frames to every destination."""
+              open_line=open_probe, touched: str = "high") -> None:
+    """Send the station probe on a GPIO line as PRB1 frames to every destination; `touched` is the
+    line's level while it is touched (high or low)."""
     seq = itertools.count()   # advances across reopens
-    serve(name, lambda: open_line(name), lambda line, sock: probe_frames(line, sock, dests, stop, seq),
+    serve(name, lambda: open_line(name),
+          lambda line, out: probe_frames(line, out, stop, seq, touched_high=touched == "high"),
           dests, bind, stop)
 
 
@@ -424,6 +444,8 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--device", default="/dev/tatbot-estop", help="a Pico's serial port")
     source.add_argument("--gpio", metavar="NAME", help="the GPIO line wired to the NC contact, e.g. GPIO17")
     source.add_argument("--probe", metavar="NAME", help="the GPIO line wired to the station probe, e.g. GPIO27")
+    parser.add_argument("--probe-touched", choices=("high", "low"), default="high",
+                        help="--probe: the line's level while touched (high: normally closed; low: normally-open NPN)")
     source.add_argument("--machine", metavar="NAME", help="the GPIO line that powers the tattoo machine")
     parser.add_argument("--dest", type=parse_dest, action="append", default=[],
                         help="HOST:PORT, repeatable: every e-stop reader's UDP port (the ros node's driver, the arm "
@@ -442,7 +464,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.machine:
             run_machine(args.machine, args.listen, args.command_from, args.estop_port, args.timeout)
         elif args.probe:
-            run_probe(args.probe, args.dest, args.bind)
+            run_probe(args.probe, args.dest, args.bind, touched=args.probe_touched)
         elif args.gpio:
             run_gpio(args.gpio, args.dest, args.bind)
         else:

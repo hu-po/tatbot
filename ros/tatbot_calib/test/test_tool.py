@@ -42,23 +42,17 @@ def test_the_tool_is_the_fitted_one_with_its_datasheets_halo(tmp_path):
 
 
 def test_no_fitted_tool_and_a_stated_other_tool_are_refused(tmp_path):
-    with pytest.raises(ToolRefusedError, match="names no tool_id"):
+    with pytest.raises(ToolRefusedError, match="no tool is fitted on the right arm"):
         fitted_tool(checkout(tmp_path, None), "right", "picosecond-laser-pen")   # a statement does not stand in
     with pytest.raises(ToolRefusedError, match="the stack plans every touch through that tool's tip"):
         fitted_tool(checkout(tmp_path / "b", "picosecond-laser-pen"), "right", "lutin-3rl-bugpin")
-
-
-def test_the_ballpoint_side_touches_meet_its_metal_tip_under_the_body(tmp_path):
-    _, nose = fitted_tool(checkout(tmp_path, "lutin-ballpoint-dot", datasheets=("lutin-ballpoint-dot",)), "right")
-    # the probe's 1 mm-radius ball stays under the body's end, 2.4 mm up the tip
-    assert nose.axial_tip and nose.side_height_m + 0.001 < 0.0024
 
 
 def test_the_needle_cartridge_is_touched_on_its_tube_end(tmp_path):
     # the needles stay inside the tube with the machine off: the probe meets the tube's end, a ring around a hole
     # the ball cannot enter
     _, nose = fitted_tool(checkout(tmp_path, "lutin-3rl-bugpin"), "right")
-    assert not nose.axial_tip and not nose.hole_takes_ball
+    assert not nose.hole_takes_ball and not nose.edges_trip
     assert nose.hole_radius_m < nose.rim_radius_m < nose.wall_radius_m == nose.radius_at(0.0)
 
 

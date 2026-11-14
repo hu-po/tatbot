@@ -50,7 +50,7 @@ def test_a_fitted_gauge_finds_a_pen_of_any_colour_on_its_axis():
     m, a = gauge._axis(pts)
     a = a if a[2] > 0 else -a
     cal = {"cone_end_cam_m": (m + np.percentile((pts - m) @ a, 99.5) * a).tolist(), "axis_cam": a.tolist()}
-    assert gauge.measure(raw, colour, meta) is None     # not teal: the colour finds no pen
+    assert gauge.measure(raw, colour, meta) is None     # no fitted cone: no colour marks a cartridge
     frame = gauge.measure(raw, colour, meta, cal)
     assert frame is not None and len(frame.pen) >= 100
     np.testing.assert_allclose(frame.n, [0.0, 0.0, -1.0], atol=1e-3)
@@ -65,14 +65,18 @@ def test_pink_silicone_is_a_surface_beside_a_print_standing_off_it():
     pen = (np.abs(u - 320) <= 20) & (v >= 240) & (v <= 400)
     z[pen] = 0.12 + (v[pen] - 240) * 0.0002
     colour = np.full((h, w, 3), (166, 181, 232), np.uint8)   # practice skin's peach (BGR), S ~73
-    colour[pen] = (200, 160, 30)                             # the teal cartridge
+    colour[pen] = (60, 50, 190)                              # a red-inked cartridge
     stripe = (u < 100) & ~pen
     z[stripe] = 0.190                                        # a violet print 10 mm proud of the skin...
     colour[stripe] = (200, 40, 120)                          # ...too saturated to be surface
     meta = {"depth_units_m": 0.0001, "intrinsics": {"fx": f, "fy": f, "ppx": 320.0, "ppy": 240.0},
             "color_from_depth": {"rotation": np.eye(3).ravel().tolist(), "translation_m": [0.0, 0.0, 0.0]},
             "color_intrinsics": {"k": [[f, 0.0, 320.0], [0.0, f, 240.0], [0.0, 0.0, 1.0]]}}
-    frame = gauge.measure(np.round(z / 0.0001).astype(np.uint16), colour, meta)
+    pts = np.stack([(u[pen] - 320) / f * z[pen], (v[pen] - 240) / f * z[pen], z[pen]], axis=1)
+    m, a = gauge._axis(pts)
+    a = a if a[2] > 0 else -a
+    cal = {"cone_end_cam_m": (m + np.percentile((pts - m) @ a, 99.5) * a).tolist(), "axis_cam": a.tolist()}
+    frame = gauge.measure(np.round(z / 0.0001).astype(np.uint16), colour, meta, cal)
     assert frame is not None and frame.c[2] == pytest.approx(0.200, abs=2e-4)
 
 
@@ -89,10 +93,10 @@ def test_only_what_the_depth_puts_on_the_paper_is_paper():
     assert seen[10, 10] and seen[50, 110] and not seen[50, 80] and not seen[40, 70] and not seen[85, 25]
 
 
-def _forearm_frame(radius_m: float | None, mat_m: float | None = None):
+def _forearm_frame(radius_m: float | None, mat_m: float | None = None, clear: bool = False):
     """A depth frame of skin 150 mm from the camera, flat or a forearm of `radius_m` (its axis along the image's v,
     its crest at u = 320), and a pen leaning in from above whose tip stands 12 mm over the crest; with `mat_m`, a
-    mat that far under the crest past the skin's edges (a raised holder)."""
+    mat that far under the crest past the skin's edges (a raised holder); `clear`, a pen the depth does not read."""
     h, w, f = 480, 640, 400.0
     v, u = np.mgrid[0:h, 0:w]
     dx = (u - 320.0) / f
@@ -106,7 +110,7 @@ def _forearm_frame(radius_m: float | None, mat_m: float | None = None):
         p = tip + s * (back - tip)
         pu, pv, rad = 320.0 + f * p[0] / p[2], 240.0 + f * p[1] / p[2], f * 0.002 / p[2]
         disc = (u - pu) ** 2 + (v - pv) ** 2 <= rad ** 2
-        z[disc] = np.where((z[disc] == 0) | (z[disc] > p[2]), p[2], z[disc])
+        z[disc] = 0.0 if clear else np.where((z[disc] == 0) | (z[disc] > p[2]), p[2], z[disc])
     colour = np.full((h, w, 3), 210, np.uint8)
     meta = {"depth_units_m": 0.0001, "intrinsics": {"fx": f, "fy": f, "ppx": 320.0, "ppy": 240.0},
             "color_from_depth": {"rotation": np.eye(3).ravel().tolist(), "translation_m": [0.0, 0.0, 0.0]},
@@ -150,6 +154,20 @@ def test_on_a_raised_holder_the_curved_gauge_reads_the_skin_not_the_mat_beside_i
     np.testing.assert_allclose(local.n, [0.0, 0.0, -1.0], atol=0.01)
 
 
+def test_a_clear_nozzle_the_depth_misses_is_read_at_its_fitted_place_only_when_asked():
+    """A clean 3RL's clear nozzle read 0-63 depth points against lit silicone where 100 are needed (2026-10-24), and
+    a fifth of a set-up's holds read nothing. With fitted_pen the fitted pen stands for it: the same height as a pen
+    the depth shows, no pen points (a fit never pools them), and nothing without a fitted tip."""
+    raw, colour, meta, cal = _forearm_frame(0.040, clear=True)
+    seen = gauge.measure(*_forearm_frame(0.040)[:3], cal, curved=True)
+    assert gauge.measure(raw, colour, meta, cal, curved=True) is None
+    fitted = gauge.measure(raw, colour, meta, cal, curved=True, fitted_pen=True)
+    assert fitted is not None and len(fitted.pen) == 0
+    assert gauge.height(fitted, cal) == pytest.approx(gauge.height(seen, cal), abs=1e-4)
+    untipped = {key: value for key, value in cal.items() if key != "tip_cam_m"}
+    assert gauge.measure(raw, colour, meta, untipped, fitted_pen=True) is None
+
+
 def test_a_small_top_square_to_the_pen_is_read_along_it_and_a_wall_along_the_pen_is_not():
     """The probe body's top under the upright pen, 3.5 mm inside its edge (2026-10-22): from the sides where the pen
     hides the top, most of what lies near its axis is the body's wall, which runs along the pen; a plane through it
@@ -181,6 +199,26 @@ def test_pooled_depth_is_each_pixels_median_where_most_frames_read_it():
     np.testing.assert_array_equal(gauge.pool(frames, need=0.4), [[1001, 1500, 2000]])
 
 
+def test_pooled_depth_is_the_nanmedian_it_replaced_to_the_unit():
+    """The sorted pool against its first definition (each read pixel's nanmedian, rounded) over 3, 4 and 5 frames:
+    even counts' halves, holes, the deepest readings."""
+    def reference(depths, need=0.6):
+        stack = np.stack(depths).astype(np.float32)
+        read = stack > 0
+        stack[~read] = np.nan
+        out = np.zeros(stack.shape[1:], np.float32)
+        keep = read.mean(axis=0) >= need
+        out[keep] = np.nanmedian(stack[:, keep], axis=0)
+        return np.round(out).astype(depths[0].dtype)
+    rng = np.random.default_rng(7)
+    for count in (3, 4, 5):
+        for _ in range(20):
+            frames = [(rng.integers(0, 3, (30, 40)) > 0) * rng.integers(1, 65535, (30, 40)) for _ in range(count)]
+            frames = [f.astype(np.uint16) for f in frames]
+            for need in (0.4, 0.6):
+                np.testing.assert_array_equal(gauge.pool(frames, need), reference(frames, need))
+
+
 def test_a_pooled_reading_keeps_every_colour_frame_for_the_prints_markers():
     """A curved hold's frames read in pooled fives: each reading the first colour of its five and their pooled depth,
     and every colour frame kept beside them, which the print's markers are read in (inspect.hold_tip `every`)."""
@@ -199,7 +237,7 @@ MONK = ["f6ede4", "f3e7db", "f7ead0", "eadaba", "d7bd96", "a07e56", "825c43", "6
 
 def test_the_surface_colour_takes_human_skin_and_a_violet_transfer_on_it():
     """The gauge's surface is not silicone's alone: Monk tones 1-6 in neutral and warm (3000 K-ish) light, and a
-    half-strength violet stencil transfer on any of tones 1-9, read as surface; the teal pen body and tone 10 (too dark
+    half-strength violet stencil transfer on any of tones 1-9, read as surface; a saturated teal and tone 10 (too dark
     for the value floor) do not."""
     import cv2
 
@@ -216,4 +254,4 @@ def test_the_surface_colour_takes_human_skin_and_a_violet_transfer_on_it():
             if i <= 9:
                 assert gauge.surface_colour(hsv(0.5 * lit + 0.5 * violet)), (i, gain)
     assert not gauge.surface_colour(hsv(np.array([int(MONK[9][j:j + 2], 16) for j in (0, 2, 4)], float)))
-    assert not gauge.surface_colour(hsv(np.array([20.0, 170.0, 160.0])))   # the ballpoint's teal body
+    assert not gauge.surface_colour(hsv(np.array([20.0, 170.0, 160.0])))   # a saturated teal

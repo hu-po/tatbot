@@ -1,0 +1,22 @@
+{
+  "schema": "tatbot.inkmap-inks/1",
+  "inks": [
+    {"id": "true_black", "name": "True Black", "rgb": [60, 60, 63]},
+    {"id": "kuro_sumi_black", "name": "Kuro Sumi Black Outlining", "rgb": [8, 8, 10], "suggest": false},
+    {"id": "nighthawk_black", "name": "Nighthawk Black", "rgb": [0, 0, 0], "suggest": false},
+    {"id": "brown", "name": "Brown", "rgb": [131, 77, 65]},
+    {"id": "bright_red", "name": "Bright Red", "rgb": [250, 80, 50]},
+    {"id": "rose_pink", "name": "Rose Pink", "rgb": [253, 71, 139]},
+    {"id": "fuchsia", "name": "Fuchsia", "rgb": [255, 0, 255]},
+    {"id": "bright_orange", "name": "Bright Orange", "rgb": [254, 148, 64]},
+    {"id": "golden_yellow", "name": "Golden Yellow", "rgb": [253, 201, 73]},
+    {"id": "lemon_yellow", "name": "Lemon Yellow", "rgb": [254, 253, 96]},
+    {"id": "lime_green", "name": "Lime Green", "rgb": [160, 238, 81]},
+    {"id": "light_green", "name": "Light Green", "rgb": [59, 149, 96]},
+    {"id": "blue_sky", "name": "Blue Sky", "rgb": [121, 199, 251]},
+    {"id": "true_blue", "name": "True Blue", "rgb": [0, 0, 255]},
+    {"id": "light_purple", "name": "Light Purple", "rgb": [106, 81, 159]},
+    {"id": "silver", "name": "Silver", "rgb": [215, 215, 216]},
+    {"id": "snow_white", "name": "Snow White", "rgb": [255, 255, 255]}
+  ]
+}

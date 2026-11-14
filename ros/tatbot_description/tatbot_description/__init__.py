@@ -1,13 +1,15 @@
 """The robot description the whole stack uses, generated from the repo's own geometry.
 
 `robot_description()` is importable without ROS: the kinematic part (arm subtrees of
-urdf/tatbot.urdf, the corrected carriage limits, `<arm>/tcp` from config/workspace.yaml, and the
+urdf/tatbot.urdf, the corrected carriage limits, `<arm>/tcp` from config/workspace.yaml as the ROS owner fits it
+(scripts/lib/cartridge_fit.py: its cartridge and tip over git's, the tool block rendered from them), and the
 fixed `world -> <arm>/base_link` joints from the adopted registrations) is plain ElementTree. Only
 the `<ros2_control>` blocks (hardware != None) run xacro, through the `xacro` Python module, on
 urdf/ros2_control.xacro. tatbot_motion calls it with hardware=None; stack.launch.py with a hardware.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import math
 import os
@@ -20,7 +22,7 @@ from tatbot_description import names
 XACRO = Path("ros") / "tatbot_description" / "urdf" / "ros2_control.xacro"  # both read in the checkout
 STACK_YAML = Path("ros") / "tatbot_bringup" / "config" / "stack.yaml"
 # config/trossen/tatbot.yaml `follower` keys the driver takes as parameters of the same name. The
-# follower section describes the pink (right) arm's qualified carriage; every TatbotArm reads it.
+# follower section describes the WXAI (right) arm's qualified carriage; every TatbotArm reads it.
 FOLLOWER_KEYS = ("carriage_contact_cap_n", "carriage_contact_deflect_m", "carriage_retract_m", "staged_positions",
                  "motor_parameters", "idle_velocity_ki_scale")
 
@@ -38,20 +40,26 @@ def repo_root(repo: str | Path | None = None) -> Path:
     raise FileNotFoundError("no repo: pass repo= or set TATBOT_REPO (the checkout holding urdf/ and config/)")
 
 
-def tcp_offset(repo: Path, arm: str) -> tuple[str, tuple[float, float, float]]:
-    """(parent frame, xyz metres) of the fitted tool's working point from config/workspace.yaml."""
-    import yaml
+def _scripts_lib() -> None:
+    """The repo's scripts/lib, importable: the stdlib modules the stack shares with the scripts (arm_model,
+    kinematic_calibration, tool_spec). The stack's env.sh and `scripts/check ros` put it on PYTHONPATH; a process
+    without it (sim2, an evidence replay, the Rerun bridge) gets this checkout's, appended so it shadows nothing."""
+    if importlib.util.find_spec("arm_model") is None:
+        sys.path.append(str(repo_root() / "scripts" / "lib"))
 
-    section = yaml.safe_load((repo / "config" / "workspace.yaml").read_text())[arm]
+
+_scripts_lib()
+import arm_model  # noqa: E402 - config/arm-models' reader, from scripts/lib (above)
+import kinematic_calibration  # noqa: E402 - the encoder-zero correction, shared with the wrist observer
+import tool_spec  # noqa: E402 - config/workspace.yaml as the ROS owner fits it (its cartridge_fit record over git's)
+import tool_urdf  # noqa: E402 - the fitted tool's block, rendered from that workspace
+
+
+def tcp_offset(repo: Path, arm: str) -> tuple[str, tuple[float, float, float]]:
+    """(parent frame, xyz metres) of the fitted tool's working point (tool_spec.read_workspace)."""
+    section = tool_spec.read_workspace(repo)[arm]
     xyz = tuple(float(section[f"pen_tip_offset_{axis}"]) for axis in "xyz")
     return section.get("tip_frame") or names.tool_mount_frame(arm), xyz
-
-
-def joint_calibration(repo=None):
-    """The shared model correction helper, also used by the wrist observer."""
-    sys.path.insert(0, str(repo_root(repo) / 'scripts/lib'))
-    import kinematic_calibration
-    return kinematic_calibration
 
 
 def registration(path: str | Path) -> list[list[float]]:
@@ -61,11 +69,12 @@ def registration(path: str | Path) -> list[list[float]]:
 
 def carriage_limits(repo: Path, arm: str) -> tuple[float, float]:
     """(lower, upper) metres: the carriage travel of the arm's controller config (config/arms.json
-    `controller_config` joint_limits[6]), not the CAD 0-44 mm in urdf/tatbot.urdf. Rounded to 1 um."""
+    `controller_config`, its model's carriage row of joint_limits), not the CAD 0-44 mm in urdf/tatbot.urdf.
+    Rounded to 1 um."""
     import yaml
 
     config = json.loads((repo / "config" / "arms.json").read_text())["arms"][arm]["controller_config"]
-    limit = yaml.safe_load((repo / config).read_text())["joint_limits"][6]
+    limit = yaml.safe_load((repo / config).read_text())["joint_limits"][arm_model.for_arm(arm, repo).carriage]
     return round(float(limit["position_min"]), 6), round(float(limit["position_max"]), 6)
 
 
@@ -83,23 +92,22 @@ def _fmt(values) -> str:
 
 
 def _arm_subtree(robot: ET.Element, arm: str, repo: Path) -> tuple[list[ET.Element], ET.Element]:
-    import yaml
-
     links = {e.get("name"): e for e in robot.findall("link")}
     joints = robot.findall("joint")
-    section = yaml.safe_load((repo / 'config/workspace.yaml').read_text())[arm]
-    calibration = joint_calibration(repo)
-    calibration.apply_origins(joints, arm, section.get(calibration.KEY))
+    section = tool_spec.read_workspace(repo)[arm]
+    model = arm_model.for_arm(arm, repo)
+    kinematic_calibration.apply_origins(joints, arm, section.get(kinematic_calibration.KEY), model)
     children: dict[str, list[ET.Element]] = {}
     for joint in joints:
         children.setdefault(joint.find("parent").get("link"), []).append(joint)
     mount = next(j for j in joints if j.find("child").get("link") == names.base_frame(arm))
+    carriage = None if model.carriage is None else model.joint_names(arm)[model.carriage]
     keep, stack = [], [names.base_frame(arm)]
     while stack:
         link = stack.pop()
         keep.append(links[link])
         for joint in children.get(link, []):
-            if joint.get("name") == f"{arm}/{names.CARRIAGE}":
+            if carriage is not None and joint.get("name") == carriage:
                 limit = joint.find("limit")
                 lower, upper = carriage_limits(repo, arm)
                 limit.set("lower", repr(lower))
@@ -113,9 +121,10 @@ def _arm_subtree(robot: ET.Element, arm: str, repo: Path) -> tuple[list[ET.Eleme
     return keep, mount
 
 
-def robot_description(repo: str | Path | None = None, *, arms=names.ARMS, hardware: str | None = None,
+def robot_description(repo: str | Path | None = None, *, arms, hardware: str | None = None,
                       registrations: dict | None = None, ros2_control: dict | None = None) -> str:
-    """URDF XML text rooted at `world`, one arm subtree per entry of `arms`.
+    """URDF XML text rooted at `world`, one arm subtree per entry of `arms`, each from its model's description
+    (config/arm-models `urdf`: urdf/tatbot.urdf for the WXAI, urdf/xarm7.urdf for the xArm).
 
     registrations: {arm: path to arm-registration-<arm>-current.json, or a 4x4 world_from_arm_base}.
         An arm without one hangs at its nominal urdf/tatbot.urdf mount (world = the URDF root); the
@@ -125,12 +134,18 @@ def robot_description(repo: str | Path | None = None, *, arms=names.ARMS, hardwa
         hardware_params() reads; None = the checkout's stack.yaml.
     """
     root = repo_root(repo)
-    source = ET.parse(root / "urdf" / "tatbot.urdf").getroot()
     out = ET.Element("robot", {"name": "tatbot"})
-    out.extend(source.findall("material"))  # the arm links reference the file's named materials
+    sources: dict[Path, ET.Element] = {}   # each arm model's description (its urdf), parsed once
     ET.SubElement(out, "link", {"name": names.WORLD})
     for arm in arms:
-        elements, mount = _arm_subtree(source, arm, root)
+        path = root / arm_model.for_arm(arm, root).urdf
+        if path not in sources:   # with the tool fitted here: the committed block, or the ROS owner's cartridge's
+            sources[path] = ET.fromstring(tool_urdf.rendered(root, path))
+            known = {m.get("name") for m in out.findall("material")}
+            for material in sources[path].findall("material"):   # the arm links reference the file's materials
+                if material.get("name") not in known:
+                    out.insert(len(out.findall("material")), material)
+        elements, mount = _arm_subtree(sources[path], arm, root)
         value = (registrations or {}).get(arm)
         if value is not None:
             matrix = registration(value) if isinstance(value, (str, Path)) else value
@@ -164,6 +179,11 @@ def load_stack(repo: str | Path | None = None, path: str | Path | None = None) -
     return yaml.safe_load(path.read_text())
 
 
+def drawing_arm(repo: str | Path | None = None) -> str:
+    """The arm that draws, which a command that names no arm drives: the first of stack.yaml `arms`."""
+    return load_stack(repo)["arms"][0]
+
+
 def _flatten(tree: dict, prefix: str = "") -> dict:
     flat = {}
     for key, value in tree.items():
@@ -184,16 +204,16 @@ def _param_text(value) -> str:
     return "" if value is None else str(value)
 
 
-def _carriage_position_offset(root: Path, arm_cfg: dict) -> float | str:
+def _carriage_position_offset(root: Path, arm_cfg: dict, model) -> float | str:
     """The carriage's position_offset in the arm's golden (config/trossen/<role>.yaml): firmware 1.11 reads the
     carriage 0.70 mm higher than 1.8.4, and the offset keeps the frame every calibration was measured in. Empty
-    without a golden (a clone without the rig's configuration): the driver leaves the controller's own."""
+    without a golden (a clone without the rig's configuration) or a carriage: the driver leaves the controller's
+    own."""
     import yaml
 
-    path = root / arm_cfg["controller_config"]
-    if not path.is_file():
+    if model.carriage is None or not (path := root / arm_cfg["controller_config"]).is_file():
         return ""
-    return float(yaml.safe_load(path.read_text())["joint_characteristics"][6].get("position_offset", 0.0))
+    return float(yaml.safe_load(path.read_text())["joint_characteristics"][model.carriage].get("position_offset", 0.0))
 
 
 def same_machine(root: str | Path | None, tool_a: str | None, tool_b: str | None) -> bool:
@@ -212,12 +232,9 @@ def same_machine(root: str | Path | None, tool_a: str | None, tool_b: str | None
 
 def _palm(root: Path, arm_cfg: dict) -> dict[str, object]:
     """The controller's palm for the arm's fitted tool: config/workspace.yaml `<arm>.payload` when it was identified
-    with (`identified_with`) the tool the calibration names (`<arm>.tool_id`) or another cartridge of its machine,
-    else empty (the preset's palm)."""
-    import yaml
-
-    path = root / "config" / "workspace.yaml"
-    side = ((yaml.safe_load(path.read_text()) if path.is_file() else None) or {}).get(arm_cfg["workspace_section"]) or {}
+    with (`identified_with`) the fitted tool (`<arm>.tool_id`) or another cartridge of its machine, else empty (the
+    preset's palm)."""
+    side = tool_spec.read_workspace(root).get(arm_cfg["workspace_section"]) or {}
     payload = side.get("payload") or {}
     if (not payload or not same_machine(root, payload.get("identified_with"), side.get("tool_id"))
             or payload.get("preset") != arm_cfg["sdk_end_effector"]):
@@ -264,8 +281,8 @@ def hardware_params(repo: str | Path | None, arm: str, stack: dict, hardware: st
     carriage cap, deflection, retract, staged pose and motor parameter set from config/trossen/tatbot.yaml
     `follower`, the carriage's position offset from the arm's golden, the palm from config/workspace.yaml
     `<arm>.payload` when its tool is the calibrated one, everything else from `stack`. `stack["flight_path"]` (set by the launch) is where the driver
-    writes its flight rings. fake alone may add `fake_page_z` (stack.yaml `fake.page_z`, base-frame z of
-    a simulated paper plane the fake tip cannot pass) after the HARDWARE_PARAMETERS; sim alone adds the sim
+    writes its flight rings. fake alone may add `fake_page_z` (with stack.yaml `fake.page`, page.fixed.<arm>'s
+    base-frame z: a simulated paper plane the fake tip cannot pass) after the HARDWARE_PARAMETERS; sim alone adds the sim
     server's `sim_endpoint`, `sim_keepalive_s` and `sim_reply_timeout_s` (stack.yaml `sim.*`) there.
     """
     if hardware == "mock":
@@ -275,26 +292,19 @@ def hardware_params(repo: str | Path | None, arm: str, stack: dict, hardware: st
     sim = stack.get("sim") or {}
     if hardware == "sim" and not sim.get("endpoint"):
         raise ValueError("hardware sim needs the sim server's address: stack.yaml sim.endpoint (tcp://host:port)")
-    import yaml
-
     root = repo_root(repo)
     arm_cfg = json.loads((root / "config" / "arms.json").read_text())["arms"][arm]
-    ip = ""  # the fake and the sim are never handed an arm address
-    if hardware == "real":
-        profile = root / "config" / "profiles" / f"{stack['profile']}.json"
-        ip = json.loads(profile.read_text())["driver"].get(arm_cfg["profile_ip_field"], "") if profile.is_file() else ""
-        if not ip:
-            raise ValueError(f"no address for the {arm} arm: {profile} driver.{arm_cfg['profile_ip_field']}")
-    trossen = yaml.safe_load((root / "config" / "trossen" / "tatbot.yaml").read_text())
-    follower = trossen["follower"]
-    # The arm's controller role (config/trossen/<role>.yaml) keys its section of tatbot.yaml.
-    role = Path(arm_cfg["controller_config"]).stem
+    model = arm_model.for_arm(arm, root)
+    trossen_arm = model.controller == "trossen"   # a Trossen golden: the SDK's preset, gains and carriage
+    ip = _arm_address(root, arm, arm_cfg, stack) if hardware == "real" else ""   # fake and sim are handed none
+    joints = model.joint_names(arm)
     estop, rt, probe = stack["estop"], stack["rt"], stack.get("probe") or {}
     params = {
         "arm": arm,
         "sdk": hardware,
+        "controller": model.controller,
         "ip": ip,
-        "end_effector": arm_cfg["sdk_end_effector"],
+        **({"end_effector": arm_cfg["sdk_end_effector"]} if trossen_arm else {}),
         "estop_source": estop["source"],
         "estop_device": estop["serial_device"],
         "estop_timeout_s": estop["udp_timeout_s" if estop["source"] == "udp" else "serial_timeout_s"],
@@ -309,20 +319,20 @@ def hardware_params(repo: str | Path | None, arm: str, stack: dict, hardware: st
         "rt_cpus": rt["cpus"],
         "base_frame": names.base_frame(arm),
         "tcp_frame": names.tcp_frame(arm),
+        "joints": " ".join(joints),
+        "carriage_joint": "" if model.carriage is None else joints[model.carriage],
+        "command_delay_s": model.command_delay_s,
         **_flatten(stack["safety"]),
-        **{key: follower[key] for key in FOLLOWER_KEYS},
-        "carriage_qualified": bool((trossen.get(role) or {}).get("carriage_qualified", True)),
-        "carriage_position_offset_m": _carriage_position_offset(root, arm_cfg),
-        **_palm(root, arm_cfg),
-        **_tuning(_tuning_section(trossen.get("ros_tuning") or {}, role, stack.get("tuning") or "")),
+        **(_trossen_params(root, arm_cfg, model, stack) if trossen_arm else _xarm_params(root, arm_cfg, model)),
         "flight_path": stack.get("flight_path", ""),
     }
-    page_z = (stack.get("fake") or {}).get("page_z")
-    if hardware == "fake" and page_z is not None:
-        params["fake_page_z"] = float(page_z)
-        stiffness = (stack.get("fake") or {}).get("page_stiffness_n_m")
-        if stiffness:
-            params["fake_page_stiffness_n_m"] = float(stiffness)
+    if hardware == "fake" and model.fake_plant is not None:   # the arm model's fake response (the xArm's delay)
+        params.update(fake_delay_s=model.fake_plant.delay_s, fake_lag_s=model.fake_plant.lag_s)
+    fake = stack.get("fake") or {}
+    if hardware == "fake" and fake.get("page"):   # the fake paper where page.source fixed puts this arm's page
+        params["fake_page_z"] = float(stack["page"]["fixed"][arm]["xyz"][2])
+        if fake.get("page_stiffness_n_m"):
+            params["fake_page_stiffness_n_m"] = float(fake["page_stiffness_n_m"])
     if hardware == "sim":
         params.update(sim_endpoint=str(sim["endpoint"]), sim_keepalive_s=float(sim.get("keepalive_s", 0.1)),
                       sim_reply_timeout_s=float(sim.get("reply_timeout_s", 30.0)))
@@ -333,16 +343,64 @@ def hardware_params(repo: str | Path | None, arm: str, stack: dict, hardware: st
     return text
 
 
+def _arm_address(root: Path, arm: str, arm_cfg: dict, stack: dict) -> str:
+    """A real arm's controller address, from config/profiles/<profile>.json `driver.<arms.json profile_ip_field>`."""
+    profile = root / "config" / "profiles" / f"{stack['profile']}.json"
+    ip = json.loads(profile.read_text())["driver"].get(arm_cfg["profile_ip_field"], "") if profile.is_file() else ""
+    if not ip:
+        raise ValueError(f"no address for the {arm} arm: {profile} driver.{arm_cfg['profile_ip_field']}")
+    return ip
+
+
+def _trossen_params(root: Path, arm_cfg: dict, model, stack: dict) -> dict:
+    """A Trossen arm's own parameters: the follower golden's carriage cap, staged pose and gain set, its role's
+    carriage qualification and tuning, its carriage's position offset and its palm."""
+    import yaml
+
+    trossen = yaml.safe_load((root / "config" / "trossen" / "tatbot.yaml").read_text())
+    follower = trossen["follower"]
+    role = Path(arm_cfg["controller_config"]).stem   # config/trossen/<role>.yaml keys its section of tatbot.yaml
+    return {
+        **{key: follower[key] for key in FOLLOWER_KEYS},
+        "carriage_qualified": bool((trossen.get(role) or {}).get("carriage_qualified", True)),
+        "carriage_position_offset_m": _carriage_position_offset(root, arm_cfg, model),
+        **_palm(root, arm_cfg),
+        **_tuning(_tuning_section(trossen.get("ros_tuning") or {}, role, stack.get("tuning") or "")),
+    }
+
+
+def _xarm_params(root: Path, arm_cfg: dict, model) -> dict:
+    """An xArm's own parameters: its model's rest as the staged pose, the load on its flange (config/workspace.yaml
+    `<arm>.payload`: the end effector and tool; empty keeps the controller's) and its collision sensitivity."""
+    side = tool_spec.read_workspace(root).get(arm_cfg["workspace_section"]) or {}
+    payload = side.get("payload") or {}
+    return {
+        "staged_positions": list(model.rest),
+        "payload_mass_kg": float(payload["mass_kg"]) if payload else "",
+        "payload_com_m": [float(v) for v in payload["com_m"]] if payload else "",
+        "collision_sensitivity": "" if model.collision_sensitivity is None else model.collision_sensitivity,
+    }
+
+
+def rest_positions(repo: str | Path | None, arm: str) -> list[float]:
+    """Where the arm rests, controller order: a Trossen arm's golden staged pose (config/trossen/tatbot.yaml, the one
+    source its driver and native tools read), else its model's rest."""
+    import yaml
+
+    root = repo_root(repo)
+    if arm_model.for_arm(arm, root).controller != "trossen":
+        return list(arm_model.for_arm(arm, root).rest)
+    staged = yaml.safe_load((root / "config" / "trossen" / "tatbot.yaml").read_text())["follower"]["staged_positions"]
+    return [float(v) for v in staged]
+
+
 def ros2_control_xml(repo: str | Path | None, arm: str, hardware: str, stack: dict) -> str:
     """One arm's `<ros2_control>` element, rendered from urdf/ros2_control.xacro by the xacro module."""
     import xacro
 
     initial = []
-    if hardware == "mock":  # GenericSystem starts where the real arm rests: the staged pose
-        import yaml
-
-        follower = yaml.safe_load((repo_root(repo) / "config" / "trossen" / "tatbot.yaml").read_text())["follower"]
-        initial = [repr(float(v)) for v in follower["staged_positions"]]
+    if hardware == "mock":  # GenericSystem starts where the real arm rests
+        initial = [repr(float(v)) for v in rest_positions(repo, arm)]
     mappings = {
         "arm": arm,
         "hardware": hardware,

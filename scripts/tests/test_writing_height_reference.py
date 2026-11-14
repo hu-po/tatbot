@@ -30,7 +30,7 @@ def trial(tmp_path):
     r['tool'].update(stroke_mm=3.5, tip_out_at_top_mm=2.)
     source['diagnostic'] = {'physical_print_id': 'print'}
     freeze(source)
-    workspace = {'tool_id': 'lutin-ballpoint-dot', 'pen_tip_offset_z': .1}
+    workspace = {'tool_id': 'lutin-3rl-bugpin', 'pen_tip_offset_z': .1}
     overhead, used = np.eye(4), np.eye(4)
     used[2, 3] = .0082
     page = {'locate': {'overhead': overhead.tolist()}, 'used': used.tolist(), 'pattern_id': 'pattern',

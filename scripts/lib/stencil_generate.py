@@ -2,8 +2,8 @@
 """Generate the skin stencil: the fiducial tile of `stencil_tile.py`.
 
 A grid of AprilTag 16h5 markers, every code on the sheet distinct, with rulers.
-`--preset` names its layout (forearm, the default, or silicone); `--seed` (an
-integer) picks its codes, a fresh one minted without it. The artwork
+`--preset` names its layout (forearm, the default, forearm18 or silicone); `--seed`
+(an integer) picks its codes, a fresh one minted without it. The artwork
 (stencil.png, tile.json, settings.json, tracking.json) goes into `--output`;
 the printable PNG is print/<layout>-seed<seed>-300dpi.png, for the stencil
 printer app. Stdlib at import, so the CLI plans with it; generating needs
@@ -27,8 +27,9 @@ def add_arguments(parser):
     parser.add_argument("--design", choices=DESIGNS, default=TILE,
                         help="fiducial-tile (the only design): a grid of AprilTag 16h5 markers")
     parser.add_argument("--preset", choices=sorted(stencil_tile.LAYOUTS),
-                        help="the tile's layout: forearm (the default, 3 x 4 markers in 45 x 63 mm) or silicone "
-                             "(5 x 7 places with corner anchors, 111 x 157.5 mm)")
+                        help="the tile's layout: forearm (the default, 3 x 4 markers in 45 x 63 mm), forearm18 "
+                             "(2 x 3 larger markers in 40 x 62 mm) or silicone (5 x 7 places with corner "
+                             "anchors, 111 x 157.5 mm)")
     parser.add_argument("--seed", help="a non-negative integer that picks the codes; omitted mints a fresh one")
     parser.add_argument("--output", required=True, help="directory for the artwork; the printable PNG goes into its print/")
 

@@ -232,6 +232,12 @@ function membership(sites: string[], faces: number[]): Map<string, RegionRef & {
   return output;
 }
 
+/** How far out from the body's midline, metres, up on an arm turns from the body's to the limb's: across the shoulder. */
+const ARM_UP_BLEND_M: [number, number] = [0.2, 0.27];
+
+/** An arm site's long axis lies along x past this: the rest surface is a T-pose. Stubby sites keep the body's rule. */
+const ARM_AXIS_MIN = 0.7;
+
 function computeChart(
   entry: RegionRef & { faces: number[] },
   centroids: Float32Array,
@@ -270,10 +276,12 @@ function computeChart(
     }
     uAxis.normalize();
   }
-  if (Math.abs(uAxis.z) > 0.25 ? uAxis.z > 0 : uAxis.y > 0) uAxis.negate();
+  const side = (entry.laterality ?? (mean.x >= 0 ? "left" : "right")) === "left" ? 1 : -1;
+  // u runs proximal to distal: down the body, and out along an arm, which the rest surface holds level.
+  if (SITES[entry.id]?.group === "arm" && Math.abs(uAxis.x) > ARM_AXIS_MIN) { if (uAxis.x * side < 0) uAxis.negate(); }
+  else if (Math.abs(uAxis.z) > 0.25 ? uAxis.z > 0 : uAxis.y > 0) uAxis.negate();
   const vAxis = new THREE.Vector3().crossVectors(normal, uAxis).normalize();
   if (vAxis.lengthSq() < 1e-12) vAxis.set(1, 0, 0);
-  const side = (entry.laterality ?? (mean.x >= 0 ? "left" : "right")) === "left" ? 1 : -1;
   if (vAxis.x * side < 0) vAxis.negate();
   let uMin = Infinity;
   let uMax = -Infinity;
@@ -486,6 +494,15 @@ export class AtlasIndex {
     return normalVector(this.faceNormals, face);
   }
 
+  /** Which way is up on the skin of this face, on the rest surface: the body's up, and along an arm toward the
+   *  shoulder, which is up when the arm hangs. The two blend over the shoulder. */
+  upAt(face: number): THREE.Vector3 {
+    const ref = this.regionByFace[face];
+    const { x } = this.cvec(face);
+    const along = ref && SITES[ref.id].group === "arm" ? THREE.MathUtils.smoothstep(Math.abs(x), ...ARM_UP_BLEND_M) : 0;
+    return new THREE.Vector3(-Math.sign(x) * along, 0, 1 - along).normalize();
+  }
+
   regionOf(face: number): RegionRef | null {
     return this.regionByFace[face] ?? null;
   }
@@ -526,8 +543,10 @@ export class AtlasIndex {
       else if (aspect === "top") score = ref.id === "hand" ? 1 : normal.z;
       else if (aspect === "side") score = Math.abs(normal.x) - 0.2;
       else if (aspect === "inner" || aspect === "outer") {
+        // The rest surface is a T-pose, palms down. Along the arm x is the limb's own axis, so inner and outer lie
+        // round it: the upper arm's outer face and the forearm's back face +z, its inner side and the palm's -z.
         const laterality = ref.laterality ?? (this.cvec(face).x >= 0 ? "left" : "right");
-        const inward = laterality === "left" ? -normal.x : normal.x;
+        const inward = SITES[ref.id].group === "arm" ? -normal.z : laterality === "left" ? -normal.x : normal.x;
         score = aspect === "inner" ? inward : -inward;
       }
       return [aspect, score];
@@ -770,8 +789,8 @@ export class AtlasIndex {
     }
     const offset = relation.offset_m!;
     let direction: THREE.Vector3;
-    if (relation.kind === "above") direction = new THREE.Vector3(0, 0, 1);
-    else if (relation.kind === "below") direction = new THREE.Vector3(0, 0, -1);
+    if (relation.kind === "above") direction = this.upAt(base.face);
+    else if (relation.kind === "below") direction = this.upAt(base.face).negate();
     else if (relation.kind === "behind") direction = new THREE.Vector3(0, 1, 0);
     else if (relation.kind === "in_front") direction = new THREE.Vector3(0, -1, 0);
     else {

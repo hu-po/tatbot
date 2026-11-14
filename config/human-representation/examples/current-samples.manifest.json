@@ -1,6 +1,6 @@
 {
   "schema": "tatbot.draw-samples-manifest/1",
-  "content_sha256": "6fb51fc3e6969465a6a116eb333c16d1ded89d2a6237b938b41c6a6ef8ef4b39",
+  "content_sha256": "aa432dfbc971a323a313e749b91ff0651f9272914d74cc8c8f433a5677e45b55",
   "samples": {
     "schema": "tatbot.draw-samples/1",
     "path": "current-samples.csv",
@@ -12,7 +12,7 @@
     "sha256": "38f86c62d7189567e3db91d83aad8f78df9a4df1f641f7e29b3ace845e89770a"
   },
   "inputs": {
-    "ink_program_sha256": "e5b402eb0cbd7d1a40ef064d50407c637b5aef4261621ea8118c718ec373943f",
+    "ink_program_sha256": "232fd62e3d35d0a94b9792467f0effc7c89914e3602c55052cb6e461c417d06c",
     "body_state_sha256": "c7a7ac08a93afdc2a3fe6eb27a555ecb3d3de833d3e7917a01ff04a483f4b1f9",
     "surface_registration_sha256": "242880b6adb2cc11dccd6cf316fa00767f3d93683fc842e8ae6b26d3e034117e",
     "measured_surface_sha256": "93befe916c6fef5af853976cd7c2c2a8b7ded088b5d530cc0ccdaaf50ab681c9",

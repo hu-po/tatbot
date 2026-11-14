@@ -65,6 +65,21 @@ def test_ink_drawn_off_its_plan_reads_at_its_shift(page):
     assert result["at_best_shift"]["strokes"][0]["ink"] > 0.9
 
 
+def test_a_printed_marker_beside_the_drawing_names_no_shift(page):
+    extent, ppm, image = page
+    plan = {"a": [[-0.01, 0.005], [0.0, 0.005]], "b": [[-0.01, -0.005], [0.0, -0.005]]}
+    program = {"ops": [{"op": "stroke", "id": k, "resource_id": "r", "points_m": v} for k, v in plan.items()]}
+    for (x0, y), (x1, _), dy in ((*plan["a"], 0.0012), (*plan["b"], -0.0012)):   # each line 1.2 mm off its plan
+        drawn = np.round(ins.to_image_px([[x0, y + dy], [x1, y + dy]], extent, ppm)).astype(np.int32)
+        cv2.polylines(image, [drawn], False, (40, 40, 40), 3)
+    lo, hi = np.round(ins.to_image_px([[0.006, 0.004], [0.012, 0.006]], extent, ppm)).astype(int)
+    cv2.rectangle(image, tuple(map(int, lo)), tuple(map(int, hi)), (120, 60, 110), -1)   # a marker's bar, 6 mm aside
+    valid = np.ones(image.shape[:2], bool)
+    result = closeup.coverage(program, closeup.ink_score(image, valid, ppm), valid, extent, ppm, search_m=0.012)
+    assert result["resources"]["r"]["ink"] > 0.9 and result["best_shift_m"] == [0.0, 0.0]
+    assert result["at_best_shift"]["resources"] == result["resources"]
+
+
 def test_a_hold_rectifies_on_the_paper_its_own_depth_measures():
     page = np.eye(4)
     page[:3, 3] = [0.29, 0.0, 0.003]                     # the draw's page, 2 mm under the paper now

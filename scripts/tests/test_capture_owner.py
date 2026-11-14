@@ -25,14 +25,14 @@ def configured_wrist_pair(tmp_path, monkeypatch):
 [[cameras.realsense]]
 name = "upper"
 serial = "upper"
-role = "wrist_upper"
+role = "wrist_2"
 group = "d405"
 arm = "right"
 owner_role = "test-owner"
 [[cameras.realsense]]
 name = "lower"
 serial = "lower"
-role = "wrist_lower"
+role = "wrist_1"
 group = "d405"
 arm = "right"
 owner_role = "test-owner"
@@ -88,11 +88,11 @@ class Reader:
 def test_owner_capture_preserves_metric_depth_and_distinct_provenance(tmp_path):
     reader = Reader()
     reader.repeat = True
-    cams = OwnerCameras({'wrist_upper': 'upper', 'wrist_lower': 'lower'}, reader)
+    cams = OwnerCameras({'wrist_2': 'upper', 'wrist_1': 'lower'}, reader)
     try:
         path = vision_capture.capture(cams, tmp_path, 1, [0.] * 6, .002, time.time(), 8)
         with np.load(path) as arrays:
-            for role in ('wrist_upper', 'wrist_lower'):
+            for role in ('wrist_2', 'wrist_1'):
                 assert arrays['depth_' + role].dtype == np.uint16
                 profile = json.loads(str(arrays['owner_profile_' + role]))
                 assert profile['alignment_calibration']['aligned_depth_value_axis'] == 'native_depth_z'
@@ -113,7 +113,7 @@ def test_owner_capture_preserves_metric_depth_and_distinct_provenance(tmp_path):
 
 def test_changed_owner_profile_refuses_before_done_file(tmp_path):
     reader = Reader()
-    cams = OwnerCameras({'wrist_upper': 'upper', 'wrist_lower': 'lower'}, reader)
+    cams = OwnerCameras({'wrist_2': 'upper', 'wrist_1': 'lower'}, reader)
     reader.units = .001
     try:
         with pytest.raises(ValueError, match='profile changed'):
@@ -125,15 +125,15 @@ def test_changed_owner_profile_refuses_before_done_file(tmp_path):
 
 def test_single_manifested_camera_keeps_evidence_and_excludes_other_arm(tmp_path):
     reader = Reader()  # The source also offers a second device; it is not selected.
-    cams = OwnerCameras({'wrist_upper': 'upper'}, reader)
+    cams = OwnerCameras({'wrist_2': 'upper'}, reader)
     try:
         path = vision_capture.capture(cams, tmp_path, 1, [0.] * 6, .002, time.time(), 8)
         with np.load(path) as arrays:
-            assert json.loads(str(arrays['camera_roles'])) == ['wrist_upper']
-            assert str(arrays['camera_serial_wrist_upper']) == 'upper'
-            assert not any('wrist_lower' in name for name in arrays.files)
-            assert np.all(arrays['valid_wrist_upper'] == 8)
-            assert len(json.loads(str(arrays['owner_frames_wrist_upper']))) == 8
+            assert json.loads(str(arrays['camera_roles'])) == ['wrist_2']
+            assert str(arrays['camera_serial_wrist_2']) == 'upper'
+            assert not any('wrist_1' in name for name in arrays.files)
+            assert np.all(arrays['valid_wrist_2'] == 8)
+            assert len(json.loads(str(arrays['owner_frames_wrist_2']))) == 8
     finally:
         cams.close()
     assert reader.closed
@@ -152,14 +152,14 @@ def test_the_left_wrist_answers_under_its_own_role_from_its_owner(tmp_path):
             assert json.loads(str(arrays['camera_roles'])) == ['wrist_left']
             assert str(arrays['camera_serial_wrist_left']) == 'left'
             assert np.all(arrays['valid_wrist_left'] == 8)
-            assert not any('wrist_upper' in name for name in arrays.files)
+            assert not any('wrist_2' in name for name in arrays.files)
     finally:
         cams.close()
     assert reader.closed
 
 
-@pytest.mark.parametrize('registry', [{}, {'wrist_probe': 'probe'}, {'wrist_left': 'left', 'wrist_upper': 'upper'},
-                                    {'wrist_upper': 'same', 'wrist_lower': 'same'}])
+@pytest.mark.parametrize('registry', [{}, {'wrist_probe': 'probe'}, {'wrist_left': 'left', 'wrist_2': 'upper'},
+                                    {'wrist_2': 'same', 'wrist_1': 'same'}])
 def test_invalid_selected_camera_registry_refuses(registry):
     with pytest.raises(ValueError, match='distinct manifested wrist cameras of one arm'):
         OwnerCameras(registry, Reader())
@@ -171,7 +171,7 @@ def test_persistent_mismatched_rgbd_sequence_times_out_and_closes(monkeypatch):
     clock = iter([0., 1., 6.])
     monkeypatch.setattr('lib.capture_owner.time.monotonic', lambda: next(clock))
     with pytest.raises(TimeoutError, match='unmatched RGBD sets: 1'):
-        OwnerCameras({'wrist_upper': 'upper', 'wrist_lower': 'lower'}, reader)
+        OwnerCameras({'wrist_2': 'upper', 'wrist_1': 'lower'}, reader)
     assert reader.closed
 
 
@@ -182,7 +182,7 @@ def test_transient_mismatch_is_discarded_without_counting_or_mixing_frames():
             return super().receive()
 
     reader = StraddledReader()
-    cams = OwnerCameras({'wrist_upper': 'upper', 'wrist_lower': 'lower'}, reader)
+    cams = OwnerCameras({'wrist_2': 'upper', 'wrist_1': 'lower'}, reader)
     try:
         cams.begin_capture(8)
         assert cams.batch['unmatched_rgbd_sets'] == 8
@@ -204,7 +204,7 @@ def test_wrong_camera_identity_still_refuses_immediately():
 
     reader = WrongCameraReader()
     with pytest.raises(ValueError, match='identity mismatch'):
-        OwnerCameras({'wrist_upper': 'upper', 'wrist_lower': 'lower'}, reader)
+        OwnerCameras({'wrist_2': 'upper', 'wrist_1': 'lower'}, reader)
     assert reader.closed
 
 
@@ -221,7 +221,7 @@ def test_newly_arrived_but_old_exposure_is_not_a_fresh_capture(monkeypatch):
     clock = iter([0., 1., 6.])
     monkeypatch.setattr('lib.capture_owner.time.monotonic', lambda: next(clock))
     with pytest.raises(TimeoutError):
-        OwnerCameras({'wrist_upper': 'upper', 'wrist_lower': 'lower'}, reader)
+        OwnerCameras({'wrist_2': 'upper', 'wrist_1': 'lower'}, reader)
     assert reader.closed
 
 
@@ -236,7 +236,7 @@ def test_owner_restart_invalidates_the_burst_even_when_counter_increases():
             return frame_set
 
     reader = RestartedReader()
-    cams = OwnerCameras({'wrist_upper': 'upper', 'wrist_lower': 'lower'}, reader)
+    cams = OwnerCameras({'wrist_2': 'upper', 'wrist_1': 'lower'}, reader)
     try:
         reader.epoch = 'restarted'
         with pytest.raises(ValueError, match='profile changed'):
@@ -259,7 +259,7 @@ def test_owner_alignment_change_invalidates_a_median_batch():
             return frame_set
 
     reader = ChangingAlignment()
-    cams = OwnerCameras({'wrist_upper': 'upper'}, reader)
+    cams = OwnerCameras({'wrist_2': 'upper'}, reader)
     try:
         reader.shifted = True
         with pytest.raises(ValueError, match='profile changed'):

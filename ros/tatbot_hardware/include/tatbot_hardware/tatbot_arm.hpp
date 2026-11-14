@@ -65,6 +65,8 @@ private:
 
   std::string arm_, sdk_, ip_, flight_path_;
   SdkOptions sdk_options_;
+  std::string controller_ = "trossen";
+  XArmOptions xarm_options_;
   SimOptions sim_options_;
   int rt_priority_ = 80;
   std::vector<int> rt_cpus_;
@@ -74,6 +76,7 @@ private:
   Config cfg_;
   TipFk fk_;
   double fake_page_z_ = 0, fake_page_stiffness_ = 0;
+  FakeOptions fake_plant_;   // the arm model's fake_plant: its command delay and lag
   double carriage_min_m_ = -0.006, carriage_max_m_ = 0.040;   // config/trossen/follower.yaml
   double controller_query_period_s_ = 1.0;
   bool fake_page_ = false;

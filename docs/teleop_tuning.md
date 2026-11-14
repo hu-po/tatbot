@@ -1,7 +1,7 @@
 ---
 summary: Public teleoperation and tuning concepts
 tags: [teleoperation, control]
-updated: 2026-09-14
+updated: 2026-11-02
 audience: [dev, contributor]
 ---
 
@@ -52,7 +52,7 @@ component configuration and record units with every change.
 ## One-arm measurement before tuning
 
 `tatbot calib joint-measure` is an attended, free-air diagnostic for the
-installed right-arm ballpoint. It opens the current Rust single-arm owner,
+right arm's fitted tool. It opens the current Rust single-arm owner,
 checks its native source identity and fitted tool, and records the right
 carriage after opposite 0.2 mm arrivals. It then steps one rotary joint at a
 time, physical joint 6 back to 1, by at most 0.02 rad in each direction at

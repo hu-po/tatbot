@@ -18,9 +18,8 @@ below remain dimension evidence, not a detector calibration.
   the order's exact physical dimensions and manufacturing tolerance are unknown.
 - OpenCV's AprilTag 36h11 dictionary decodes the large stickers as IDs 20, 21,
   22 and 23. The 16h5 dictionary detects none. The small stickers decode as
-  36h11 IDs 0–5 and 30. The installed palette uses small ID 0. The pink wrist
-  uses small IDs 2, 3, 4; the blue wrist uses 5, 30, 1. No large sticker is
-  installed.
+  36h11 IDs 0–5 and 30. The installed palette uses small ID 0. The WXAI
+  follower's wrist uses small IDs 2, 3, 4, and the xArm's cube 5, 30 and 4. No large sticker is installed.
 
 The compact wrist carriers provide three 68 mm faces for 64 mm white stickers
 with 47 mm black squares. The palette's diamond-shaped base seat is 60 mm square and carries
@@ -38,6 +37,6 @@ The compact rear-facing revision-3 wrist carriers replace the large V17/V5
 carrier panels. Their assembly meshes and nominal face datums are retained under
 `urdf/meshes/ee/fiducial-cubes-47mm-rear/`. The original tool cradles remain.
 
-The installed `config/fiducials.json` is authoritative. Both wrist layouts were
+The installed `config/fiducials.json` is authoritative. The wrist layout was
 measured again after the replacement; nominal CAD faces do not qualify a
 tracking layout. The replacement family is 36h11, including palette ID 0.

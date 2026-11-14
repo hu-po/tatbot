@@ -20,7 +20,8 @@ Here it is durable the moment it exists:
            retry loop, and deletes the agent branch. No cherry-picks: SHAs match.
 - `park`   pushes whatever exists (a wip commit if needed) with a stated reason.
 - `sweep`  (hourly timer) autosaves idle dirty worktrees as wip commits, pushes
-           anything unpushed, fast-forwards the mirror, prunes merged branches
+           anything unpushed, fast-forwards the mirror (unless it is pinned: a
+           deploy checkout advanced by hand), prunes merged branches
            and reports what is stale.
 - `hook`   the Claude Code SessionStart and Stop hooks, and the git hooks: a
            session cannot end with unlanded, unparked work.
@@ -89,6 +90,12 @@ def mirror_of(path: Path) -> Path:
     """The main checkout that owns `path`'s repository (itself for a plain checkout)."""
     common = Path(out(path, "rev-parse", "--path-format=absolute", "--git-common-dir"))
     return common.parent if common.name == ".git" else common
+
+
+def pinned(mirror: Path) -> bool:
+    """A deploy checkout that moves only when someone advances it to a landed sha
+    (the station's): the sweeper still serves its worktrees but never pulls it."""
+    return out(mirror, "config", "--bool", "tatbot.pinned", check=False) == "true"
 
 
 def is_main_worktree(path: Path) -> bool:
@@ -641,7 +648,9 @@ def cmd_sweep(a) -> int:
                 ok = git(mirror, "push", "--quiet", "origin", "--delete", r["branch"], check=False, timeout=60).returncode == 0
                 actions.append({"action": "prune_merged_remote", "branch": r["branch"], "ok": ok})
         _rescue_mirror(mirror, a, actions)
-        if not porcelain(mirror) and is_main_worktree(mirror):
+        if pinned(mirror):
+            actions.append({"action": "fast_forward_mirror", "skipped": "pinned (tatbot.pinned)"})
+        elif not porcelain(mirror) and is_main_worktree(mirror):
             r = git(mirror, "pull", "--quiet", "--ff-only", "origin", "main", check=False, timeout=120)
             actions.append({"action": "fast_forward_mirror", "ok": r.returncode == 0,
                             "head": out(mirror, "rev-parse", "--short", "HEAD")})
@@ -667,6 +676,9 @@ def cmd_init(a) -> int:
     done = []
     git(mirror, "config", "tatbot.mirror", "true")
     done.append("mirror marked (tatbot.mirror=true): commits there are refused by the pre-commit hook")
+    if a.pinned:
+        git(mirror, "config", "tatbot.pinned", "true")
+        done.append("mirror pinned (tatbot.pinned=true): the sweeper never fast-forwards it; advance it by hand")
     if out(mirror, "config", "core.hooksPath", check=False) != "scripts/githooks":
         git(mirror, "config", "core.hooksPath", "scripts/githooks")
         done.append("hooks armed (core.hooksPath=scripts/githooks)")
@@ -833,6 +845,7 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_sweep)
     s = sub.add_parser("init")
     s.add_argument("--no-timer", action="store_true")
+    s.add_argument("--pinned", action="store_true")
     s.set_defaults(fn=cmd_init)
     s = sub.add_parser("hook")
     s.add_argument("event", choices=("stop", "session-start", "post-commit", "pre-commit-guard"))

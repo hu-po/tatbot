@@ -43,7 +43,7 @@ try {
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   desktop.on("pageerror", e => errors.push(e.message));
   await desktop.goto(url); await ready(desktop);
-  await desktop.getByRole("button", { name: "dbv3-sprout", exact: true }).click();
+  await desktop.getByRole("button", { name: "Sun and moon", exact: true }).click();
   for (const prompt of ["not on my left forearm", "don't put it on my left forearm"]) {
     await describe(desktop, prompt);
     assert.equal(await desktop.evaluate(() => window.__inkmap.getState().placements.length), 0);
@@ -65,14 +65,14 @@ try {
   await desktop.getByRole("button", { name: "✓ Accept", exact: true }).click();
   await desktop.waitForFunction(() => window.__inkmap.getState().saveStatus === "saved");
   await desktop.reload(); await ready(desktop);
-  assert.equal(await desktop.evaluate(() => window.__inkmap.getState().placements[0].design_id), "dbv3-sprout");
+  assert.equal(await desktop.evaluate(() => window.__inkmap.getState().placements[0].design_id), "sun-and-moon");
   checks.push("natural possessives, negation refusal, visible stock-artwork focus, reload");
   for (const height of [844, 600]) {
     const page = await browser.newPage({ viewport: { width: 390, height }, hasTouch: true });
     page.on("pageerror", e => errors.push(e.message));
     await page.goto(url); await ready(page);
     for (const action of ["✕ Cancel", "✓ Accept"]) {
-      await page.getByRole("button", { name: "dbv3-sprout", exact: true }).tap();
+      await page.getByRole("button", { name: "Sun and moon", exact: true }).tap();
       await describe(page, "on my left shin");
       await page.waitForFunction(() => window.__inkmap.getState().selected);
       await page.locator(".provenance > summary").tap();

@@ -28,14 +28,17 @@ def libraries(repo):
 
 
 class NativeKinematics:
-    """Adapter from native seven-axis measurements to the existing URDF reader."""
+    """Adapter from native measurements, one axis per joint of the arm's model, to the existing URDF reader."""
 
     def __init__(self, repo, arm, output):
         import numpy as np
-        from tatbot_description import robot_description
+        from tatbot_description import arm_model, robot_description
         from urdf_kinematics import UrdfChain
 
         self.arm = arm
+        self.arm_model = arm_model.for_arm(arm, repo)   # what tatbot_calib.chain reads, as from Kinematics
+        self.n = self.arm_model.n
+        self.joint_names = self.arm_model.joint_names(arm)
         path = output / 'model.urdf'
         path.write_text(robot_description(repo, arms=(arm,)))
         self.chain = UrdfChain(path)
@@ -46,9 +49,9 @@ class NativeKinematics:
         import numpy as np
 
         q = np.asarray(q, float)
-        if q.shape != (7,) or not np.isfinite(q).all():
-            raise ValueError('native registration needs seven finite measured axes')
-        values = dict(zip(self.chain.driver_joint_names(self.arm), q, strict=True))
+        if q.shape != (len(self.joint_names),) or not np.isfinite(q).all():
+            raise ValueError('native registration needs one finite measured axis per joint')
+        values = dict(zip(self.joint_names, q, strict=True))
         return self.base_from_root @ self.chain.link_pose(link, values)
 
     def fk(self, q):
@@ -59,8 +62,10 @@ def model_inputs(repo, arm):
     from tool_spec import read_workspace
 
     tool = read_workspace(repo)[arm.arm_id]['tool_id']
-    names = ('urdf/tatbot.urdf', 'config/workspace.yaml', 'config/arms.json', 'config/arm-labels.json',
-             'config/fiducials.json', arm.wrist_layout, arm.controller_config, f'config/tools/{tool}.yaml')
+    model = json.loads((repo / 'config/arms.json').read_text())['arms'][arm.arm_id]['model']
+    names = ('urdf/tatbot.urdf', 'config/workspace.yaml', 'config/arms.json', f'config/arm-models/{model}.yaml',
+             'config/arm-labels.json', 'config/fiducials.json', arm.wrist_layout, arm.controller_config,
+             f'config/tools/{tool}.yaml')
     return {name: sha256_file(repo / name) for name in names}
 
 
@@ -239,7 +244,7 @@ def implementation_inputs(repo):
              'scripts/vision/fiducials/detector.py', 'scripts/vision/fiducials/geometry.py',
              'ros/tatbot_calib/tatbot_calib/register.py', 'ros/tatbot_bridge/tatbot_bridge/capture.py',
              'ros/tatbot_description/tatbot_description/__init__.py', 'scripts/lib/kinematic_calibration.py',
-             'ros/tatbot_calib/tatbot_calib/chain.py')
+             'scripts/lib/arm_model.py', 'ros/tatbot_calib/tatbot_calib/chain.py')
     return {name: sha256_file(repo / name) for name in names}
 
 

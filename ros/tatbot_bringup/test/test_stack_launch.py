@@ -48,6 +48,19 @@ def test_overrides():
         stack_launch.effective_stack({"page_surface": "cylinder"})
 
 
+def test_the_stack_prunes_its_own_runs_and_the_sessions(tmp_path, monkeypatch):
+    """A draw or touch opens without pruning, so its retention happens here."""
+    repo = stack_launch.repo_root()
+    monkeypatch.syspath_prepend(str(repo / "scripts" / "lib"))
+    monkeypatch.setenv("TATBOT_LOG_ROOT", str(tmp_path))
+    tatbot_runlog = pytest.importorskip("tatbot_runlog")
+    pruned = []
+    monkeypatch.setattr(tatbot_runlog, "prune", lambda workflow, **kwargs: pruned.append(workflow))
+    stack_launch._open_run(repo, {"hardware": "fake", "arms": ["right"], "estop": {"source": "udp"},
+                                  "page": {"source": "fixed"}})
+    assert pruned == [names.RUN_WORKFLOW_STACK, names.RUN_WORKFLOW_DRAW, names.RUN_WORKFLOW_TOUCH]
+
+
 def test_registrations_only_existing(tmp_path):
     path = tmp_path / "reg.json"
     path.write_text("{}")
@@ -79,6 +92,20 @@ def test_runtime_record_defaults_to_the_workspace_root(tmp_path):
     stack = stack_launch.effective_stack({"repo": str(tmp_path / "tatbot-ros" / "repo"),
                                           "config": str(LAUNCH.parents[1] / "config" / "stack.yaml")})
     assert stack["runtime_record"] == str(tmp_path / "tatbot-ros" / "runtime.json")
+
+
+def test_one_drawing_arm_owns_the_machine_and_the_keypad():
+    one = {"arms": ["xarm"], "machine": {"switch": "pi"}, "keypad": {"port": 7644}}
+    assert stack_launch.check_arms(one) == ("xarm",)
+    assert stack_launch.check_arms({**one, "arms": ["right", "xarm"], "machine": {"switch": "none"},
+                                    "keypad": {"port": 0}}) == ("right", "xarm")
+    for stack in ({**one, "arms": ["right", "xarm"]}, {**one, "arms": ["right", "xarm"], "keypad": {"port": 0}},
+                  {**one, "arms": ["right", "xarm"], "machine": {"switch": "none"}}):
+        with pytest.raises(ValueError, match="one drawing arm"):
+            stack_launch.check_arms(stack)
+    for arms in ([], ["left"]):
+        with pytest.raises(ValueError, match="name one or more"):
+            stack_launch.check_arms({**one, "arms": arms})
 
 
 @pytest.mark.parametrize("hardware,source,raises", [

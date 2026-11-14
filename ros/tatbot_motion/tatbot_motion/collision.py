@@ -1,9 +1,10 @@
-"""How close the pink arm comes to itself and to the station's parts: the arm and its tool as convex bodies in the
-overhead camera's world, placed by its registration (tatbot_description robot_description). Each link is the convex
-hull of its URDF collision mesh (the wrist D405s' among them), the fitted tool a chain of capsules along its datasheet
-profile (config/tools), and the wrist tag cube a box solved from its tags. Distances come from pinocchio's geometry
-model on coal, the library the stack's kinematics already load. A hull encloses its mesh and a capsule its profile, so
-a clearance is never overstated. The blue arm is the teleop leader alone and is not modelled. Pure numpy on pinocchio
+"""How close the drawing arm comes to itself and to the station's parts: the arm and its tool as convex bodies in the
+overhead camera's world, placed by its registration (tatbot_description robot_description). Each link is its URDF
+collision: a mesh's convex hull or a primitive (the wrist D405s' cases among them, and on the xArm their cables as
+cylinders and their bracket as boxes). The fitted tool is a chain of capsules along its datasheet profile
+(config/tools), and the wrist tag cube a box solved from its tags. Distances come from pinocchio's geometry model on
+coal, the library the stack's kinematics already load. A hull encloses its mesh and a capsule its profile, so a
+clearance is never overstated. The blue arm is the teleop leader alone and is not modelled. Pure numpy on pinocchio
 and coal; no ROS import.
 """
 from __future__ import annotations
@@ -57,19 +58,22 @@ def _hull(points: np.ndarray):
     return coal.Convex(vertices, triangles)
 
 
-# Shared station body policy: clearance and the existing conservative carriage pad envelope.
+# Shared station body policy: clearance, and what the gripper's carriages carry past their meshes. 30 mm was the
+# blue arm's rubber pads, hanging out from a photo (2026-09-30); the WXAI's carriages clamp the machine, and with
+# it holding over cap L2 a tape measured ~50 mm from its left carriage to the e-stop where the bare carriage stands
+# 49 mm from the e-stop's envelope (2026-10-24; with 30 mm that dip was refused).
 PALETTE_BODY_MARGIN_M = 0.010
-PALETTE_PADS = {"carriage": 0.030}
+PALETTE_PADS = {"carriage": 0.010}
 
 
 class Scene:
     """The arm's bodies in one model, from URDF text with the arm placed. `tools` maps an arm to its fitted tool's
-    profile ((z, r), ..., the tip last, in <arm>/tool_mount along its z). Joints are the seven controlled ones in
-    controller order (tatbot_description.names.joint_names)."""
+    profile ((z, r), ..., the tip last, in <arm>/tool_mount along its z). Joints are each arm's controlled ones in
+    controller order (tatbot_description.names.joint_names, from the arm's model)."""
 
     def __init__(self, urdf_xml: str, tools: dict | None = None):
         import pinocchio as pin
-        from tatbot_description import names
+        from tatbot_description import arm_model, names
 
         self._pin = pin
         xml = re.sub(r'filename="file:(//)?', 'filename="', urdf_xml)   # coal opens plain paths
@@ -88,12 +92,13 @@ class Scene:
         self.gdata = pin.GeometryData(self.geom)
         self._iq = {arm: np.array([self.model.idx_qs[self.model.getJointId(n)] for n in names.joint_names(arm)])
                     for arm in self.arms}
+        self._revolute = {arm: arm_model.for_arm(arm).arm_index for arm in self.arms}
         self._q = pin.neutral(self.model)
 
     def _add_cube(self, arm: str) -> None:
         """The wrist tag cube as a box, which the URDF gives no collision (its tags are visuals): solved from the
         tags' calibrated frames (the generated wrist fiducials), each face's tag at the cube's centre plus its half
-        size along the tag's normal. 2026-09-30: the pink arm folded the cube into its own upper arm at an
+        size along the tag's normal. 2026-09-30: the WXAI follower folded the cube into its own upper arm at an
         inspection view, and nothing modelled it."""
         import coal
 
@@ -117,7 +122,7 @@ class Scene:
     def _self_pairs(self, arm: str) -> list[tuple[int, int]]:
         """The pairs of one arm's bodies checked against each other: every two whose joints stand more than two
         apart along the chain (links within two joints stay a few millimetres apart in every pose, their hulls
-        overlapping about the compact wrist: link_3 and link_5 at 4-6 mm over 249 pink calibration poses); and
+        overlapping about the compact wrist: link_3 and link_5 at 4-6 mm over 249 WXAI calibration poses); and
         the wrist cube against every link from link_5 up, which it can fold onto (2026-09-30: it met link_2), but
         not the parts it rides with."""
         bodies, parents = self.geom.geometryObjects, self.model.parents
@@ -181,9 +186,10 @@ class Scene:
         has moved max_step_rad since the last checked row (10 mrad is at most 7 mm at the arm's reach), and the last
         row always."""
         rows = np.asarray(rows, float)
+        revolute = self._revolute[arm]
         worst, last = None, None
         for k, row in enumerate(rows):
-            if last is not None and k < len(rows) - 1 and np.max(np.abs(row[:6] - last[:6])) < max_step_rad:
+            if last is not None and k < len(rows) - 1 and np.max(np.abs(row[revolute] - last[revolute])) < max_step_rad:
                 continue
             last = row
             gap = self.self_clearance(arm, row, floors)
@@ -222,9 +228,10 @@ class Scene:
                 continue
             bodies.append((i, next((float(m) for prefix, m in pads.items() if short.startswith(prefix)), 0.0)))
         rows = np.asarray(rows, float)
+        revolute = self._revolute[arm]
         worst, last = None, None
         for k, row in enumerate(rows):
-            if last is not None and k < len(rows) - 1 and np.max(np.abs(row[:6] - last[:6])) < max_step_rad:
+            if last is not None and k < len(rows) - 1 and np.max(np.abs(row[revolute] - last[revolute])) < max_step_rad:
                 continue
             last = row
             self._q[self._iq[arm]] = row[: len(self._iq[arm])]
@@ -295,18 +302,16 @@ class Guard:
 
     @classmethod
     def from_stack(cls, repo, stack: dict, motion: dict) -> tuple[Guard | None, str]:
-        """(the guard, a line for the log), or (None, why not): the arm the stack registers (stack.yaml
-        `registration`), placed by its registration, its rest the landed pose (config/trossen/tatbot.yaml
-        follower.staged_positions)."""
-        import yaml
-        from tatbot_description import repo_root
+        """(the guard, a line for the log), or (None, why not): the arms the stack drives (stack.yaml `arms`) that it
+        registers (`registration`), placed by their registrations, each one's rest its landed pose (its model's
+        `rest`). Another arm's registration on the node (the WXAI follower's, under the xArm) is not this stack's."""
+        from tatbot_description import arm_model
 
         registrations = {arm: str(Path(path).expanduser()) for arm, path in (stack.get("registration") or {}).items()
-                         if path and Path(path).expanduser().is_file()}
+                         if arm in (stack.get("arms") or ()) and path and Path(path).expanduser().is_file()}
         if not registrations:
             return None, "arm clearance not checked: no arm registration"
-        staged = yaml.safe_load((repo_root(repo) / "config" / "trossen" / "tatbot.yaml").read_text())["follower"]
-        rest = {arm: np.asarray(staged["staged_positions"], float) for arm in registrations}
+        rest = {arm: np.asarray(arm_model.for_arm(arm, repo).rest, float) for arm in registrations}
         guard = cls.from_registrations(repo, registrations, motion, rest)
         return guard, f"arm clearance: the {', '.join(registrations)} arm kept off itself"
 
@@ -348,13 +353,10 @@ class Guard:
                 "not sent")
 
     def _self_floors(self, arm: str) -> np.ndarray:
-        """How near each self pair may come: self_margin_m, or as near as the pair stands at rest (the staged and
-        the sleep pose, which the arm holds every day) less SELF_SLACK_M, when that is nearer. The landed arm folds
-        onto itself, its hulls overlapping (link_2 and link_5 by 1.5 mm), and ways to and from rest go."""
+        """How near each self pair may come: self_margin_m, or as near as the pair stands at rest (the landed pose,
+        which the arm holds every day) less SELF_SLACK_M, when that is nearer. The landed arm folds onto itself, its
+        hulls overlapping (link_2 and link_5 by 1.5 mm), and ways to and from rest go."""
         if arm not in self._floors:
-            staged = np.asarray(self.rest[arm], float)
-            sleep = np.zeros(7)
-            sleep[5], sleep[6] = staged[5], staged[6]
-            at_rest = np.minimum(self.scene.self_gaps(arm, staged), self.scene.self_gaps(arm, sleep))
+            at_rest = self.scene.self_gaps(arm, np.asarray(self.rest[arm], float))
             self._floors[arm] = np.minimum(self.self_margin_m, at_rest - SELF_SLACK_M)
         return self._floors[arm]

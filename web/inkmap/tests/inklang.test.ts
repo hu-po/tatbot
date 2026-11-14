@@ -211,12 +211,28 @@ test("structured consumers resolve through the same core", async () => {
     policy: "seeded-v1" as const,
     seed: 41,
   };
+  const structured = await resolvePrompt(request);
+  assert.equal(structured.status, "resolved", "two refusals would agree too");
   assert.equal(
-    canonicalJson(await resolvePrompt(request)),
+    canonicalJson(structured),
     canonicalJson(await resolvePrompt({
       prompt: "left upper inner forearm",
       policy: request.policy,
       seed: request.seed,
     })),
   );
+});
+
+test("people's words for the arm reach it", async () => {
+  const site = async (prompt: string) => (await resolvePrompt({ prompt })).actual;
+  assert.equal((await site("on the outer left biceps"))?.canonical_phrase, "on the left outer bicep");
+  assert.equal((await site("left inner bicep"))?.aspect, "inner");
+  assert.equal((await site("left upper outer bicep"))?.level, "upper");
+  for (const prompt of ["outside of my left arm", "side of my left arm", "on the left outer arm"]) {
+    assert.deepEqual([(await site(prompt))?.site_id, (await site(prompt))?.aspect, (await site(prompt))?.laterality], ["bicep", "outer", "left"], prompt);
+  }
+  assert.equal((await site("on the back of the left arm"))?.site_id, "tricep");
+  const arm = await resolvePrompt({ prompt: "left arm" });
+  assert.equal(arm.status, "needs_choice");
+  assert.deepEqual(arm.candidates.map((candidate) => candidate.site_id), ["bicep", "tricep", "forearm"]);
 });

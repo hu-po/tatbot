@@ -178,8 +178,8 @@ StopChoice wait_for_choice(int accepted_signals)
 //             full stroke is the ceiling.
 //   contact cap = the carriage external effort (N, along the tool axis) that
 //             counts as "pushing too hard"; sustained for the debounce window
-//             it trips a retract-and-hold. Defaults are conservative for a
-//             ballpoint on paper; --contact-cap overrides per session.
+//             it trips a retract-and-hold. The defaults are conservative;
+//             --contact-cap overrides per session.
 // Largest per-joint step the very first streamed command may take from the
 // follower's measured pose. A correct ramp starts at zero; 3 deg is noise.
 constexpr double FIRST_STEP_MAX_RAD = 0.05;

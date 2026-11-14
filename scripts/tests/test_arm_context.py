@@ -41,9 +41,10 @@ def _configured_arm_config(config, count):
         shutil.copyfile(REPO / f'config/trossen/{source}.yaml', trossen / f'{name}.yaml')
     workspace = (REPO / 'config/workspace.yaml').read_text()
     if count >= 3:
-        workspace += '\nthird:\n  tip_frame: third/tool_mount\n  tool_id: lutin-ballpoint-dot\n'
+        workspace += '\nthird:\n  tip_frame: third/tool_mount\n  tool_id: lutin-3rl-bugpin\n'
     (config / 'workspace.yaml').write_text(workspace)
     shutil.copytree(REPO / 'config/tools', config / 'tools')
+    shutil.copytree(REPO / 'config/arm-models', config / 'arm-models')
     return profile_path
 
 
@@ -76,7 +77,7 @@ def _configured_urdf(tmp_path, count):
 
 
 def _configured_vision(tmp_path, count):
-    cameras = [{'name': 'right-wrist', 'serial': 'right-serial', 'role': 'wrist_upper',
+    cameras = [{'name': 'right-wrist', 'serial': 'right-serial', 'role': 'wrist_2',
                 'group': 'd405', 'arm': 'pink', 'owner_role': 'capture-pink'}]
     if count >= 3:
         cameras += [
@@ -113,14 +114,14 @@ def test_collection_bindings_and_wrist_variations(tmp_path, count):
     assert tuple(arms.load(repo)) == expected
     roles = wrist_cameras.capture_roles(repo)
     assert tuple(roles) == expected
-    assert roles['pink'] == ('wrist_upper',)
+    assert roles['pink'] == ('wrist_2',)
     for arm in expected:
-        model = kin.ArmModel(arm, repo=repo)
+        frames = kin.ArmFrames(arm, repo=repo)
         prefix = arms.load(repo)[arm].urdf_prefix
-        assert model.frame == f'{prefix}/base_link' and model.carriage_joint == f'{prefix}/left_carriage_joint'
-    pink = kin.ArmModel('pink', repo=repo)
+        assert frames.frame == f'{prefix}/base_link' and frames.carriage_joint == f'{prefix}/left_carriage_joint'
+    pink = kin.ArmFrames('pink', repo=repo)
     assert pink.prefix == 'right' and pink.controller_role == 'follower'
-    assert wrist_cameras.capture_arm(['wrist_upper'], repo=repo) == 'pink'
+    assert wrist_cameras.capture_arm(['wrist_2'], repo=repo) == 'pink'
     if count >= 2:
         assert roles['blue'] == ()
         assert wrist_cameras.optical_frames(repo, arm='blue', stream='depth') == {}

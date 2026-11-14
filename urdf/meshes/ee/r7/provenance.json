@@ -1,0 +1,14 @@
+{
+  "revision": "xarm-ee-mount-r7",
+  "units": "mm",
+  "representation": "R7's printed parts as designed (each part's assembly-coordinate -CONCEPT.stl) that the xArm still carries: its wrist adapter and pen cradle, and its fiducial cube, which the dual-D405 bracket (../xarm-dual-d405-v5) re-poses. A fit prototype, its datums nominal.",
+  "frame": "R7's CAD frame: origin the xArm flange centre; CAD X, Y, Z are link 7's X, -Z, Y (the camera at link 7 +X)",
+  "source": "xarm-ee-mount-r7-2026-11-04.zip, the R7 CAD archive",
+  "source_sha256": "b4532e586dc5cf864d8a5d860f5510c91e8367f4ad613bdc28df9ead34cfc64a",
+  "files_sha256": {
+    "fiducial-cube": "fdd0a80a0006806100ee43e112b3b09e0731cf0d25020dffe643ce876309f45d",
+    "pen-bracket": "e20c7a22c35af7d9892d1884b40d9af8c169dcd2825491f18708b6a5b81e31bc",
+    "pen-cap": "1ce45f4e688c4048dda3e01bbced11dcfb553f6bda2dffb79d29e76d0f9fafc8",
+    "wrist-adapter": "78d8e501e1a7dae3b5561ef9b7b3933ba122163d8366069c6a08699209ec6699"
+  }
+}

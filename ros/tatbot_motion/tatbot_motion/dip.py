@@ -6,10 +6,12 @@ urdf/palette.urdf and its bore from config/palette.yaml. The tool is the fitted 
 ending at the loaded TCP, the end that takes ink (a needle cartridge's tube end).
 
 A dip, as the tool's datasheet `dip:` block says (the program carries it per resource):
-- approach: lift off the page to the standoff, rise until the tool clears the station's top, turn to the dip's
-  attitude, cross to over the cap and come down its axis to `hover_m` over the rim;
+- approach: lift off the page to the standoff, rise until the tool clears the station's top, cross to over the cap
+  turning to the dip's attitude on the way, and come down its axis to `hover_m` over the rim;
 - descend the axis until the tool's end stands `above_ink_m` over the cap's declared ink level;
 - dwell `dwell_s` there (the machine running, its needles pulling ink into the tube);
+- drain, when the dip has a `drain_s`: rise the axis until the tool's end stands `drain_above_rim_m` over the rim
+  and hold there `drain_s`, the machine still running, so the load the needles cannot hold falls into the cap;
 - retract the axis to the hover, and return the way it came to the page standoff it left.
 
 The tool keeps `wall_margin_m` from the bore wherever it is inside the cap: the margin is what the station
@@ -24,7 +26,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 import numpy as np
-from tatbot_contracts.dip import validate_dip
+from tatbot_contracts.dip import drain_s, validate_dip
 from tatbot_description.transforms import rpy_matrix
 
 from tatbot_motion import plan as pplan
@@ -38,7 +40,7 @@ RIM_UNDER_M = 0.0005
 TRACK_M = 0.0005           # a measured tick may stray this far from the planned axis line inside the cap
 OVERSHOOT_M = 0.001        # going in, the tool's end may pass its dwell height by this much; the arm settles ~0.5 mm
                            # into its dwell (cap M2, 2026-10-05)
-# The owner doubled every stop of this kind (2026-10-20: "if it's 1 millimeter, make it 2"): a descent or dwell may end
+# Every stop was doubled of this kind (2026-10-20: "if it's 1 millimeter, make it 2"): a descent or dwell may end
 # this far over its dwell height (0.5 mm before), a goal that rises to the hover this far under it while the arm
 # catches up (2 mm before; a retract out of cap M2 ended 0.5 mm short, 2026-10-05; the 3RL's hover is 8 mm over the rim)
 DWELL_HIGH_M = 0.001
@@ -85,15 +87,15 @@ class Cap:
         return self.base_from_cap[:3, 2]
 
 
-def read_cap(repo, slot, arm, base_from_palette) -> Cap:
-    """A configured slot of this arm: its URDF support frame placed by base_from_palette, its bore from its outside
-    dimensions less the wall (config/palette.yaml)."""
+def read_cap(repo, slot, base_from_palette) -> Cap:
+    """A configured slot: its URDF support frame placed by base_from_palette, its bore from its outside dimensions
+    less the wall (config/palette.yaml)."""
     import yaml
 
     palette = yaml.safe_load((repo / 'config/palette.yaml').read_bytes())
     item = palette['slots'].get(slot)
-    if not isinstance(item, dict) or item.get('arm') != arm:
-        raise ValueError('dip requires a canonical cap slot assigned to this arm')
+    if not isinstance(item, dict):
+        raise ValueError('dip requires a canonical cap slot')
     size = palette['sizes'][item['size']]
     diameter, height, wall = (_positive(size[key]) for key in ('diameter_m', 'height_m', 'wall_m'))
     if height <= wall or diameter <= 2 * wall:
@@ -183,6 +185,12 @@ class Dip:
                              f"{cap.bore_radius_m * 2000:.1f} mm bore beyond its wall margin")
         self.dwell = self.at(self.dwell_height_m)
         self.hover = self.at(self.hover_height_m)
+        self.drain_s = drain_s(settings)
+
+    @property
+    def drain_height_m(self) -> float:
+        """Where a draining dip holds after its dwell: the tool's end this high over the cap's support."""
+        return self.cap.rim_m + self.settings['drain_above_rim_m']
 
     @property
     def hover_height_m(self) -> float:
@@ -209,11 +217,11 @@ class Dip:
 def check_tick(dip: Dip, stage: str, pose, station_top_m: float) -> None:
     """ValueError when a planned or measured tick leaves its stage's envelope: over the station's top while it
     crosses; inside the cap over its floor, and going in on its axis and no deeper than the dwell and OVERSHOOT_M.
-    Leaving (retract, cap_exit) starts wherever the tool is and only rises."""
+    Leaving (drain, retract, cap_exit) starts wherever the tool is and only rises."""
     if stage in ('align', 'transit', 'over_page') and \
             dip.tool.lowest(pose) < station_top_m + STATION_CLEAR_M - 1e-6:
         raise ValueError(f"dip {stage}: the tool comes within {STATION_CLEAR_M * 1000:.0f} mm of the station's top")
-    if stage in ('hover', 'descend', 'dwell', 'retract', 'cap_exit'):
+    if stage in ('hover', 'descend', 'dwell', 'drain_rise', 'drain', 'retract', 'cap_exit'):
         height, off = dip.local(pose)
         # going in keeps to the axis; leaving rises from wherever the tool is, since refusing it traps the tool in
         # the cap (an arm that sagged 9 mm and 6.7 mm aside in a restart, 2026-10-05)
@@ -256,12 +264,13 @@ def _travel_at(dip, targets, q_seed, kin, motion, station_top_m, check, axial, f
 
     def build(scales):
         legs, previous = [], seed
-        for stage, target, feedback in targets:
-            if stage == 'dwell':
-                p, r = tl.hold_rows(seed[:3, 3], seed[:3, :3], math.ceil(dip.settings['dwell_s'] / dt) * dt, dt)
+        for stage, target, feedback, *cap in targets:   # cap: a leg's own top speed (the drop onto the cap)
+            if stage in ('dwell', 'drain'):   # a hold where the leg before it ended (the dwell: where the arm is)
+                seconds = dip.settings['dwell_s'] if stage == 'dwell' else dip.drain_s
+                p, r = tl.hold_rows(previous[:3, 3], previous[:3, :3], math.ceil(seconds / dt) * dt, dt)
             else:
                 p, r = tl.line_segment(previous[:3, 3], target[:3, 3], previous[:3, :3], target[:3, :3],
-                                       speed * scales.get(group, 1.), dt,
+                                       min(speed, factor * cap[0] if cap else speed) * scales.get(group, 1.), dt,
                                        omega_max=factor * motion['approach']['omega_max_rad_s'] * scales.get(group, 1.))
             legs.append(pplan._Leg(p, r, False, feedback, group))
             previous = target
@@ -270,7 +279,7 @@ def _travel_at(dip, targets, q_seed, kin, motion, station_top_m, check, axial, f
 
     def checked(rows):
         start = 0
-        for (stage, _, _), count in zip(targets, counts, strict=True):
+        for (stage, *_), count in zip(targets, counts, strict=True):
             segment = rows[start:start + count + 1]
             check(stage, segment)
             for q in segment[1:] if start else segment:
@@ -291,9 +300,10 @@ def safe_height(dip: Dip, station_top_m: float, motion) -> float:
     return station_top_m + STATION_CLEAR_M + below + float(motion['probe']['clearance_m'])
 
 
-def plan_approach(dip: Dip, *, q_seed, kin, motion, base_from_page, station_top_m, check):
-    """From the page to the cap's hover: lift to the standoff, rise, turn, cross, come down the cap's axis.
-    The trajectory's info carries return_tcp, the page standoff the return comes back to."""
+def plan_approach(dip: Dip, *, q_seed, kin, motion, base_from_page, station_top_m, check, via_xy=None):
+    """From the page to the cap's hover: lift to the standoff, rise, turn, cross, come down the cap's axis; with
+    `via_xy` (page metres), first along the standoff to over that page point. The trajectory's info carries
+    return_tcp, the page standoff the return comes back to (the via point's, with one)."""
     page, seed = _pose(base_from_page), kin.fk(q_seed)
     if dip.cap.axis[2] <= 0:
         raise ValueError('a dip needs an upward cap axis')
@@ -301,23 +311,25 @@ def plan_approach(dip: Dip, *, q_seed, kin, motion, base_from_page, station_top_
     lifted = seed.copy()
     height = float(page[:3, 2] @ (seed[:3, 3] - page[:3, 3]))
     lifted[:3, 3] += page[:3, 2] * max(0., motion['approach']['standoff_m'] - height)
+    legs = [('page_lift', lifted, pplan.PHASE_LIFT)]
+    if via_xy is not None:
+        inward = lifted.copy()
+        inward[:3, 3] = (page @ [*via_xy, motion['approach']['standoff_m'], 1.0])[:3]
+        legs, lifted = [*legs, ('inward', inward, pplan.PHASE_TRAVEL)], inward
     rise = lifted.copy()
     rise[2, 3] = max(lifted[2, 3], top)
-    aligned = rise.copy()
-    aligned[:3, :3] = dip.rotation
-    over = dip.hover.copy()
+    over = dip.hover.copy()   # at the dip's attitude: the crossing turns to it (a turn in place first took ~2.6 s)
     over[:3, 3] += dip.cap.axis * max(0., (rise[2, 3] - over[2, 3]) / dip.cap.axis[2])
-    targets = [('page_lift', lifted, pplan.PHASE_LIFT), ('rise', rise, pplan.PHASE_LIFT),
-               ('align', aligned, pplan.PHASE_TRAVEL), ('transit', over, pplan.PHASE_TRAVEL),
-               ('hover', dip.hover, pplan.PHASE_TRAVEL)]
+    targets = [*legs, ('rise', rise, pplan.PHASE_LIFT), ('transit', over, pplan.PHASE_TRAVEL),
+               ('hover', dip.hover, pplan.PHASE_TRAVEL, float(motion['approach'].get('cap_drop_m_s', math.inf)))]
     traj = _travel(dip, targets, q_seed, kin, motion, station_top_m, check)
     traj.info.update(dip_phase='approach', return_tcp=lifted.tolist())
     return traj
 
 
 def plan_axial(dip: Dip, phase: str, *, q_seed, kin, motion, check=lambda *a: None):
-    """descend (hover to dwell), dwell (hold), retract (to the hover), each along the cap's axis from the measured
-    pose, keeping its rotation."""
+    """descend (hover to dwell), dwell (hold), drain (rise to the drain height and hold there, for a dip with a
+    drain_s), retract (to the hover), each along the cap's axis from the measured pose, keeping its rotation."""
     seed = kin.fk(q_seed)
     target = seed.copy()
     height, _ = dip.local(seed)
@@ -332,8 +344,16 @@ def plan_axial(dip: Dip, phase: str, *, q_seed, kin, motion, check=lambda *a: No
             raise ValueError(f"dwell: the tool's end is {(height - dip.dwell_height_m) * 1000:+.2f} mm from its dwell "
                              "height")
         feedback = pplan.PHASE_SETTLE
+    elif phase == 'drain':
+        if not dip.drain_s:
+            raise ValueError('drain: this dip has no drain_s')
+        target[:3, 3] += dip.cap.axis * max(0., dip.drain_height_m - height)
+        legs = [('drain_rise', target, pplan.PHASE_LIFT), ('drain', target, pplan.PHASE_SETTLE)]
+        traj = _travel(dip, legs, q_seed, kin, motion, -math.inf, check, axial=True)
+        traj.info.update(dip_phase=phase)
+        return traj
     else:
-        raise ValueError('an axial phase is descend, dwell or retract')
+        raise ValueError('an axial phase is descend, dwell, drain or retract')
     traj = _travel(dip, [(phase, target, feedback)], q_seed, kin, motion, -math.inf, check, axial=True)
     traj.info.update(dip_phase=phase)
     return traj
@@ -341,7 +361,7 @@ def plan_axial(dip: Dip, phase: str, *, q_seed, kin, motion, check=lambda *a: No
 
 def plan_return(dip: Dip, *, q_seed, kin, motion, return_tcp, station_top_m, check):
     """From wherever the dip left the tool back to the page standoff: up the cap's axis when the tool is over the
-    cap (else straight up), across at the safe height, turn to the page's attitude, down to return_tcp."""
+    cap (else straight up), across at the safe height turning to the page's attitude on the way, down to return_tcp."""
     target, seed = _pose(return_tcp), kin.fk(q_seed)
     top = max(seed[2, 3], target[2, 3], safe_height(dip, station_top_m, motion))
     rise = seed.copy()
@@ -352,12 +372,10 @@ def plan_return(dip: Dip, *, q_seed, kin, motion, return_tcp, station_top_m, che
     else:
         stage = 'escape'   # an interrupted crossing: straight up at the measured attitude
         rise[2, 3] = top
-    over, aligned = rise.copy(), target.copy()
-    over[:2, 3] = target[:2, 3]
-    aligned[2, 3] = top
+    over = target.copy()   # over the page at the safe height, at its attitude: the crossing turns to it
+    over[2, 3] = top
     traj = _travel(dip, [(stage, rise, pplan.PHASE_LIFT), ('transit', over, pplan.PHASE_TRAVEL),
-                         ('over_page', aligned, pplan.PHASE_TRAVEL), ('page_return', target, pplan.PHASE_TRAVEL)],
-                   q_seed, kin, motion, station_top_m, check)
+                         ('page_return', target, pplan.PHASE_TRAVEL)], q_seed, kin, motion, station_top_m, check)
     traj.info.update(dip_phase='return', return_tcp=target.tolist())
     return traj
 
@@ -365,7 +383,7 @@ def plan_return(dip: Dip, *, q_seed, kin, motion, return_tcp, station_top_m, che
 # A return judged at the page standoff it left, once the arm has settled: its quintic stop from ~118 mm/s rings joint 4
 # at ~6.5 Hz, 5 mrad, the tip 0.3-1.9 mm off for its first ~0.5 s, and two misses read at once (1.09, then 1.66 mm
 # and 0.0052 rad) ended a tattoo with the arm holding (2026-10-20). Twice the stroke join's 1 mm and the CLIK's
-# 0.005 rad, the owner's doubling of the stops; the session plans a miss again once, then goes on from where it is.
+# 0.005 rad, the doubling of the stops; the session plans a miss again once, then goes on from where it is.
 RETURN_M, RETURN_RAD, RETURN_SETTLE_S = 0.002, 0.010, 1.0
 
 

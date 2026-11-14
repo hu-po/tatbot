@@ -1,19 +1,22 @@
 """Every cross-package ROS name in one place (ros/README.md "Names"). Pure Python, no ROS import.
 
 C++ mirrors the GPIO part in tatbot_hardware/include/tatbot_hardware/names.hpp; a test keeps them equal.
+Joint names are the arm's model's (scripts/lib/arm_model.py, config/arm-models/).
 """
 from __future__ import annotations
 
-ARMS = ("right",)  # the pink arm; the blue (left) one is the teleop leader alone, never on this stack
+# The physical arms (config/arms.json) stack.yaml `arms` may name: the right WXAI and the xArm 7. The blue (left) WXAI
+# is the teleop leader alone, never on this stack.
+ARMS = ("right", "xarm")
 WORLD = "world"
-
-REVOLUTE = tuple(f"joint_{i}" for i in range(6))
-CARRIAGE = "left_carriage_joint"  # the tool rides the left finger carriage (prismatic, metres)
 
 
 def joint_names(arm: str) -> tuple[str, ...]:
-    """The seven controlled joints in controller order: joint_0..joint_5 (rad), then the carriage (m)."""
-    return tuple(f"{arm}/{name}" for name in (*REVOLUTE, CARRIAGE))
+    """The physical arm's controlled joints in controller order, from its model: on the WXAI joint_0..joint_5
+    (rad), then the carriage (m)."""
+    from tatbot_description import arm_model  # scripts/lib's, which the package makes importable
+
+    return arm_model.for_arm(arm).joint_names(arm)
 
 
 def base_frame(arm: str) -> str:
@@ -61,8 +64,8 @@ SAFETY_STATE_INTERFACES = (
     "latch_reason",      # LATCH_* below
     "guard_mode",        # GUARD_* armed now
     "guard_tripped",     # 0/1 until the next accepted unlatch
-    "trip_q0", "trip_q1", "trip_q2", "trip_q3", "trip_q4", "trip_q5",  # rad; NaN until a trip
-    "trip_q6",           # carriage at the trip, m; NaN until a trip
+    # the joints at the trip in controller order, NaN until a trip: rad (the WXAI's carriage, trip_q6, m)
+    "trip_q0", "trip_q1", "trip_q2", "trip_q3", "trip_q4", "trip_q5", "trip_q6",
     "unlatch_ack",       # last unlatch request id the driver processed
     "land_ack",          # last land request id the driver processed
     "landing",           # 0/1
@@ -70,6 +73,8 @@ SAFETY_STATE_INTERFACES = (
     "controller_error",  # 0/1
     "rt_period_max_ms",  # longest read-to-read period over the last second
 )
+TRIP_JOINTS = tuple(name for name in SAFETY_STATE_INTERFACES if name.startswith("trip_q"))
+
 # <arm>_safety command interfaces (doubles).
 SAFETY_COMMAND_INTERFACES = (
     "guard_mode",  # level: GUARD_*
@@ -80,11 +85,16 @@ SAFETY_COMMAND_INTERFACES = (
 # tatbot_hardware/TatbotArm <param>s (fake and real), all text; tatbot_description.hardware_params()
 # fills them from stack.yaml, config/arms.json, config/profiles/<profile>.json, config/trossen/tatbot.yaml.
 HARDWARE_PARAMETERS = (
-    "arm", "sdk", "ip", "end_effector",
+    "arm", "sdk",
+    "controller",  # the arm model's: trossen or xarm, the SDK tatbot_hardware drives it with
+    "ip", "end_effector",
     "estop_source", "estop_device", "estop_timeout_s", "estop_udp_port", "estop_relay_addr", "estop_debounce_frames",
     # stack.yaml probe.*: the station probe's own relay (PRB1); relay_addr resolved like the e-stop's
     "probe_enabled", "probe_udp_port", "probe_timeout_s", "probe_relay_addr",
     "rt_priority", "rt_cpus", "base_frame", "tcp_frame",
+    # the arm's model (config/arm-models): its joints in controller order, its tool carriage ("": none), and the
+    # controller's command-to-measurement delay the guards take out
+    "joints", "carriage_joint", "command_delay_s",
     # stack.yaml safety.*, flattened with "_"
     "step_limit_rad", "step_limit_m", "feedback_warmup_s", "stall_error_rad", "stall_time_s", "stall_progress_rad",
     "over_velocity_rad_s", "over_velocity_m_s", "carriage_baseline_samples", "carriage_trip_ticks", "carriage_settle_ticks",
@@ -98,14 +108,27 @@ HARDWARE_PARAMETERS = (
     "motor_parameters",  # tatbot.yaml follower: Trossen's named position-mode gain set, set at connect
     "idle_velocity_ki_scale",  # tatbot.yaml follower: 6 factors on that set's idle velocity ki (a lost connection idles)
     "carriage_qualified",  # tatbot.yaml <controller role>: false for the leader, whose carriage never retracts
-    "carriage_position_offset_m",  # config/trossen/<role>.yaml joint_characteristics[6].position_offset
+    "carriage_position_offset_m",  # config/trossen/<role>.yaml: the carriage's joint_characteristics position_offset
     "palm_mass_kg", "palm_com_m",  # config/workspace.yaml <arm>.payload for its calibrated tool; empty: the preset's
     # tatbot.yaml ros_tuning.<controller role>: position-mode gain factors on the named set (arm joints 0-5), and
     # friction terms written into the controller's joint characteristics where they differ (nan keeps its own)
     "position_kp_scale", "velocity_kp_scale", "velocity_ki_scale",
     "friction_transition_velocity", "friction_constant_term",
+    # an xArm's: the load on its flange (config/workspace.yaml <arm>.payload; empty keeps the controller's) and its
+    # model's collision sensitivity (0-5; empty keeps the controller's)
+    "payload_mass_kg", "payload_com_m", "collision_sensitivity",
     "flight_path",  # the ros-stack run directory
 )
+# The parameters only a Trossen arm takes (its SDK preset, its golden's carriage cap and gain set, its role's tuning and
+# its palm): another make's arm has none, and its staged_positions is its model's rest.
+TROSSEN_HARDWARE_PARAMETERS = (
+    "end_effector", "carriage_contact_cap_n", "carriage_contact_deflect_m", "carriage_retract_m", "motor_parameters",
+    "idle_velocity_ki_scale", "carriage_qualified", "carriage_position_offset_m", "palm_mass_kg", "palm_com_m",
+    "position_kp_scale", "velocity_kp_scale", "velocity_ki_scale", "friction_transition_velocity",
+    "friction_constant_term",
+)
+# The parameters only an xArm takes.
+XARM_HARDWARE_PARAMETERS = ("payload_mass_kg", "payload_com_m", "collision_sensitivity")
 
 ESTOP_SOURCE = {"none": 0, "serial": 1, "udp": 2}
 LATCH_NONE = 0

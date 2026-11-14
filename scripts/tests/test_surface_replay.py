@@ -328,14 +328,15 @@ def test_bank_admission_is_bounded_and_keeps_original_coordinates():
     bank = KeyframeBank((160, 120, 320, 240), MatchSettings(method='sift'))
     bank.seed(bank_view()[0])
     first = bank.references[0]
+    gap = 1_000_000_000_000   # frames 1000 s apart: a match's process CPU time / cpu_fraction never rate-limits the next
     for i, angle in enumerate((8, 16, 24)):
         image, tracking, anchors, _ = bank_view(angle)
-        result = bank.match(image, (i+1)*10_000_000_000, tracking, anchors)
+        result = bank.match(image, (i+1)*gap, tracking, anchors)
         assert result['status'] == 'admitted', result
         assert not result['material_identity_verified'] and not result['motion_authority']
     assert len(bank.references) == 3 and bank.references[0] is first
     image, _, _, matrix = bank_view(35)
-    result = bank.match(image, 40_000_000_000)
+    result = bank.match(image, 4*gap)
     assert result['status'] == 'candidate', result
     assert result['reference_index'] == 2
     expected = np.array([[160,120],[480,120],[480,360],[160,360]]) @ matrix[:,:2].T + matrix[:,2]

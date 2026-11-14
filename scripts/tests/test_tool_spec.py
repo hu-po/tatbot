@@ -1,13 +1,11 @@
-"""Pin the tool registry: the datasheet must reproduce what it replaced.
+"""Pin the tool registry: the datasheet is the tool's one description.
 
     uvx --with pytest --with numpy pytest -q scripts/tests/test_tool_spec.py
 
-The registry was introduced by MOVING constants out of
-python/tatbot_sim/src/tatbot_sim/urdf.py into config/tools/lutin-ballpoint-dot.yaml.
-The whole claim of that refactor is that the sim's geometry did not change, so
-the first test here is a literal transcript of the visuals the old code built.
-If a datasheet edit is meant to change the sim, that expectation changes with
-it — deliberately, in the same commit.
+The registry replaced constants the sim and the scripts each carried, so the
+first tests here pin the fitted 3RL's datasheet numbers and the visuals they
+build. If a datasheet edit is meant to change the sim, that expectation
+changes with it — deliberately, in the same commit.
 
 The rest guards the properties the design depends on: a dataset's tool stamp
 is self-contained, a calibration cannot be filed under the wrong tool, and a
@@ -15,7 +13,6 @@ safety floor is never derived from a surface nobody touched.
 """
 
 import json
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +23,8 @@ REPO = Path(__file__).resolve().parents[2]
 
 import tool_spec  # noqa: E402
 
-FITTED = "lutin-ballpoint-dot"
+# The WXAI follower's 3RL, whose datasheet numbers the first tests pin.
+FITTED = "lutin-3rl-bugpin"
 
 
 def test_datasheet_snapshot_is_parsed_without_a_second_file_read(tmp_path):
@@ -39,6 +37,20 @@ def test_workspace_yaml_duplicate_key_is_refused():
     with pytest.raises(ValueError, match='duplicate key'):
         tool_spec.parse_simple_yaml('right:\n  tool_id: first\n  tool_id: second\n')
 
+@pytest.mark.parametrize("line", [
+    "tcp_z_m: nan",
+    "tcp_z_m: inf",
+    "tcp_z_m: 1e999",
+    "profile: [[0.0, 0.005], [NaN, 0.001]]",
+    "profile: [\n  [0.0, 0.005],\n  [Infinity, 0.001]\n]",
+    "nested:\n  limit: -inf",
+])
+def test_a_non_finite_number_is_refused_not_read_as_geometry(line):
+    """NaN compares false, so it passed every range check in _validate."""
+    with pytest.raises(ValueError, match="not a finite number"):
+        tool_spec.parse_simple_yaml(line)
+
+
 def calibrated_workspace(spec):
     """Synthetic good pivot fixture independent of the installed calibration."""
     return {"right": {
@@ -46,7 +58,7 @@ def calibrated_workspace(spec):
         "pen_tip_offset_x": 0.001, "pen_tip_offset_y": 0.002,
         "pen_tip_offset_z": spec.protrusion_m,
         "touchoff": {"n_pad": 9, "cond": 6.2, "spread_deg": 141.1,
-                     "residual_mm": 1.997, "holdout_mm": 1.970,
+                     "residual_mm": 1.197, "holdout_mm": 1.170,
                      "tip_loo_max_mm": 1.020},
     }}
 
@@ -56,28 +68,45 @@ def spec():
     return tool_spec.load_tool(FITTED, REPO)
 
 
+def test_a_tool_fades_by_its_measured_lift_or_draws_no_deposition(tmp_path):
+    """The 3RL's measured fade (a ladder on silicone, 2026-11-03) is carried in metres, a cartridge that has measured
+    none draws no fading stroke, and a lift past the trim's reach is refused."""
+    assert tool_spec.load_tool(FITTED, REPO).fade_lift_m == pytest.approx(0.0007)
+    assert tool_spec.load_tool("lutin-9m-ex", REPO).fade_lift_m is None
+    raw = (REPO / "config/tools" / f"{FITTED}.yaml").read_text()
+    over = raw.replace("fade_lift_mm: 0.7", "fade_lift_mm: 5.0", 1)
+    assert over != raw
+    with pytest.raises(ValueError, match="fade_lift_mm must be in"):
+        tool_spec.load_tool(FITTED, tmp_path, snapshot=over.encode())
+
+
 def test_fitted_tool_matches_the_operator_measurements(spec):
     assert spec.protrusion_m == pytest.approx(0.073)
     assert spec.back_m == pytest.approx(-0.042)
     # 115 mm assembled = 80 mm machine body + 35 mm cartridge
+    body_end = 0.038  # the V17 machine body ends where the cartridge starts
     assert (spec.profile[-1][0] - spec.profile[0][0]) == pytest.approx(0.115)
-    assert (spec.profile[-2][0] - spec.profile[0][0]) == pytest.approx(0.080)
-    assert (spec.profile[-1][0] - spec.profile[-2][0]) == pytest.approx(0.035)
+    assert body_end in [z for z, _ in spec.profile]
+    assert (body_end - spec.profile[0][0]) == pytest.approx(0.080)
+    assert (spec.profile[-1][0] - body_end) == pytest.approx(0.035)
     assert spec.body_radius_m == pytest.approx(0.0165)
     assert spec.mount == "tool_mount"
     assert spec.nominal_tip_offset_m == (0.0, 0.0, pytest.approx(0.073))
-    assert spec.prompt_phrase == "using pen tip"
+    assert spec.prompt_phrase == "using a 3RL liner"
 
 
-def test_v17_taper_does_not_repeat_the_cartridge_mesh(spec):
+def test_the_cone_mesh_stands_in_for_the_last_taper_alone(spec):
     parts = spec.geometry_parts()
     meshes = [part for part in parts if part["kind"] == "mesh"]
     assert len(meshes) == 1
-    assert meshes[0]["z"] == pytest.approx(0.038)
+    assert meshes[0]["z"] == pytest.approx(spec.profile[-2][0])
+    assert meshes[0]["scale"] == (1.0, 1.0, 0.78)  # a 40 mm cone on a 34 mm cartridge
     assert spec.rings == ()
-    body = [part for part in parts if part["kind"] == "cylinder"]
+    body = [part for part in parts if part["kind"] == "cylinder" and part["z"] < 0.038]
     assert all(part["color"] == spec.body_color for part in body)
     assert all(0.016 <= part["radius"] <= 0.0165 for part in body)
+    needles = spec.tip_detail_parts()
+    assert len(needles) == 3 and all(part["radius"] == pytest.approx(0.00015) for part in needles)
 
 
 def test_a_tool_without_a_mesh_renders_its_taper_as_a_stack(tmp_path):
@@ -170,12 +199,12 @@ def test_resolved_contact_geometry_puts_the_visible_body_at_the_tcp(spec):
     assert geometry.contact_status == "pivot-calibrated"
     assert geometry.body_pose_status == "axis-inferred"
     assert geometry.contact_qualification_error is None
-    assert geometry.contact_uncertainty_m == pytest.approx(0.001997)
+    assert geometry.contact_uncertainty_m == pytest.approx(0.001197)
     assert geometry.touch_offset_m == pytest.approx(measured)
     assert geometry.body_tip_offset_m == pytest.approx(measured)
     assert geometry.tcp_offset_m == pytest.approx(measured)
     assert geometry.alignment_error_m <= tool_spec.CONTACT_ALIGNMENT_TOLERANCE_M
-    assert spec.contact_radius_m == pytest.approx(0.00025)
+    assert spec.contact_radius_m == pytest.approx(0.0005)
 
 
 def test_pivot_contact_qualification_is_separate_from_body_pose(spec):
@@ -262,7 +291,7 @@ def test_the_drawn_line_is_a_complete_measurement_record_or_absent(tmp_path, spe
     bare = _write_tool(tmp_path, "bare")
     assert bare.line == {} and bare.line_width_m is None
     block = ('line:\n  width_mm: 0.5\n  status: assumed\n  utc: 2026-09-15\n'
-             '  method: "datasheet ball diameter"\n  substrate: paper_pad\n')
+             '  method: "datasheet needle grouping"\n  substrate: silicon_skin\n')
     recorded = _write_tool(tmp_path, "recorded", block)
     assert recorded.line_width_m == pytest.approx(0.0005)
     assert recorded.line["status"] == "assumed"
@@ -274,15 +303,14 @@ def test_the_drawn_line_is_a_complete_measurement_record_or_absent(tmp_path, spe
     ]:
         with pytest.raises(ValueError, match=message):
             _write_tool(tmp_path, "bad", extra)
-    # The fitted ballpoint records its line, and says it is assumed until a
-    # swatch is measured.
-    assert spec.line_width_m is not None and spec.line["status"] in ("measured", "assumed")
+    # Nobody has measured a swatch of the fitted 3RL's line yet, so it records none.
+    assert spec.line == {} and spec.line_width_m is None
 
 
 def test_the_stroke_is_where_the_running_tip_travels_or_absent(tmp_path, spec):
     """stroke_mm and tip_out_at_top_mm place a rotary machine's working tip: a touch jams it at the top of its
     stroke, tip_out_at_top_mm out of the tube. They are optional, and a nonsense value is refused at load."""
-    assert (spec.stroke_m, spec.tip_out_at_top_m) == (pytest.approx(0.0035), pytest.approx(0.002))
+    assert (spec.stroke_m, spec.tip_out_at_top_m) == (pytest.approx(0.004), None)  # its needles top out inside
     bare = _write_tool(tmp_path, "bare")
     assert bare.stroke_m is None and bare.tip_out_at_top_m is None
     assert _write_tool(tmp_path, "recessed", "stroke_mm: 4.0\ntip_out_at_top_mm: -1.5\n").tip_out_at_top_m == -0.0015
@@ -323,7 +351,7 @@ def test_the_yaml_subset_reads_block_scalars_and_refuses_what_it_cannot():
 def test_the_fitted_tool_is_named_by_the_workspace():
     """Whatever is fitted, the workspace names it and the name resolves.
 
-    Pinned the ballpoint by name until 2026-08-26, which made a legitimate
+    Pinned one pen by name until 2026-08-26, which made a legitimate
     tool swap look like a test failure. What has to hold is the link — that
     the pointer exists and loads — not which tool happens to be in the
     gripper today.
@@ -355,8 +383,8 @@ def test_a_tool_without_a_mount_cannot_be_flown(tmp_path):
         wand.mount_frame("right")
     with pytest.raises(tool_spec.ToolMountError):
         tool_spec.require_stated_tool("wand", tmp_path, workspace={})
-    ballpoint = tool_spec.load_tool(FITTED, REPO)
-    assert ballpoint.mount_frame("right") == "right/tool_mount"
+    fitted = tool_spec.load_tool(FITTED, REPO)
+    assert fitted.mount_frame("right") == "right/tool_mount"
     # The laser pen's mount is the leader arm's; the same datasheet field
     # resolves per arm, and nothing but the workspace section says which.
     laser = tool_spec.load_tool("picosecond-laser-pen", REPO)
@@ -391,10 +419,10 @@ def test_a_datasheet_owns_its_seat_budgets(tmp_path):
         _write_tool(tmp_path, "wild", "seat_tolerance_deg: 60\n")
     with pytest.raises(ValueError, match="seat_residual_m"):
         _write_tool(tmp_path, "broken", "seat_residual_m: 0.05\n")
-    # the fitted ballpoint carries the measured seat
-    ballpoint = tool_spec.load_tool(FITTED, REPO)
-    assert ballpoint.seat_tolerance_deg == 15.0
-    assert ballpoint.seat_residual_m == pytest.approx(0.0035)
+    # the fitted 3RL carries the clamp's seat freedom and claims no seat play
+    fitted = tool_spec.load_tool(FITTED, REPO)
+    assert fitted.seat_tolerance_deg == 15.0
+    assert fitted.seat_residual_m == 0.0
 
 
 def test_a_tip_that_does_not_match_the_datasheet_is_refused(spec):
@@ -452,7 +480,7 @@ def test_nominal_dataset_geometry_is_concrete_and_labelled(spec):
 def test_a_non_contact_tool_is_modelled_at_its_working_point(tmp_path):
     """End to end: what the touch-off plants is the aperture, but the link the
     URDF exposes as the TCP has to sit at the focus, standoff further along."""
-    import gen_tool_urdf
+    import tool_urdf
 
     laser = _write_tool(tmp_path, "beam", "contact: false\ntcp_z_m: 0.090\n")
     measured = (-0.004, 0.001, 0.0498)  # aperture, slightly off the bore axis
@@ -462,7 +490,7 @@ def test_a_non_contact_tool_is_modelled_at_its_working_point(tmp_path):
         (a - b) ** 2 for a, b in zip(measured, laser.nominal_tip_offset_m, strict=True)) ** 0.5
     assert off_by_standoff > laser.tip_tolerance_m
 
-    block = gen_tool_urdf.render_block("right", laser, measured, measured=True)
+    block = tool_urdf.render_block("right", laser, measured, measured=True)
     reach = [float(v) for v in
              block.split('name="right/tattoo_needle_joint"')[1]
                   .split('xyz="')[1].split('"')[0].split()]
@@ -473,14 +501,18 @@ def test_a_non_contact_tool_is_modelled_at_its_working_point(tmp_path):
 
 
 def test_the_generated_tool_block_hangs_the_drawing_arms_tool_alone():
-    """The pink arm's fitted tool is the only one modelled; the teleop leader's
-    laser pen is not, though its datasheet stays."""
-    import gen_tool_urdf
+    """Each drawing arm's fitted tool is modelled, in its model's URDF: the WXAI follower's in urdf/tatbot.urdf,
+    the xArm's in urdf/xarm7.urdf; the teleop leader's laser pen is not, though its datasheet stays."""
+    import tool_urdf
 
-    rendered = gen_tool_urdf.build()
-    assert '<link name="right/tattoo_pen">' in rendered
-    assert '<parent link="right/tool_mount"/>' in rendered
-    assert '"left/' not in rendered
+    workspace = tool_spec.read_workspace(REPO)
+    rendered = {path.name: tool_urdf.build(REPO, path, arms, workspace)
+                for path, arms in tool_urdf.drawing_arms(REPO, workspace).items()}
+    assert set(rendered) == {"tatbot.urdf", "xarm7.urdf"}
+    for name, arm in (("tatbot.urdf", "right"), ("xarm7.urdf", "xarm")):
+        assert f'<link name="{arm}/tattoo_pen">' in rendered[name]
+        assert f'<parent link="{arm}/tool_mount"/>' in rendered[name]
+    assert not any('"left/' in text for text in rendered.values())
 
 
 def test_every_shipped_datasheet_loads():
@@ -532,65 +564,56 @@ def test_the_shipped_urdf_and_constants_match_the_datasheet():
 
 
 def test_every_fitted_tool_names_substrates_that_exist():
-    """A tool and its substrates are a pair: the ballpoint draws on the two
-    gridded paper fixtures, the needle cartridges tattoo silicone or human
-    skin, the laser works on the silicone skin. A tool naming a substrate
-    nobody described would have the sim guessing its working area from context."""
+    """A tool and its substrates are a pair: the needle cartridges tattoo
+    silicone or human skin, the laser works on the silicone skin. A tool naming
+    a substrate nobody described would have the sim guessing its working area
+    from context."""
     for tool_id in tool_spec.list_tools(REPO):
         spec = tool_spec.load_tool(tool_id, REPO)
         assert spec.substrates[0] == spec.substrate
         for name in spec.substrates:
             sub = tool_spec.substrate_for(spec, REPO, name=name)
             assert sub.width_m > 0 and sub.height_m > 0 and sub.thickness_m > 0
-        want = {"ballpoint_pen": ("paper_pad", "paper_cylinder"),
-                "rotary_pen": ("silicon_skin", "human_skin")}.get(spec.kind, ("silicon_skin",))
+        want = {"rotary_pen": ("silicon_skin", "human_skin")}.get(spec.kind, ("silicon_skin",))
         assert spec.substrates == want, (tool_id, spec.kind, spec.substrates)
 
 
 def test_a_tool_refuses_a_substrate_it_does_not_admit():
     laser = tool_spec.load_tool("picosecond-laser-pen", REPO)
     with pytest.raises(ValueError, match="does not work on substrate"):
-        tool_spec.substrate_for(laser, REPO, name="paper_pad")
+        tool_spec.substrate_for(laser, REPO, name="human_skin")
 
 
-def test_the_paper_fixtures_are_the_measured_ones():
-    """7.5 x 11 in pad, 1 cm thick; 85 mm x 7.5 in cylinder; both on a 1/4 in
-    grid, white with faint blue rules (measured 2026-09-11)."""
-    pad = tool_spec.load_substrate("paper_pad", REPO)
-    assert (pad.width_m, pad.height_m, pad.thickness_m) == (0.1905, 0.2794, 0.010)
-    assert pad.shape == "pad" and pad.radius_m is None
-    tube = tool_spec.load_substrate("paper_cylinder", REPO)
-    assert tube.shape == "cylinder" and tube.radius_m == 0.0425 and tube.height_m == 0.1905
-    assert tube.thickness_m == 0.085  # the diameter: the actor origin is the axis
-    assert abs(tube.width_m - 1.5 * math.pi * tube.radius_m) < 1e-4  # all but the bottom quarter
-    assert tube.width_m < 2 * math.pi * tube.radius_m
-    for sub in (pad, tube):
-        assert sub.ruled and sub.grid_pitch_m == 0.00635
-        assert sub.rgb("base_color", (0, 0, 0)) == (1.0, 1.0, 1.0)
-        r, g, b = sub.rgb("rule_color", (0, 0, 0))
-        assert b > g > r > 0.5  # faint blue
-    assert set(tool_spec.list_substrates(REPO)) == {"paper_pad", "paper_cylinder", "silicon_skin", "human_skin"}
+def test_the_skin_substrates_are_the_registry():
+    """The silicone practice skin the curved skin mount carries, as measured
+    (140 x 185 x 2.5 mm, 2026-08-26), and a person's skin, nominal."""
+    skin = tool_spec.load_substrate("silicon_skin", REPO)
+    assert (skin.width_m, skin.height_m, skin.thickness_m) == (0.140, 0.185, 0.0025)
+    r, g, b = skin.rgb("base_color", (0, 0, 0))
+    assert r > g > b > 0.5  # pink/peach
+    person = tool_spec.load_substrate("human_skin", REPO)
+    assert person.thickness_m < skin.thickness_m
+    assert set(tool_spec.list_substrates(REPO)) == {"silicon_skin", "human_skin"}
 
 
-def test_a_cylinder_substrate_is_checked_for_its_own_geometry(tmp_path):
+def test_a_substrate_is_a_measured_sheet_and_nothing_else(tmp_path):
+    """A field the registry does not read (a fixture's shape, a printed grid)
+    is refused, not carried as an unchecked claim; a missing size is refused."""
     (tmp_path / "config").mkdir()
     def write(body):
         (tmp_path / "config/substrates.yaml").write_text("schema_version: 1\n" + body)
-    common = "  display_name: t\n  height_m: 0.19\n  ruled: true\n  grid_pitch_m: 0.00635\n"
-    write("t:\n  shape: cylinder\n  width_m: 0.06\n  thickness_m: 0.085\n" + common)
-    with pytest.raises(ValueError, match="diameter_m"):
+    common = "  display_name: t\n  width_m: 0.14\n  height_m: 0.185\n"
+    write("t:\n" + common + "  thickness_m: 0.0025\n")
+    assert tool_spec.load_substrate("t", tmp_path).base_color is None
+    for extra in ("  shape: cylinder\n", "  diameter_m: 0.085\n", "  grid_pitch_m: 0.00635\n"):
+        write("t:\n" + common + "  thickness_m: 0.0025\n" + extra)
+        with pytest.raises(ValueError, match="unknown field"):
+            tool_spec.load_substrate("t", tmp_path)
+    write("t:\n" + common)
+    with pytest.raises(ValueError, match="thickness_m"):
         tool_spec.load_substrate("t", tmp_path)
-    write("t:\n  shape: cylinder\n  diameter_m: 0.085\n  width_m: 0.06\n  thickness_m: 0.010\n" + common)
-    with pytest.raises(ValueError, match="thickness_m is its diameter"):
-        tool_spec.load_substrate("t", tmp_path)
-    write("t:\n  shape: cylinder\n  diameter_m: 0.085\n  width_m: 0.3\n  thickness_m: 0.085\n" + common)
-    with pytest.raises(ValueError, match="full"):
-        tool_spec.load_substrate("t", tmp_path)
-    write("t:\n  shape: pad\n  diameter_m: 0.085\n  width_m: 0.06\n  thickness_m: 0.01\n" + common)
-    with pytest.raises(ValueError, match="belongs to a cylinder"):
-        tool_spec.load_substrate("t", tmp_path)
-    write("t:\n  width_m: 0.06\n  thickness_m: 0.01\n" + common.replace("  grid_pitch_m: 0.00635\n", ""))
-    with pytest.raises(ValueError, match="grid_pitch_m"):
+    write("t:\n" + common + "  thickness_m: 0.0025\n  base_color: 2 0 0\n")
+    with pytest.raises(ValueError, match="base_color"):
         tool_spec.load_substrate("t", tmp_path)
 
 
@@ -607,28 +630,28 @@ def test_stated_tool_is_required_and_cross_checked(tmp_path):
     something that contradicts the calibration (which mixes one tool's
     datasheet with another tool's measured geometry).
     """
-    workspace = {"right": {"tool_id": "lutin-ballpoint-dot"}}
+    workspace = {"right": {"tool_id": "lutin-3rl-bugpin"}}
 
     with pytest.raises(tool_spec.ToolMismatchError) as unstated:
         tool_spec.require_stated_tool(None, REPO, "right", workspace)
     # The remedy has to name the real options, not just complain.
-    assert "lutin-ballpoint-dot" in str(unstated.value)
+    assert "lutin-3rl-bugpin" in str(unstated.value)
     assert "picosecond-laser-pen" in str(unstated.value)
 
     with pytest.raises(tool_spec.ToolMismatchError) as wrong:
-        tool_spec.require_stated_tool("lutin-3rl-bugpin", REPO, "right", workspace)
+        tool_spec.require_stated_tool("lutin-11rl-wormhole", REPO, "right", workspace)
     assert "measured with" in str(wrong.value)
-    assert "ros calib run" in str(wrong.value), "refusal must carry the fix"
+    assert "ros cartridge fit" in str(wrong.value), "refusal must carry the fix"
 
     # Agreeing is the only way through.
     spec = tool_spec.require_stated_tool(
-        "lutin-ballpoint-dot", REPO, "right", workspace)
-    assert spec.tool_id == "lutin-ballpoint-dot"
+        "lutin-3rl-bugpin", REPO, "right", workspace)
+    assert spec.tool_id == "lutin-3rl-bugpin"
 
     # An uncalibrated workspace cannot contradict anything, so a stated tool
     # stands on its own rather than being blocked by a missing pointer.
     assert tool_spec.require_stated_tool(
-        "lutin-3rl-bugpin", REPO, "right", {}).tool_id == "lutin-3rl-bugpin"
+        "lutin-11rl-wormhole", REPO, "right", {}).tool_id == "lutin-11rl-wormhole"
 
 
 def test_carriage_contact_deflect_m_in_carriage_sites():

@@ -5,6 +5,7 @@
 #
 # path                                          reason
 scripts/gen_motion_constants.py                   renders cpp/teleop/motion_constants.hpp from config/motion_constants.json; runs inside `scripts/check motion-constants`
+scripts/gen_arm_urdf.py                         renders urdf/xarm7.urdf from a pinned xarm_ros2 checkout with ROS 2's xacro, by hand when the pin or the nominal end effector changes; the tool URDF verb follows it
 scripts/complexity_budget.py                    Python complexity ratchet against config/complexity-debt.tsv; runs inside `scripts/check complexity`, and by hand with --update
 scripts/deps_audit.py                           locked and pinned dependencies against OSV and config/deps-audit-allow.tsv; runs inside `scripts/check deps-audit` and the scheduled deps-audit workflows
 scripts/il_patch_lerobot.py                     applied by the training launcher after uv sync; not user-facing
@@ -26,6 +27,5 @@ scripts/vision/surface_attachment_inputs.py  bounded RGB-D decoder and calibrate
 
 
 
-scripts/lib/view_assets.py                              bounded, hash-bound artifact reads for the stencil observer and live inputs; no standalone workflow
 scripts/vision/stencil_observer.py                      the stencil observer (a fiducial tile placed by its markers), supervised by stencild on the camera node; no device access or standalone viewer
 

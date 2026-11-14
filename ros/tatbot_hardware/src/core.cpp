@@ -21,12 +21,15 @@ bool all_finite(const Vec7 & v)
   return std::all_of(v.begin(), v.end(), [](double x) {return std::isfinite(x);});
 }
 
-// Largest arm-joint difference, and the carriage difference.
-void step_size(const Vec7 & a, const Vec7 & b, double & arm, double & carriage)
+// The largest revolute-joint difference (rad), and the carriage's (m; 0 on an arm without one).
+void step_size(
+  std::optional<size_t> carriage_joint, const Vec7 & a, const Vec7 & b, double & arm, double & carriage)
 {
   arm = 0;
-  for (size_t i = 0; i < kCarriage; ++i) {arm = std::max(arm, std::fabs(a[i] - b[i]));}
-  carriage = std::fabs(a[kCarriage] - b[kCarriage]);
+  for (size_t i = 0; i < kJoints; ++i) {
+    if (i != carriage_joint) {arm = std::max(arm, std::fabs(a[i] - b[i]));}
+  }
+  carriage = carriage_joint ? std::fabs(a[*carriage_joint] - b[*carriage_joint]) : 0.0;
 }
 
 std::string fmt(const Vec7 & v)
@@ -48,6 +51,35 @@ void min_jerk(const Vec7 & a, const Vec7 & b, double t, double duration, Vec7 & 
     q[i] = a[i] + (b[i] - a[i]) * p;
     qd[i] = (b[i] - a[i]) * v;
   }
+}
+
+void History::add(double t, const Vec7 & v)
+{
+  t_[head_] = t;
+  v_[head_] = v;
+  head_ = (head_ + 1) % kSize;
+  size_ = std::min(size_ + 1, kSize);
+}
+
+Vec7 History::at(double t) const
+{
+  Vec7 v;
+  v.fill(kNaN);
+  if (size_ == 0) {return v;}
+  auto back = [this](size_t n) {return (head_ + kSize - 1 - n) % kSize;};
+  size_t newer = back(0);
+  if (t >= t_[newer]) {return v_[newer];}
+  for (size_t n = 1; n < size_; ++n) {
+    const size_t older = back(n);
+    if (t_[older] <= t) {
+      const double span = t_[newer] - t_[older];
+      const double s = span > 0 ? (t - t_[older]) / span : 1.0;
+      for (size_t i = 0; i < kJoints; ++i) {v[i] = v_[older][i] + (v_[newer][i] - v_[older][i]) * s;}
+      return v;
+    }
+    newer = older;
+  }
+  return v_[newer];   // older than the history: its oldest sample
 }
 
 void ContactCap::configure(const Config & c)
@@ -162,7 +194,7 @@ void ArmCore::activate(double now, const Feedback & fb)
   if (!all_finite(fb.q)) {throw std::runtime_error("activation refused: joint feedback is not finite");}
   const Vec7 held = clamp(fb.q);
   double arm_step, carriage_step;
-  step_size(held, fb.q, arm_step, carriage_step);
+  step_size(cfg_.carriage, held, fb.q, arm_step, carriage_step);
   if (arm_step > cfg_.step_limit_rad || carriage_step > cfg_.step_limit_m) {
     throw std::runtime_error("activation refused: clamping the measured pose would exceed the first-command "
             "step limit; power off and reposition the out-of-range joint before restarting");
@@ -183,6 +215,7 @@ void ArmCore::activate(double now, const Feedback & fb)
   phase_ = keep ? Phase::kLatched : Phase::kRunning;
   first_pending_ = true;
   hold_ = last_target_ = held;
+  sent_.add(now, held);   // activation commands the pose it holds
   if (!keep) {
     safety_[kLatched] = 0;
     safety_[kReason] = names::kLatchNone;
@@ -218,7 +251,20 @@ Output ArmCore::hold_now(double now, const Feedback & fb, int reason)
     hold_ = clamp(fb.q);
   }
   latch(now, fb, reason);
+  sent_.add(now, hold_);
   return hold();
+}
+
+bool ArmCore::carriage_pushed(const Feedback & fb, const Vec7 & target, const Vec7 & ff)
+{
+  if (!cfg_.carriage) {return false;}
+  const size_t c = *cfg_.carriage;
+  double arm_speed = 0;
+  for (size_t i = 0; i < kJoints; ++i) {
+    if (i != c) {arm_speed = std::max(arm_speed, std::fabs(fb.qd[i]));}
+  }
+  const bool aligning = std::isfinite(ff[c]) && std::fabs(ff[c]) > 1e-6;
+  return cap_.observe(fb.effort[c], fb.q[c], target[c], arm_speed, aligning);
 }
 
 Output ArmCore::trip(double now, const Feedback & fb, int reason)
@@ -247,10 +293,15 @@ Output ArmCore::track(const Vec7 & q, const Vec7 & qd)
   return out;
 }
 
+Vec7 ArmCore::answered(double now, const Vec7 & target) const
+{
+  return cfg_.command_delay_s > 0 ? sent_.at(now - cfg_.command_delay_s) : target;
+}
+
 bool ArmCore::stalled(double now, const Vec7 & target, const Vec7 & q)
 {
   double error = 0, unused = 0;
-  step_size(target, q, error, unused);
+  step_size(cfg_.carriage, target, q, error, unused);
   if (error < cfg_.stall_error_rad) {
     stall_since_ = -1;
     return false;
@@ -262,7 +313,7 @@ bool ArmCore::stalled(double now, const Vec7 & target, const Vec7 & q)
   }
   if (now - stall_since_ <= cfg_.stall_time_s) {return false;}
   double progress = 0;
-  step_size(q, stall_anchor_, progress, unused);
+  step_size(cfg_.carriage, q, stall_anchor_, progress, unused);
   if (progress >= cfg_.stall_progress_rad) {
     stall_since_ = now;
     stall_anchor_ = q;
@@ -286,7 +337,7 @@ bool ArmCore::guard_tripped(double now, const Vec7 & target, const Feedback & fb
   // millimetre. The force is judged against its mean over the first contact_baseline_s after
   // arming, which carries the pose's gravity-compensation and friction bias.
   if (cfg_.contact_force_n > 0) {
-    const double force = tip_force_along_tool(fk_, fb.q, fb.effort);
+    const double force = tip_force_along_tool(fk_, cfg_.carriage, fb.q, fb.effort);
     if (std::isfinite(force)) {
       if (now - guard_armed_at_ < cfg_.tip_lag_arm_after_s + cfg_.contact_baseline_s) {
         force_sum_ += force;
@@ -351,29 +402,6 @@ bool ArmCore::snagged(double now, const Vec7 & target, const Feedback & fb)
   return true;
 }
 
-Vec7 ArmCore::joints_at(double t) const
-{
-  Vec7 q;
-  q.fill(kNaN);
-  if (hist_size_ == 0) {return q;}
-  auto at = [this](size_t back) {return (hist_head_ + kHistory - 1 - back) % kHistory;};
-  size_t newer = at(0);
-  if (t >= hist_t_[newer]) {return hist_q_[newer];}
-  for (size_t back = 1; back < hist_size_; ++back) {
-    const size_t older = at(back);
-    if (hist_t_[older] <= t) {
-      const double span = hist_t_[newer] - hist_t_[older];
-      const double s = span > 0 ? (t - hist_t_[older]) / span : 1.0;
-      for (size_t i = 0; i < kJoints; ++i) {
-        q[i] = hist_q_[older][i] + (hist_q_[newer][i] - hist_q_[older][i]) * s;
-      }
-      return q;
-    }
-    newer = older;
-  }
-  return hist_q_[newer];   // older than the history: its oldest sample
-}
-
 bool ArmCore::probe_stop(double now, const ProbeStatus & probe, Vec7 & q_edge, bool & fault)
 {
   // Moving toward the ball without a working probe could push its stylus past its overtravel.
@@ -404,23 +432,29 @@ bool ArmCore::probe_stop(double now, const ProbeStatus & probe, Vec7 & q_edge, b
   return true;
 }
 
-double tip_force_along_tool(const TipFk & fk, const Vec7 & q, const Vec7 & tau)
+double tip_force_along_tool(
+  const TipFk & fk, std::optional<size_t> carriage, const Vec7 & q, const Vec7 & tau)
 {
   if (!fk) {return kNaN;}
   constexpr double h = 1e-6;
   const TipPose p0 = fk(q);
-  double jac[3][6];
-  for (size_t j = 0; j < 6; ++j) {
+  std::array<size_t, kJoints> joint{};   // the revolute joints, the Jacobian's columns
+  size_t n = 0;
+  for (size_t j = 0; j < kJoints; ++j) {
+    if (j != carriage) {joint[n++] = j;}
+  }
+  double jac[3][kJoints];
+  for (size_t c = 0; c < n; ++c) {
     Vec7 dq = q;
-    dq[j] += h;
+    dq[joint[c]] += h;
     const TipPose pj = fk(dq);
-    for (size_t i = 0; i < 3; ++i) {jac[i][j] = (pj.p[i] - p0.p[i]) / h;}
+    for (size_t i = 0; i < 3; ++i) {jac[i][c] = (pj.p[i] - p0.p[i]) / h;}
   }
   double a[3][3] = {}, b[3] = {};
   for (size_t i = 0; i < 3; ++i) {
-    for (size_t j = 0; j < 6; ++j) {b[i] += jac[i][j] * tau[j];}
+    for (size_t c = 0; c < n; ++c) {b[i] += jac[i][c] * tau[joint[c]];}
     for (size_t k = 0; k < 3; ++k) {
-      for (size_t j = 0; j < 6; ++j) {a[i][k] += jac[i][j] * jac[k][j];}
+      for (size_t c = 0; c < n; ++c) {a[i][k] += jac[i][c] * jac[k][c];}
     }
     a[i][i] += 1e-9;
   }
@@ -445,14 +479,10 @@ void ArmCore::start_landing(double now, const Feedback & fb)
   phase_ = Phase::kLanding;
   motion_t0_ = now;
   from_ = clamp(fb.q);
-  // arm_recover: the staged sweep keeps the measured carriage; the sleep pose is every joint at
-  // zero except the wrist roll, with the carriage at its configured rest.
-  staged_ = clamp(cfg_.staged_positions);
-  staged_[kCarriage] = from_[kCarriage];
-  sleep_.fill(0.0);
-  sleep_[kWristRoll] = cfg_.staged_positions[kWristRoll];
-  sleep_[kCarriage] = cfg_.staged_positions[kCarriage];
-  sleep_ = clamp(sleep_);
+  // arm_recover: the staged sweep keeps the measured carriage; the sleep then ends at the staged pose (the WXAI's:
+  // every joint at zero but the wrist roll), the carriage at its rest.
+  staged_ = sleep_ = clamp(cfg_.staged_positions);
+  if (cfg_.carriage) {staged_[*cfg_.carriage] = from_[*cfg_.carriage];}
   safety_[kLatched] = 0;
   safety_[kReason] = names::kLatchNone;
   safety_[kTripped] = 0;
@@ -477,7 +507,7 @@ Output ArmCore::landing(double now, const Feedback & fb)
   }
   if (t >= t3 + kSettleS) {
     double arm = 0, carriage = 0;
-    step_size(fb.q, sleep_, arm, carriage);
+    step_size(cfg_.carriage, fb.q, sleep_, arm, carriage);
     if (arm <= cfg_.landing_verify_rad && carriage <= cfg_.landing_verify_carriage_m) {
       phase_ = Phase::kLanded;
       safety_[kLanding] = 0;
@@ -504,13 +534,17 @@ Output ArmCore::tick(
   double now, const Feedback & fb, const Commands & cmd, const EstopStatus & estop,
   bool controller_error, const ProbeStatus & probe)
 {
+  const Output out = decide(now, fb, cmd, estop, controller_error, probe);
+  if (out.send) {sent_.add(now, out.q);}
+  return out;
+}
+
+Output ArmCore::decide(
+  double now, const Feedback & fb, const Commands & cmd, const EstopStatus & estop,
+  bool controller_error, const ProbeStatus & probe)
+{
   observe_feedback(now, fb);
-  if (all_finite(fb.q)) {
-    hist_t_[hist_head_] = now;
-    hist_q_[hist_head_] = fb.q;
-    hist_head_ = (hist_head_ + 1) % kHistory;
-    hist_size_ = std::min(hist_size_ + 1, kHistory);
-  }
+  if (all_finite(fb.q)) {measured_.add(now, fb.q);}
   safety_[kSource] = estop.source;
   safety_[kOk] = estop.ok ? 1 : 0;
   safety_[kAge] = estop.age_s;
@@ -548,7 +582,7 @@ Output ArmCore::tick(
   } else if (phase_ == Phase::kRunning || phase_ == Phase::kLanding) {
     bool fast = false;
     for (size_t i = 0; i < kJoints; ++i) {
-      const double limit = i == kCarriage ? cfg_.over_velocity_m_s : cfg_.over_velocity_rad_s;
+      const double limit = i == cfg_.carriage ? cfg_.over_velocity_m_s : cfg_.over_velocity_rad_s;
       fast = fast || !(std::fabs(fb.qd[i]) <= limit);
     }
     if (fast) {latch(now, fb, names::kLatchOverVelocity);}
@@ -573,7 +607,7 @@ Output ArmCore::tick(
     if (phase_ == Phase::kRetracting) {set_event("unlatch refused: carriage retracting");}
     if (phase_ == Phase::kLatched) {
       double arm = 0, carriage = 0;
-      step_size(cmd.q, hold_, arm, carriage);
+      step_size(cfg_.carriage, cmd.q, hold_, arm, carriage);
       if (!estop.ok) {
         safety_[kReason] = estop_reason;
       } else if (controller_error) {
@@ -609,14 +643,14 @@ Output ArmCore::tick(
         if (t >= cfg_.carriage_retract_s + kSettleS) {
           phase_ = Phase::kLatched;
           std::ostringstream text;
-          text << "carriage retract: measured " << fb.q[kCarriage] * 1e3 << " mm (target "
-               << hold_[kCarriage] * 1e3 << " mm)";
+          text << "carriage retract: measured " << fb.q[*cfg_.carriage] * 1e3 << " mm (target "
+               << hold_[*cfg_.carriage] * 1e3 << " mm)";
           set_event(text.str());
         }
         return out;
       }
     case Phase::kLanding:
-      if (stalled(now, last_target_, fb.q)) {
+      if (stalled(now, answered(now, last_target_), fb.q)) {
         latch(now, fb, names::kLatchStall);
         return hold();
       }
@@ -629,7 +663,7 @@ Output ArmCore::tick(
   if (first_pending_) {
     if (!all_finite(cmd.q)) {return hold();}
     double arm = 0, carriage = 0;
-    step_size(cmd.q, fb.q, arm, carriage);
+    step_size(cfg_.carriage, cmd.q, fb.q, arm, carriage);
     const bool warm = nonzero_since_ >= 0 && now - nonzero_since_ >= cfg_.feedback_warmup_s;
     if (!warm || !(arm <= cfg_.step_limit_rad) || !(carriage <= cfg_.step_limit_m)) {
       latch(now, fb, names::kLatchStepRefused);
@@ -639,7 +673,8 @@ Output ArmCore::tick(
   }
   const Vec7 target = all_finite(cmd.q) ? clamp(cmd.q) : last_target_;
   const Vec7 ff = all_finite(cmd.q) ? cmd.qd : Vec7{};
-  if (stalled(now, target, fb.q)) {
+  const Vec7 answering = answered(now, target);
+  if (stalled(now, answering, fb.q)) {
     latch(now, fb, names::kLatchStall);
     return hold();
   }
@@ -655,11 +690,9 @@ Output ArmCore::tick(
       return hold();
     }
   }
-  if (guard_tripped(now, target, fb)) {return trip(now, fb, names::kLatchGuardTipLag);}
-  double arm_speed = 0;
-  for (size_t i = 0; i < kCarriage; ++i) {arm_speed = std::max(arm_speed, std::fabs(fb.qd[i]));}
-  const bool aligning = std::isfinite(ff[kCarriage]) && std::fabs(ff[kCarriage]) > 1e-6;
-  if (cap_.observe(fb.effort[kCarriage], fb.q[kCarriage], target[kCarriage], arm_speed, aligning)) {
+  if (guard_tripped(now, answering, fb)) {return trip(now, fb, names::kLatchGuardTipLag);}
+  if (carriage_pushed(fb, target, ff)) {
+    const size_t c = *cfg_.carriage;
     latch(now, fb, names::kLatchCarriageContact);
     if (!cfg_.carriage_qualified) {   // no retract has been exercised on this carriage: hold
       set_event("carriage deflected over its screen: holding (an unqualified carriage never retracts)");
@@ -668,15 +701,15 @@ Output ArmCore::tick(
     phase_ = Phase::kRetracting;
     motion_t0_ = now;
     from_ = hold_;
-    hold_[kCarriage] = std::min(cfg_.carriage_retract_m, cfg_.upper[kCarriage] - kLimitMargin);
-    if (!(cfg_.lower[kCarriage] < cfg_.upper[kCarriage])) {hold_[kCarriage] = cfg_.carriage_retract_m;}
+    hold_[c] = std::min(cfg_.carriage_retract_m, cfg_.upper[c] - kLimitMargin);
+    if (!(cfg_.lower[c] < cfg_.upper[c])) {hold_[c] = cfg_.carriage_retract_m;}
     set_event("carriage contact over its cap: retracting");
     min_jerk(from_, hold_, 0.0, cfg_.carriage_retract_s, out.q, out.qd);
     out.send = true;
     return out;
   }
   // After the carriage cap: a carriage pushed past it in the same tick retracts, as it would unguarded.
-  if (snagged(now, target, fb)) {return trip(now, fb, names::kLatchGuardSnag);}
+  if (snagged(now, answering, fb)) {return trip(now, fb, names::kLatchGuardSnag);}
   return track(target, ff);
 }
 

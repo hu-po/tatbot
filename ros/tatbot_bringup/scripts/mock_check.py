@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bring the stack up on mock hardware in an isolated graph and check the control layer.
 
-    python3 mock_check.py [--domain 52] [--port 7452 | 0] [--arms right] [-- LAUNCH_ARG:=VALUE ...]
+    python3 mock_check.py [--domain 52] [--port 7452 | 0] [--arms ARMS] [-- LAUNCH_ARG:=VALUE ...]
 
 It starts its own rmw_zenohd on 127.0.0.1:<port> (0 = any free port) and `ros2 launch
 tatbot_bringup stack.launch.py hardware:=mock page_source:=fixed touch:=false` against it, then:
@@ -145,14 +145,17 @@ class Probe:
         return {f"{arm}_gpio_states_ok": ok}
 
     def jtc(self, arm: str) -> dict:
-        """0.05 rad on joint_0 and 2 mm of carriage over 1 s, then back over 1 s."""
+        """0.05 rad on the arm's base joint and 2 mm of its carriage, if it has one, over 1 s, then back over 1 s."""
         from control_msgs.action import FollowJointTrajectory
         from rclpy.action import ActionClient
+        from tatbot_description import arm_model
         from trajectory_msgs.msg import JointTrajectoryPoint
 
+        model = arm_model.for_arm(arm)
         joints = self.names.joint_names(arm)
+        moving = {model.of_roles("base")[0]: 0.05} | ({} if model.carriage is None else {model.carriage: 0.002})
         start_q = [self.latest.get(j, float("nan")) for j in joints]
-        target = [q + d for q, d in zip(start_q, (0.05, 0, 0, 0, 0, 0, 0.002), strict=True)]
+        target = [q + moving.get(i, 0.0) for i, q in enumerate(start_q)]
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = list(joints)
         for q, t in ((target, 1), (start_q, 2)):
@@ -167,13 +170,14 @@ class Probe:
         code = done.result.error_code if done is not None else None
         self.spin_until(lambda: False, 0.3)
         error = max(abs(self.latest.get(j, float("nan")) - q) for j, q in zip(joints, start_q, strict=True))
-        moved = (self.peak.get(joints[0], 0.0), self.peak.get(joints[6], 0.0))
+        moved = [self.peak.get(joints[i], 0.0) for i in moving]
         safety = self.safety.get(arm, {})
         latched = (safety.get("latched"), safety.get("latch_reason"))
         return {f"{arm}_jtc_error_code": code, f"{arm}_jtc_end_error": error,
                 f"{arm}_jtc_peak": [round(v, 5) for v in moved], f"{arm}_latched": latched,
                 f"{arm}_jtc_ok": (code == FollowJointTrajectory.Result.SUCCESSFUL and error < 1e-3
-                                  and moved[0] > 0.045 and moved[1] > 0.0018 and latched == (0.0, 0.0))}
+                                  and all(m > 0.9 * d for m, d in zip(moved, moving.values(), strict=True))
+                                  and latched == (0.0, 0.0))}
 
     def close(self):
         self.node.destroy_node()
@@ -200,10 +204,12 @@ def checks(arms: list[str], timeout_s: float) -> dict:
 
 
 def main(argv: list[str]) -> int:
+    from tatbot_description import drawing_arm
+
     parser = argparse.ArgumentParser(prog="mock_check.py")
     parser.add_argument("--domain", type=int, default=52)
     parser.add_argument("--port", type=int, default=0, help="router port; 0 = a free port")
-    parser.add_argument("--arms", default="right")
+    parser.add_argument("--arms", default=drawing_arm())
     parser.add_argument("--timeout", type=float, default=90.0, help="seconds for the controllers to activate")
     parser.add_argument("--logs", default=None, help="directory for router.log and launch.log")
     parser.add_argument("launch_args", nargs="*", help="extra NAME:=VALUE launch arguments")

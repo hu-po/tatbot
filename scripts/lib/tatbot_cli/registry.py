@@ -17,7 +17,7 @@ from tatbot_cli.arguments import Arguments
 OFFLINE = "offline"          # files only
 SENSOR = "sensor"            # hardware observations
 MOTION_HUMAN = "motion-human"  # arm moves under direct human guidance
-MOTION_AUTO = "motion-auto"    # arm moves autonomously (rollouts, dips)
+MOTION_AUTO = "motion-auto"    # arm moves autonomously (drawing, calibration)
 MUTATES_CONFIG = "mutates-config"  # writes a tracked config from a measurement
 REMOTE = "remote"            # changes another node or service
 
@@ -79,9 +79,6 @@ class Plan:
     notes: list[str] = field(default_factory=list)
     kind: str = "exec"
     action: Callable[[], int] | None = field(default=None, repr=False)
-    # What the verb writes right before the exec, `{path: text}` (a launch
-    # manifest the argv names): shown by `--dry-run`, written by a real run.
-    files: dict[str, str] = field(default_factory=dict)
 
 
 # The canonical order globals are re-emitted in, whatever order they were
@@ -100,7 +97,6 @@ class Invocation:
     the remote is already the named node and must not hop again.
     """
 
-    original: list[str]
     global_tokens: list[str]          # normalized globals, routing excluded
     command_tokens: list[str]         # [noun, *owned tokens]
     passthrough: list[str]
@@ -169,7 +165,6 @@ class Verb:
     example: tuple[str, ...] = ()  # args after the verb; used by selfcheck + docs
     args: Callable[[argparse.ArgumentParser], None] | None = None
     needs_tool: bool = False       # --ee-tool must be stated
-    tool_arm: str = "right"        # physical arm whose fitted-tool pointer supplies the default
     launch_id: bool = False        # the launch carries an automatic launch id (ledgered + audited by arm_gate)
     passthrough: str | None = None # what receives the args after `--`
     tty: bool = False              # --on hops with `ssh -t`
@@ -249,7 +244,6 @@ NOUNS = {
     "vision": ("operator", "cameras, calibration, tracking, deploy"),
     "live": ("operator", "every live sensor in one Rerun viewer"),
     "node": ("administration", "the node→role map and ssh dispatch"),
-    "research": ("development", "DBV3 paired drawing research with frozen inputs and durable recovery"),
     "drawingbot": ("development", "DrawingBotV3 stroke experiments and preference review"),
     "inkmap": ("development", "ground InkLang placements and preview tattoos on canonical bodies"),
     "inkgen": ("development", "generate tattoo artwork for Inkmap"),

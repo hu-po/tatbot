@@ -1,0 +1,39 @@
+# The Trossen WidowX AI as the stack drives it (ros/README.md, Names). Every joint index the stack and the
+# scripts use comes from this file through scripts/lib/arm_model.py, which reads tool_spec's YAML subset (maps,
+# scalars, JSON arrays); config/arms.json names the model each physical arm is. Joint names are the URDF's, after
+# the arm's prefix (urdf/tatbot.urdf: right/joint_0 ...).
+format: tatbot.arm-model
+version: 1
+id: trossen-wxai
+urdf: urdf/tatbot.urdf   # its chain under each arm's prefix, with the rig's links
+controller: trossen      # driven through Trossen's SDK (tatbot_hardware sdk_backend.cpp)
+joints: [   # controller order
+  {"name": "joint_0", "kind": "revolute", "role": "base"},
+  {"name": "joint_1", "kind": "revolute", "role": "shoulder"},
+  {"name": "joint_2", "kind": "revolute", "role": "elbow"},
+  {"name": "joint_3", "kind": "revolute", "role": "wrist"},
+  {"name": "joint_4", "kind": "revolute", "role": "wrist"},
+  {"name": "joint_5", "kind": "revolute", "role": "wrist"},   # turns the tool about joint 6's axis, 45 deg off the pen's
+  # The tool rides the left finger carriage (prismatic, metres): passive give and the contact cap while drawing
+  # (ros/README.md section 8), held at its bias unless motion.yaml carriage.ik.
+  {"name": "left_carriage_joint", "kind": "prismatic", "role": "carriage"}
+]
+# The landing's sleep pose (tatbot_hardware's landing ends here; inspect and calibration views start from it).
+rest: [0.0, 0.0, 0.0, 0.0, 0.0, 1.5707963267948966, 0.0]
+# Joint-space cost of an inspect view's move: wrist moves cost more, the carriage nothing.
+view_weights: [1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 0.0]
+# Each wrist joint's range for inspect's own moves, in joint order: the wrist carries the cables. A week of
+# draws, dips, set-ups and calibration kept to -1.53..0.01, -1.05..0.95 and -0.17..3.03 (to 2026-11-05); this is
+# that and 0.3 rad, the last joint to its limit. Gauge holds in a line stood a failed run's page on its edge, and
+# inspect turned the wrist over half a turn from rest into them (2026-11-05).
+wrist_range_rad: [[-1.85, 0.30], [-1.35, 1.25], [-0.50, 3.14]]
+# The wrist's links as spheres about their frames (link, radius m), which a station move keeps clear of the overhead
+# camera's post (tatbot_calib.reach): the flange, the wrist and the forearm.
+wrist_spheres: [["link_6", 0.045], ["link_5", 0.045], ["link_4", 0.050]]
+# The controller's pure delay from a command to the measurement answering it, which tatbot_hardware's stall,
+# tip-lag and snag guards take out before their thresholds. 0: the WXAI's ~70 ms tracking lag (ros/README.md
+# section 1.3) is what those thresholds were set on.
+command_delay_s: 0.0
+# The joints whose zero offsets kinematic calibration fits (config/workspace.yaml joint_offsets_rad): joint_0 is
+# a base yaw the registration already carries, joint_5 the tool seat's roll, and the carriage is not revolute.
+calibrated_offsets: [1, 2, 3, 4]

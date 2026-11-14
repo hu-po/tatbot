@@ -1,6 +1,6 @@
 """Who each command is for, and why — the whole-CLI disposition, in one place.
 
-199 commands is an inventory, not a menu. Ordinary help now shows the commands
+The full command list is an inventory, not a menu. Ordinary help now shows the commands
 an operator or developer reaches for; everything else stays one flag away
 (`--help-all`), fully documented in the machine schema and the generated
 reference. Nothing was removed to make a shorter list: hiding a command from a
@@ -95,13 +95,16 @@ DISPOSITION: dict[str, tuple[str, str]] = {
     "ros station": (PRIMARY, "where the palette is now, from its roof tag; calibration never uses a stored pose"),
     "ros calib": (PRIMARY, "the automatic tool-tip calibration on the station probe, between two fresh station fixes"),
     "ros palette": (PRIMARY, "what each palette cap holds and its measured ink level, which a dip reads"),
+    "ros cartridge": (PRIMARY, "which cartridge is in an arm's mount and how its tip stands, recorded on the ROS owner"),
     "ros setup": (PRIMARY, "the one step after setting the rig up anywhere: arm, camera, palette and stencil measured"),
     "ros register": (PRIMARY, "where an arm stands in the overhead camera's world; the stencil page's pose needs it"),
     "ros chain": (ADVANCED, "judging a registration's wrist-tag seat and joint offsets before anyone adopts them"),
     "ros jog": (PRIMARY, "the first real motion of a bench morning: one joint, a few millimetres"),
     "ros inspect": (PRIMARY, "the wrist camera's look at a finished drawing: coverage, placement on the print, then rest"),
+    "ros views": (ADVANCED, "the lab's before and after frames; `lab capture` runs it for a planned run"),
     "ros decide": (PRIMARY, "the operator's continue or land after an e-stop"),
     "ros cancel": (PRIMARY, "stop a running draw or touch from any terminal; the arm holds where it is"),
+    "ros timing": (ADVANCED, "diagnose camera-to-controller age and missing timing evidence in a recorded run"),
     "ros logs": (PRIMARY, "debugging a ROS run starts here"),
     "ros relay-install": (ADVANCED, "one-time setup of the palette Pi's e-stop relay"),
 
@@ -161,18 +164,7 @@ DISPOSITION: dict[str, tuple[str, str]] = {
     "body bootstrap": (ADVANCED, "one-time body-model cache setup"),
     "body audit": (ADVANCED, "hash audit of that cache"),
 
-    # --- research, drawingbot, inkmap, inkgen ------------------------------------
-    "research init": (EXPERIMENTAL, "DBV3 study init through the production drawing workflow"),
-    "research candidate": (EXPERIMENTAL, "DBV3 study candidate through the production drawing workflow"),
-    "research review": (EXPERIMENTAL, "shared Inkmap review of acquired artwork and production costs"),
-    "research feedback": (EXPERIMENTAL, "records human preferences against exact reviewed artifacts"),
-    "research prepare": (EXPERIMENTAL, "DBV3 study prepare through the production drawing workflow"),
-    "research page": (EXPERIMENTAL, "DBV3 study page through the production drawing workflow"),
-    "research run": (EXPERIMENTAL, "DBV3 study run through the production drawing workflow"),
-    "research score": (EXPERIMENTAL, "DBV3 study score through the production drawing workflow"),
-    "research decide": (EXPERIMENTAL, "DBV3 study decide through the production drawing workflow"),
-    "ros ready": (EXPERIMENTAL, "complete normal startup before freezing a research runtime"),
-    "ros evidence": (EXPERIMENTAL, "reads durable research slot claims and their ROS execution evidence"),
+    # --- drawingbot, inkmap, inkgen ------------------------------------
     "drawingbot generate": (PRIMARY, "acquires one drawing at its intended physical size with a recorded recipe"),
     "drawingbot export": (EXPERIMENTAL, "replays native acquisition independently of compilation"),
     "drawingbot container": (EXPERIMENTAL, "packages and verifies the mounted-app acquisition runtime"),

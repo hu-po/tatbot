@@ -1,6 +1,7 @@
 """The generated description: one root, the carriage travel, the TCP from workspace.yaml, and the
 <ros2_control> systems for mock, fake and real hardware."""
 import json
+import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -12,8 +13,12 @@ from tatbot_description import hardware_params, load_stack, names, repo_root, ro
 
 # `real` needs the private arm addresses (config/profiles/<profile>.json); a public clone has none.
 HAS_PROFILE = (repo_root() / "config" / "profiles" / f"{load_stack()['profile']}.json").is_file()
-VARIANTS = [pytest.param(hw, arms, marks=pytest.mark.skipif(hw == "real" and not HAS_PROFILE, reason="no profile"))
-            for hw in (None, "mock", "fake", "real") for arms in (names.ARMS,)]
+VARIANTS = [pytest.param(hw, ("right",), id=f"{hw}-right",
+                         marks=pytest.mark.skipif(hw == "real" and not HAS_PROFILE, reason="no profile"))
+            for hw in (None, "mock", "fake", "real")] + [
+    pytest.param(hw, ("xarm",), id=f"{hw}-xarm") for hw in (None, "mock", "fake")]   # no real backend for it yet
+ARMS_JSON = json.loads((repo_root() / "config" / "arms.json").read_text())["arms"]
+TROSSEN_ARMS = tuple(arm for arm in names.ARMS if ARMS_JSON[arm]["controller_config"] is not None)
 
 
 def _joints(robot):
@@ -68,19 +73,22 @@ def test_joint_corrections_change_geometry_at_raw_encoders_without_changing_limi
 
     import numpy as np
     sys.path.insert(0, str(repo_root()/'scripts/vision'))
-    from urdf_kinematics import UrdfChain, driver_joint_names
+    from urdf_kinematics import UrdfChain
 
     repo = repo_root()
     (tmp_path/'config').mkdir()
     (tmp_path/'urdf').symlink_to(repo/'urdf', target_is_directory=True)
-    for source in ('arms.json', 'trossen'):
+    for source in ('arms.json', 'arm-models', 'trossen', 'tools'):
         (tmp_path/'config'/source).symlink_to(repo/'config'/source)
-    # Both models set their own offsets: the committed workspace carries adopted ones.
-    workspace = yaml.safe_load((repo/'config/workspace.yaml').read_text())
+    # Both models set their own offsets: the committed workspace carries adopted ones. The file is edited in place,
+    # as its adopt steps edit it: tool_spec reads a YAML subset (inline arrays), not every YAML a dump can write.
+    workspace = (repo/'config/workspace.yaml').read_text()
+    right = workspace.index('\nright:')
+    line = re.compile(r'(?m)^  joint_offsets_rad: .*$')
 
     def describe(joint_offsets):
-        workspace['right']['joint_offsets_rad'] = joint_offsets
-        (tmp_path/'config/workspace.yaml').write_text(yaml.safe_dump(workspace))
+        edited = workspace[:right] + line.sub(f'  joint_offsets_rad: {json.dumps(joint_offsets)}', workspace[right:], 1)
+        (tmp_path/'config/workspace.yaml').write_text(edited)
         return robot_description(tmp_path, arms=('right',))
 
     offsets = [0., .012, -.018, .009, -.007, 0., 0.]
@@ -92,8 +100,8 @@ def test_joint_corrections_change_geometry_at_raw_encoders_without_changing_limi
         models.append(UrdfChain(path))
     for q in ([0., -.3, .5, -.8, .4, .2, 0.], [.4, -.8, 1., -.5, .7, -.4, .02],
               [-.4, -.5, .8, -.9, -.3, .9, -.003]):
-        raw = dict(zip(driver_joint_names('right'), q, strict=True))
-        shifted = dict(zip(driver_joint_names('right'), np.array(q)+offsets, strict=True))
+        raw = dict(zip(names.joint_names('right'), q, strict=True))
+        shifted = dict(zip(names.joint_names('right'), np.array(q)+offsets, strict=True))
         for frame in ('right/tcp', 'right/realsense_color_optical_frame'):
             np.testing.assert_allclose(models[1].link_pose(frame, raw), models[0].link_pose(frame, shifted), atol=1e-12)
     before, after = _joints(ET.fromstring(nominal)), _joints(ET.fromstring(corrected))
@@ -130,8 +138,12 @@ def test_ros2_control_systems(hardware, arms):
             assert plugin == "mock_components/GenericSystem" and params == {}
         else:
             assert plugin == "tatbot_hardware/TatbotArm"
-            extra = ("fake_page_z", "fake_page_stiffness_n_m") if hardware == "fake" else ()  # stack.yaml fake.* is set
-            assert tuple(params) == names.HARDWARE_PARAMETERS + extra
+            trossen = arm in TROSSEN_ARMS
+            plant = () if trossen else ("fake_delay_s", "fake_lag_s")   # its model's fake_plant
+            extra = (*plant, "fake_page_z", "fake_page_stiffness_n_m") if hardware == "fake" else ()   # stack.yaml fake.*
+            other = names.XARM_HARDWARE_PARAMETERS if trossen else names.TROSSEN_HARDWARE_PARAMETERS
+            expected = tuple(k for k in names.HARDWARE_PARAMETERS if k not in other)
+            assert tuple(params) == expected + extra
             assert (params["arm"], params["sdk"]) == (arm, hardware)
             assert (params["base_frame"], params["tcp_frame"]) == (names.base_frame(arm), names.tcp_frame(arm))
         joints = system.findall("joint")
@@ -148,13 +160,14 @@ def test_ros2_control_systems(hardware, arms):
         if hardware == "mock":
             assert {k: float(v.text) for k, v in initial.items() if v is not None and v.text is not None} == {
                 k: (1.0 if k == "estop_ok" else 0.0) for k in names.SAFETY_STATE_INTERFACES}
-            staged = yaml.safe_load((repo_root() / "config" / "trossen" / "tatbot.yaml").read_text())
+            from tatbot_description import rest_positions
+
             positions = []
             for j in joints:
                 p_elem = j.find("state_interface/param")
                 assert p_elem is not None and p_elem.text is not None
                 positions.append(float(p_elem.text))
-            assert positions == staged["follower"]["staged_positions"]
+            assert positions == rest_positions(None, arm)   # the WXAI's golden staged pose, the xArm's model rest
         else:
             assert all(v is None for v in initial.values())
 
@@ -194,7 +207,7 @@ def test_a_stack_started_on_the_calibration_profile_connects_with_its_velocity_i
 def test_the_palm_and_carriage_offset_come_from_the_checkout(tmp_path):
     root = repo_root()
     workspace = yaml.safe_load((root / "config" / "workspace.yaml").read_text())
-    for arm in names.ARMS:
+    for arm in TROSSEN_ARMS:
         params = hardware_params(None, arm, load_stack(), "fake")
         payload = workspace[arm].get("payload") or {}
         if payload.get("identified_with") == workspace[arm]["tool_id"]:
@@ -213,9 +226,10 @@ def test_the_palm_and_carriage_offset_come_from_the_checkout(tmp_path):
         for rel in ("config/arms.json", "config/trossen/follower.yaml", "config/trossen/leader.yaml"):
             (copy / rel).parent.mkdir(parents=True, exist_ok=True)
             (copy / rel).write_text((root / rel).read_text())
-        changed = yaml.safe_load((root / "config" / "workspace.yaml").read_text())
-        changed["right"]["payload"] = {**changed["right"]["payload"], field: value}
-        (copy / "config" / "workspace.yaml").write_text(yaml.safe_dump(changed))
+        text = (root / "config" / "workspace.yaml").read_text()   # edited in place: tool_spec reads a YAML subset
+        right = text.index("\nright:")
+        text = text[:right] + re.sub(rf"(?m)^    {field}: .*$", f"    {field}: {value}", text[right:], count=1)
+        (copy / "config" / "workspace.yaml").write_text(text)
         from tatbot_description import _palm
         arm_cfg = json.loads((copy / "config" / "arms.json").read_text())["arms"]["right"]
         assert _palm(copy, arm_cfg) == {"palm_mass_kg": "", "palm_com_m": ""}
@@ -261,21 +275,112 @@ def test_tcp_through_pinocchio():
 def test_fake_gets_no_arm_address_and_an_optional_page():
     stack = load_stack()
     params = hardware_params(None, "right", stack, "fake")
-    # stack.yaml puts the fake paper at page.fixed.right's z, so `up --hardware fake --page fixed` touches it
+    # the fake paper is at page.fixed.<arm>'s z, so `up --hardware fake --page fixed` touches it
     assert params["ip"] == "" and float(params["fake_page_z"]) == stack["page"]["fixed"]["right"]["xyz"][2]
-    stack["fake"] = {"page_z": None}
+    assert float(hardware_params(None, "xarm", stack, "fake")["fake_page_z"]) == stack["page"]["fixed"]["xarm"]["xyz"][2]
+    stack["fake"] = {"page": False}
     assert "fake_page_z" not in hardware_params(None, "right", stack, "fake")
     if HAS_PROFILE:
         assert "fake_page_z" not in hardware_params(None, "right", stack, "real")
 
 
-@pytest.mark.parametrize("arm", names.ARMS)
+@pytest.mark.parametrize("arm", TROSSEN_ARMS)
 def test_carriage_limits_are_the_arms_controller_config(arm):
-    import json
-
-    config = json.loads((repo_root() / "config" / "arms.json").read_text())["arms"][arm]["controller_config"]
+    config = ARMS_JSON[arm]["controller_config"]
     limit = yaml.safe_load((repo_root() / config).read_text())["joint_limits"][6]
     carriage = _joints(ET.fromstring(robot_description(arms=(arm,))))[names.joint_names(arm)[-1]].find("limit")
     assert carriage is not None and "lower" in carriage.attrib and "upper" in carriage.attrib
     assert (float(carriage.attrib["lower"]), float(carriage.attrib["upper"])) == pytest.approx(
         (limit["position_min"], limit["position_max"]), abs=1e-6)
+
+
+def test_the_xarm_comes_from_its_own_description_with_its_own_kinematics():
+    """urdf/xarm7.urdf (scripts/gen_arm_urdf.py): at zero the flange stands where config/xarm-kinematics.yaml's joint
+    origins chain it, this arm's factory calibration, within 3 mm of where the xArm 7's DH parameters put it (206 mm
+    out, 52.5 + 77.5 + 76, and 120.5 mm up, 267 + 293 - 342.5 - 97), pointing down; at its model's rest the pen is
+    straight down 400 mm out, as the arm stood at that home (2026-11-03)."""
+    import numpy as np
+    import yaml
+    from tatbot_description import arm_model, repo_root
+    from tatbot_description.transforms import rpy_matrix
+    from tatbot_motion import Kinematics
+
+    text = robot_description(arms=("xarm",))
+    robot = ET.fromstring(text)
+    links = {link.attrib["name"] for link in robot.findall("link")}
+    assert {"xarm/base_link", "xarm/link7", "xarm/tool_mount", "xarm/tattoo_needle", "xarm/tcp"} <= links
+    assert not any(n.startswith("right/") for n in links)
+    meshes = [m.get("filename") for m in robot.iter("mesh")]
+    assert meshes and all(Path(m.removeprefix("file://")).is_file() for m in meshes)
+    kin = Kinematics(text, "xarm")
+    assert kin.joint_names == names.joint_names("xarm") and kin.carriage is None
+    flange = np.linalg.inv(kin.frame(np.zeros(7), "xarm/base_link")) @ kin.frame(np.zeros(7), "xarm/link7")
+    chained = np.eye(4)
+    for joint in yaml.safe_load((repo_root(None) / "config" / "xarm-kinematics.yaml").read_text())["kinematics"].values():
+        chained = chained @ rpy_matrix([joint["x"], joint["y"], joint["z"]],
+                                       [joint["roll"], joint["pitch"], joint["yaw"]])
+    np.testing.assert_allclose(flange, chained, atol=1e-6)
+    np.testing.assert_allclose(flange[:3, 3], [0.206, 0.0, 0.1205], atol=0.003)
+    np.testing.assert_allclose(flange[:3, 2], [0.0, 0.0, -1.0], atol=1e-3)
+    tcp = kin.fk(np.array(arm_model.for_arm("xarm").rest))
+    np.testing.assert_allclose(tcp[:3, 2], [0.0, 0.0, -1.0], atol=0.01)
+    assert tcp[0, 3] == pytest.approx(0.400, abs=0.002)
+
+
+def test_both_models_in_one_description_share_its_materials_once():
+    robot = ET.fromstring(robot_description(arms=("right", "xarm")))
+    materials = [m.get("name") for m in robot.findall("material")]
+    assert len(materials) == len(set(materials)) and "xarm/White" in materials
+    assert {names.tcp_frame("right"), names.tcp_frame("xarm")} <= {link.get("name") for link in robot.findall("link")}
+
+
+def test_the_xarm_takes_its_own_parameters_and_rests_at_its_models_rest():
+    from tatbot_description import arm_model, rest_positions
+
+    stack = load_stack()
+    params = hardware_params(None, "xarm", stack, "fake")
+    assert not set(params) & set(names.TROSSEN_HARDWARE_PARAMETERS)
+    assert params["controller"] == "xarm" and params["collision_sensitivity"] == "3"
+    payload = yaml.safe_load((repo_root() / "config" / "workspace.yaml").read_text())["xarm"]["payload"]
+    assert float(params["payload_mass_kg"]) == payload["mass_kg"]
+    assert [float(v) for v in params["payload_com_m"].split(",")] == payload["com_m"]
+    assert not set(hardware_params(None, "right", stack, "fake")) & set(names.XARM_HARDWARE_PARAMETERS)
+    assert params["joints"] == " ".join(names.joint_names("xarm")) and params["carriage_joint"] == ""
+    assert float(params["command_delay_s"]) == pytest.approx(0.095)
+    assert (float(params["fake_delay_s"]), float(params["fake_lag_s"])) == pytest.approx((0.083, 0.007))
+    assert rest_positions(None, "xarm") == list(arm_model.for_arm("xarm").rest)
+    assert [float(v) for v in params["staged_positions"].split(",")] == pytest.approx(rest_positions(None, "xarm"))
+    if HAS_PROFILE:   # real takes its control box's address from the profile
+        assert hardware_params(None, "xarm", stack, "real")["ip"]
+
+
+def test_a_ros_owners_fitted_cartridge_is_the_tcp_and_the_tool_it_models(tmp_path):
+    """On a ROS owner (calib/ beside its deployed repo/) the cartridge fitted there, not git's tool, hangs off the mount:
+    its tip is <arm>/tcp and the tool block is its datasheet's, re-rendered at every start; no record, git's as is."""
+    import cartridge_fit
+    import tool_spec
+
+    repo, source = tmp_path / "repo", repo_root()
+    (repo / "config").mkdir(parents=True)
+    (repo / "urdf").symlink_to(source / "urdf", target_is_directory=True)
+    for name in ("arms.json", "arm-models", "trossen", "tools"):
+        (repo / "config" / name).symlink_to(source / "config" / name)
+    shutil.copy(source / "config" / "workspace.yaml", repo / "config" / "workspace.yaml")
+    committed = robot_description(repo, arms=("xarm",))
+    assert committed == robot_description(arms=("xarm",)).replace(str(source), str(repo))
+
+    other = "lutin-5rl-mast"
+    seed = cartridge_fit.seeded(tool_spec.read_workspace(repo)["xarm"], "xarm")
+    cartridge_fit.write(repo, cartridge_fit.fit(seed, other, tool_spec.load_tool(other, repo).touchoff_nominal_m,
+                                                instance=None, utc="2026-11-10T18:00:00Z"))
+    fitted = ET.fromstring(robot_description(repo, arms=("xarm",)))
+    tcp = _joints(fitted)["xarm/tcp_joint"].find("origin")
+    assert tcp is not None
+    assert [float(v) for v in tcp.attrib["xyz"].split()] == list(tool_spec.load_tool(other, repo).touchoff_nominal_m)
+    import tool_urdf
+
+    model = ET.fromstring(tool_urdf.build(repo, repo / "urdf" / "xarm7.urdf", ["xarm"], tool_spec.read_workspace(repo)))
+    pen, before, its = (_joints(robot)["xarm/tattoo_pen_joint"].find("origin")
+                        for robot in (fitted, ET.fromstring(committed), model))
+    assert pen is not None and before is not None and its is not None
+    assert pen.attrib == its.attrib != before.attrib

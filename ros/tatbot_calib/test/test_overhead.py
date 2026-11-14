@@ -95,6 +95,19 @@ def test_a_bad_tile_read_is_left_out_and_each_region_is_predicted_by_the_other()
     assert abs(rows["fitted"]["holder"]["depth_median_m"]) < 0.0005
 
 
+def test_a_small_tiles_markers_missed_alike_are_all_kept():
+    """2026-10-25: the D555 shared 3 of the small tile's markers, all ~2 mm off the first fit (1.7-2.3 mm), and a
+    fixed 2 mm bound left 2 of 3 out, the holder on one marker. Missed alike, they are the fit's error, not bad reads."""
+    rng = np.random.default_rng(4)
+    scene, clouds = scene_and_clouds(TRUE, rng)
+    ts = [t for t in targets(TRUE, rng) if t.region == "station" or t.name in ("tile 0", "tile 5", "tile 10")]
+    for t in ts[1:]:
+        t.base = t.base + [0.0065, 0.0, 0.0]   # the tile's corners off where the holder's depth and the station put it
+    fitted, report = overhead.solve(START, ts, clouds, scene, K, DIST)
+    misses = list(report["first_misses_m"].values())
+    assert report["dropped"] == [] and sum(m > overhead.OUTLIER_M for m in misses) == 2, misses
+
+
 def test_a_holder_no_d555_read_places_is_fitted_by_the_wrists_depth_alone():
     """The forearm tile's 12 mm markers read 0 of 3 in the D555 (2026-10-22): the roof tag and both regions' depth
     still recover the registration the cube's start is 2.5 deg off."""
@@ -288,3 +301,52 @@ def test_the_holder_views_start_from_rest_and_a_landed_arm_that_never_wakes_stop
     rig.safety = SimpleNamespace(landed=True)
     with pytest.raises(RuntimeError, match="did not wake"):
         capture.from_rest(lambda arm: None)
+
+
+def test_the_wrist_camera_stands_where_its_gauge_file_measured_it(tmp_path):
+    """The xArm's D405s stood 4.4-5.6 mm off the robot model's mount (calib wristcam, 2026-11-09): with the gauge file
+    the views, the tile's corners and the depth stand on the measured mount, without it on the model's."""
+    from types import SimpleNamespace
+
+    from tatbot_calib import wristcam
+    from tatbot_description import robot_description
+    from tatbot_motion import Kinematics
+
+    kin = Kinematics(robot_description(None, arms=("xarm",)), "xarm")
+    tip0 = np.array([0.001, -0.0032, 0.0709])
+    cal = SimpleNamespace(kin=kin, arm="xarm", tip0=tip0, run=SimpleNamespace(dir=tmp_path))
+    plain = overhead.Capture(cal, None, None, None, None)
+    q = np.array(kin.arm_model.rest, float)
+    assert np.allclose(plain.camera_pose(q), kin.frame(q, plain.frame), atol=1e-9)
+    assert np.allclose(plain.depth_pose(q), kin.frame(q, plain.depth_frame), atol=1e-9)
+    measured = plain.mount.copy()
+    measured[:3, 3] += [0.003, -0.004, 0.002]
+    gauge = wristcam.gauge_record(measured, tip0, "xarm", "lutin-3rl-bugpin")
+    placed = overhead.Capture(cal, None, None, None, None, gauge)
+    assert np.allclose(placed.camera_pose(q), kin.frame(q, "xarm/tool_mount") @ measured, atol=1e-9)
+    assert np.allclose(np.linalg.inv(placed.camera_pose(q)) @ placed.depth_pose(q),
+                       np.linalg.inv(plain.camera_pose(q)) @ plain.depth_pose(q), atol=1e-9)
+
+
+def test_the_xarms_holder_views_look_at_the_tile_obliquely_where_none_looks_straight_down(tmp_path, monkeypatch):
+    """The forearm18 tile at its 2026-11-09 place in the xArm's base: no straight-down view keeps the wrist in reach
+    (the D405 stands 48 deg off the pen), so each view is the locate's oblique one, on the arm's side of the tile."""
+    from types import SimpleNamespace
+
+    from tatbot_description import robot_description
+    from tatbot_motion import Kinematics
+
+    kin = Kinematics(robot_description(None, arms=("xarm",)), "xarm")
+    rest = np.array(kin.arm_model.rest, float)
+    cal = SimpleNamespace(kin=kin, arm="xarm", tip0=np.array([0.001, -0.0032, 0.0709]), run=SimpleNamespace(dir=tmp_path),
+                          rig=SimpleNamespace(joints=lambda: rest), say=lambda text: None)
+    capture = overhead.Capture(cal, None, None, None, None)
+    sent = []
+    monkeypatch.setattr(capture, "hold", lambda label, region, tcp: sent.append((label, tcp)))
+    monkeypatch.setattr(overhead, "TILE_VIEWS", overhead.TILE_VIEWS[:3])
+    tile = np.eye(4)
+    tile[:3, 3] = [0.4788, -0.0147, -0.0195]
+    capture.holder(tile)
+    assert len(sent) == 3
+    for _, tcp in sent:
+        assert tcp[2, 3] > tile[2, 3] + 0.015

@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -16,6 +17,7 @@ using namespace tatbot_hardware;
 namespace
 {
 constexpr double kDt = 0.0025;
+constexpr size_t kCarriage = 6;   // the WXAI's tool carriage, Config's default (config/arm-models/trossen-wxai.yaml)
 
 size_t idx(std::string_view name)
 {
@@ -657,9 +659,7 @@ TEST(HwCore, LandingRunsStagedSleepVerifyThenIdles)
   EXPECT_EQ(r.s("landed"), 1);
   EXPECT_EQ(r.s("landing"), 0);
   EXPECT_TRUE(r.fake.idle());
-  Vec7 sleep{};
-  sleep[kWristRoll] = 1.5707963267948966;
-  expect_near(r.fb.q, sleep, 1e-3);
+  expect_near(r.fb.q, Vec7{0, 0, 0, 0, 0, 1.5707963267948966, 0}, 1e-3);   // the staged pose, carriage at rest
   // Landed: idle until it is woken; commands and unlatch do nothing.
   const int sent = r.fake.commands();
   r.unlatch(9);
@@ -774,8 +774,8 @@ TEST(HwCore, TipForceAlongToolRecoversAPointForce)
   for (size_t j = 0; j < 6; ++j) {
     for (size_t i = 0; i < 3; ++i) {tau[j] += a[i][j] * f[i];}
   }
-  EXPECT_NEAR(tip_force_along_tool(fk, Vec7{0.1, 0.2, 0.3, 0, 0, 0, 0}, tau), -2.0 * 0.6 - 3.0 * 0.8, 1e-6);
-  EXPECT_TRUE(std::isnan(tip_force_along_tool({}, Vec7{}, tau)));
+  EXPECT_NEAR(tip_force_along_tool(fk, kCarriage, Vec7{0.1, 0.2, 0.3, 0, 0, 0, 0}, tau), -2.0 * 0.6 - 3.0 * 0.8, 1e-6);
+  EXPECT_TRUE(std::isnan(tip_force_along_tool({}, kCarriage, Vec7{}, tau)));
 }
 
 TEST(HwCore, ContactGuardTripsOnFirstForceLongBeforeTheTipLags)
@@ -966,4 +966,104 @@ TEST(HwCore, AnUnqualifiedCarriageIsScreenedByDeflectionAloneAndNeverRetracts)
   EXPECT_EQ(r.core.phase(), Phase::kLatched);   // held where it is: no retract
   EXPECT_NEAR(r.out.q[kCarriage], r.core.hold_pose()[kCarriage], 0);
   EXPECT_LT(r.out.q[kCarriage], 0.01);
+}
+
+TEST(HwCore, AnArmWithoutACarriageJudgesEveryJointInRadiansAndHasNoCarriageCap)
+{
+  // An arm model with seven revolute joints and no carriage (the xArm's): joint 6 is a wrist joint.
+  Config c;
+  c.carriage.reset();
+  FakeOptions o;
+  o.carriage.reset();
+  Rig r(c, o);
+  r.activate();
+  // 0.3 rad/s on joint 6 would be over a carriage's 0.25 m/s; a revolute joint runs it.
+  for (int i = 0; i < 200; ++i) {r.cmd.q[6] += 0.3 * kDt; r.cmd.qd[6] = 0.3; r.step();}
+  r.cmd.qd[6] = 0.0;
+  EXPECT_EQ(r.s("latched"), 0);
+  // Its effort is no carriage's contact.
+  r.fake.set_effort(6, 3.0);
+  r.step(800);
+  r.fake.set_effort(6, 40.0);
+  r.step(200);
+  EXPECT_EQ(r.s("latched"), 0);
+  // A step on it is judged in radians: 0.04 rad passes the 0.05 rad limit, where a carriage's 40 mm would not.
+  r.press();
+  r.step();
+  r.release();
+  r.step();
+  r.cmd.q = r.fb.q;
+  r.cmd.q[6] += 0.04;
+  r.cmd.unlatch = 1;
+  r.step();
+  EXPECT_EQ(r.s("latched"), 0);
+  // The landing takes every joint to the staged pose and verifies each in radians.
+  r.cmd.land = 1;
+  r.step(static_cast<int>(8.5 / kDt));
+  EXPECT_EQ(r.s("landed"), 1);
+  expect_near(r.fb.q, c.staged_positions, 1e-3);
+}
+
+TEST(HwCore, TheGuardsTakeTheControllersDelayOutBeforeJudgingLag)
+{
+  // A stiff arm that answers its command 85 ms late (the xArm's pure delay) while the tip descends at 20 mm/s: its
+  // measured tip stands 1.7 mm short of this tick's command, over the 0.8 mm tip-lag trip, though nothing holds it.
+  for (const double delay : {0.0, 0.085}) {
+    Config c;
+    c.command_delay_s = delay;
+    ArmCore core(c, toy_fk);
+    Feedback fb;
+    fb.q = c.staged_positions;
+    double t = 0;
+    core.observe_feedback(t, fb);
+    t += 0.2;
+    core.activate(t, fb);
+    Commands cmd;
+    cmd.q = fb.q;
+    cmd.guard_mode = names::kGuardTipLag;
+    std::deque<Vec7> sent;   // what the arm answers 34 ticks (85 ms) on
+    for (int i = 0; i < 800 && core.safety()[idx("latched")] == 0; ++i) {
+      t += kDt;
+      cmd.q[1] += 0.2 * kDt;
+      cmd.qd[1] = 0.2;
+      sent.push_back(cmd.q);
+      if (sent.size() > 34) {
+        fb.q = sent.front();
+        fb.qd[1] = 0.2;
+        sent.pop_front();
+      }
+      core.tick(t, fb, cmd, EstopStatus{}, false);
+    }
+    if (delay > 0) {
+      EXPECT_EQ(core.safety()[idx("latched")], 0) << core.take_event();
+    } else {
+      EXPECT_EQ(core.safety()[idx("latch_reason")], names::kLatchGuardTipLag);
+    }
+  }
+}
+
+TEST(HwCore, AFakeWithACommandDelayAnswersItsCommandsThatLate)
+{
+  // The xArm's fake plant (its arm model's fake_plant): a command reaches the joints 33 ticks (82.5 ms) late, then
+  // the lag follows it as before; an idle arm drops what was in flight.
+  FakeOptions o;
+  o.delay_s = 0.0825;
+  o.tau = 0.007;
+  o.start = Vec7{};
+  FakeBackend fake(o);
+  fake.connect();
+  fake.set_position_mode();
+  Vec7 step{};
+  step[0] = 0.1;
+  for (int i = 0; i < 33; ++i) {fake.command(step, Vec7{});}
+  EXPECT_DOUBLE_EQ(fake.read().q[0], 0.0);
+  fake.command(step, Vec7{});
+  EXPECT_GT(fake.read().q[0], 0.0);
+  for (int i = 0; i < 40; ++i) {fake.command(step, Vec7{});}
+  EXPECT_NEAR(fake.read().q[0], 0.1, 1e-3);
+  fake.set_idle();
+  fake.set_position_mode();
+  Vec7 back{};
+  for (int i = 0; i < 33; ++i) {fake.command(back, Vec7{});}
+  EXPECT_NEAR(fake.read().q[0], 0.1, 1e-3);   // the new commands still in flight; none of the old ones replayed
 }

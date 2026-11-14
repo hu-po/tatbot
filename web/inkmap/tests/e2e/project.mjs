@@ -17,7 +17,7 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   page.on("dialog", dialog => dialog.accept());
   await page.goto(url); await ready(page);
-  await page.fill(".sentence input", "an dbv3-ridges on the left forearm"); await page.click(".sentence button.primary");
+  await page.fill(".sentence input", "a snake on the left forearm"); await page.click(".sentence button.primary");
   await page.waitForFunction(() => window.__inkmap.getState().placements.length === 1);
   assert.equal(await page.evaluate(() => window.__inkmap.getState().toFile()), null, "pending edit exported");
   await page.getByRole("button", { name: "✓ Accept", exact: true }).click(); await saved(page);
@@ -33,7 +33,8 @@ try {
   await page.getByRole("checkbox", { name: "Mirror", exact: true }).check();
   const numeric = await page.evaluate(() => window.__inkmap.getState().placements[0]);
   assert.equal(numeric.size_mm[0], 45); assert.equal(numeric.mirror, true);
-  assert.ok(Math.abs(numeric.rotation_rad - 12 * Math.PI / 180) < 1e-9);
+  const turned = numeric.rotation_rad - original.rotation_rad;   // the box reads from upright; on an arm the store's zero is not
+  assert.ok(Math.abs(Math.atan2(Math.sin(turned), Math.cos(turned)) - 12 * Math.PI / 180) < 1e-9);
   await page.keyboard.press("Escape");
   assert.deepEqual(await page.evaluate(() => window.__inkmap.getState().placements[0]), original, "Escape did not restore accepted values");
   await page.evaluate(id => { const s = window.__inkmap.getState(); s.select(id); s.nudgeRotation(0.05); s.nudgeRotation(0.05); s.accept(); }, original.id);

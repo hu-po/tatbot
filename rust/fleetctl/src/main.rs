@@ -1,9 +1,12 @@
 //! Fleet service presence on the bus: `advertise` holds a liveliness token
 //! while a supervised unit is active, `services` lists and checks them.
 //! No arm or serial device can be opened here.
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use std::time::Duration;
 use zenoh::Wait;
+const SYSTEMCTL_NOT_ACTIVE: i32 = 3;
+const SYSTEMCTL_NO_SUCH_UNIT: i32 = 4;
 #[derive(Parser)]
 struct Args {
     #[arg(long)]
@@ -28,118 +31,123 @@ enum Command {
         unit: String,
     },
 }
+/// Whether systemd reports `unit` active. An error means it gave no answer,
+/// which must end `advertise` as a failure: its own unit restarts only on one.
+fn unit_active(unit: &str) -> anyhow::Result<bool> {
+    let status = std::process::Command::new("systemctl")
+        .args(["is-active", "--quiet", unit])
+        .status()
+        .context("systemctl is-active")?;
+    match status.code() {
+        Some(0) => Ok(true),
+        Some(SYSTEMCTL_NOT_ACTIVE | SYSTEMCTL_NO_SUCH_UNIT) => Ok(false),
+        _ => anyhow::bail!("systemctl is-active {unit}: {status}"),
+    }
+}
 fn run() -> anyhow::Result<()> {
     let args = Args::parse();
     anyhow::ensure!(!args.connect.is_empty(), "explicit bus endpoint required");
     let bus =
         tatbot_bus::transport::Bus::open(&args.connect).map_err(|e| anyhow::anyhow!("{e}"))?;
-    if let Command::Advertise {
-        node,
-        service,
-        unit,
-    } = &args.command
-    {
-        anyhow::ensure!(
-            !unit.starts_with('-') && unit.ends_with(".service"),
-            "invalid supervised unit"
-        );
-        let active = || {
-            std::process::Command::new("systemctl")
-                .args(["is-active", "--quiet", unit])
-                .status()
-                .is_ok_and(|s| s.success())
-        };
-        anyhow::ensure!(active(), "supervised service is not active");
-        let _lease = tatbot_bus::service::ServiceLease::declare(
-            &bus,
-            tatbot_bus::Producer::this_process(node.clone(), "fleetctl"),
+    match &args.command {
+        Command::Advertise {
+            node,
             service,
-            Vec::new(),
-        )
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
-        while active() {
-            std::thread::sleep(Duration::from_secs(1));
-        }
-        return Ok(());
-    }
-    if let Command::Services {
-        expected_sha,
-        require,
-    } = &args.command
-    {
-        let replies = bus
-            .session
-            .liveliness()
-            .get("tatbot/alive/*/*")
-            .timeout(Duration::from_secs(2))
-            .wait()
+            unit,
+        } => {
+            anyhow::ensure!(
+                !unit.starts_with('-') && unit.ends_with(".service"),
+                "invalid supervised unit"
+            );
+            anyhow::ensure!(unit_active(unit)?, "supervised service is not active");
+            let _lease = tatbot_bus::service::ServiceLease::declare(
+                &bus,
+                tatbot_bus::Producer::this_process(node.clone(), "fleetctl"),
+                service,
+                Vec::new(),
+            )
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let mut keys = std::collections::BTreeSet::new();
-        while let Ok(Some(reply)) = replies.recv_timeout(Duration::from_secs(3)) {
-            if let Ok(sample) = reply.result() {
-                keys.insert(sample.key_expr().as_str().to_owned());
+            while unit_active(unit)? {
+                std::thread::sleep(Duration::from_secs(1));
             }
         }
-        let mut services = Vec::new();
-        let mut mismatches = Vec::new();
-        let mut missing = Vec::new();
-        for name in require {
-            if !keys.contains(&format!("tatbot/alive/{name}")) {
-                missing.push(name.clone());
-            }
-        }
-        for key in keys {
-            let response = bus
+        Command::Services {
+            expected_sha,
+            require,
+        } => {
+            let replies = bus
                 .session
-                .get(key.clone())
-                .target(zenoh::query::QueryTarget::All)
-                .consolidation(zenoh::query::ConsolidationMode::None)
+                .liveliness()
+                .get("tatbot/alive/*/*")
                 .timeout(Duration::from_secs(2))
                 .wait()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let mut replies = response.into_iter();
-            let reply = replies
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("liveliness metadata unavailable: {key}"))?;
-            let sample = reply.result().map_err(|e| anyhow::anyhow!("{e:?}"))?;
-            anyhow::ensure!(
-                replies.next().is_none(),
-                "duplicate service producers: {key}"
-            );
-            let value: tatbot_bus::Envelope<tatbot_bus::Liveliness> =
-                serde_json::from_slice(&sample.payload().to_bytes())?;
-            anyhow::ensure!(
-                value.schema == "tatbot.liveliness/1"
-                    && value.payload.sha == value.producer.sha
-                    && value.payload.pid == value.producer.pid
-                    && key.starts_with(&format!("tatbot/alive/{}/", value.producer.node)),
-                "invalid service provenance"
-            );
-            if (require.is_empty()
-                || require
-                    .iter()
-                    .any(|name| key == format!("tatbot/alive/{name}")))
-                && expected_sha
-                    .as_ref()
-                    .is_some_and(|sha| sha != &value.payload.sha)
-            {
-                mismatches.push(key.clone());
+            let mut keys = std::collections::BTreeSet::new();
+            while let Ok(Some(reply)) = replies.recv_timeout(Duration::from_secs(3)) {
+                if let Ok(sample) = reply.result() {
+                    keys.insert(sample.key_expr().as_str().to_owned());
+                }
             }
-            services.push(serde_json::json!({"key":key,"value":value}));
+            let mut services = Vec::new();
+            let mut mismatches = Vec::new();
+            let mut missing = Vec::new();
+            for name in require {
+                if !keys.contains(&format!("tatbot/alive/{name}")) {
+                    missing.push(name.clone());
+                }
+            }
+            for key in keys {
+                let response = bus
+                    .session
+                    .get(key.clone())
+                    .target(zenoh::query::QueryTarget::All)
+                    .consolidation(zenoh::query::ConsolidationMode::None)
+                    .timeout(Duration::from_secs(2))
+                    .wait()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let mut replies = response.into_iter();
+                let reply = replies
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("liveliness metadata unavailable: {key}"))?;
+                let sample = reply.result().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+                anyhow::ensure!(
+                    replies.next().is_none(),
+                    "duplicate service producers: {key}"
+                );
+                let value: tatbot_bus::Envelope<tatbot_bus::Liveliness> =
+                    serde_json::from_slice(&sample.payload().to_bytes())?;
+                anyhow::ensure!(
+                    value.schema == "tatbot.liveliness/1"
+                        && value.payload.sha == value.producer.sha
+                        && value.payload.pid == value.producer.pid
+                        && key.starts_with(&format!("tatbot/alive/{}/", value.producer.node)),
+                    "invalid service provenance"
+                );
+                if (require.is_empty()
+                    || require
+                        .iter()
+                        .any(|name| key == format!("tatbot/alive/{name}")))
+                    && expected_sha
+                        .as_ref()
+                        .is_some_and(|sha| sha != &value.payload.sha)
+                {
+                    mismatches.push(key.clone());
+                }
+                services.push(serde_json::json!({"key":key,"value":value}));
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &serde_json::json!({"schema":"tatbot.services/1","services":services,"missing":missing,"sha_mismatches":mismatches,"complete":missing.is_empty() && mismatches.is_empty()})
+                )?
+            );
+            if !mismatches.is_empty() {
+                std::process::exit(3);
+            }
+            if !missing.is_empty() {
+                std::process::exit(5);
+            }
         }
-        println!(
-            "{}",
-            serde_json::to_string_pretty(
-                &serde_json::json!({"schema":"tatbot.services/1","services":services,"missing":missing,"sha_mismatches":mismatches,"complete":missing.is_empty() && mismatches.is_empty()})
-            )?
-        );
-        if !mismatches.is_empty() {
-            std::process::exit(3);
-        }
-        if !missing.is_empty() {
-            std::process::exit(5);
-        }
-        return Ok(());
     }
     Ok(())
 }

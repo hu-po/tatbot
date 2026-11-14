@@ -3,7 +3,7 @@
 Every contact is a row of joints latched at the probe's edge. Through forward kinematics to the tool mount, the
 tip `a` and its axis `u` (both in the tool mount) land in the base, where the ball's centre `c` sits: the distance
 from c to the axis line is the contact's side radius (the wall's radius + the ball's, less the arm's give before
-the probe trips). The give differs with the push's direction: pink's pairs at v11 read half-spans of 1.6 mm across
+the probe trips). The give differs with the push's direction: the WXAI's pairs at v11 read half-spans of 1.6 mm across
 its heading and 2.7 mm along it, and repeated (2026-09-30), so each attitude's pair axis (d, p) takes its own side
 radius. A pair's midpoint, where both pushes give alike, carries the tip; its half-span, the give.
 

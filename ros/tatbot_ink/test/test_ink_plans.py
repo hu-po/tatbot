@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 import tatbot_ink
 import tatbot_motion as tm
-from ink_designs import REPO, design, element, placement, program, write
+from ink_designs import REPO, artwork, element, program, write
 from tatbot_description import load_stack
 from tool_spec import load_tool
 
@@ -37,8 +37,7 @@ def _shapes(side=0.04):
 def test_a_prepared_program_plans_op_after_op_on_the_configured_page(tmp_path):
     pin = pytest.importorskip("pinocchio")
     # the print's lower half, the demo table page's worst tracked; 12 s chunks make continuing ops
-    path = write(tmp_path, design([("p", _shapes(), placement((0.04, 0.04), anchor=(0.0, -0.03)))]))
-    prepared = tatbot_ink.compile(path, repo=REPO, max_segment_s=12.0)
+    prepared = tatbot_ink.compile(write(tmp_path, artwork(_shapes())), repo=REPO, max_segment_s=12.0, at_m=[0.0, -0.03])
     ops = [op for op in prepared["ops"] if op["op"] == "stroke"]
     assert any(op["continues"] for op in ops)
     kin = tm.Kinematics.from_repo(REPO, arm="right")

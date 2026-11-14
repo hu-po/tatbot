@@ -2,7 +2,8 @@
 
 Expectations come from the files that already own them: the roles and
 `services` in config/nodes.json, the wrist cameras' serials and owners in
-vision.toml, the controller addresses in the hardware profile, and a node's
+vision.toml, the arm that draws in stack.yaml (`arms`), its controller's
+address in config/arms.json and the hardware profile, and a node's
 `hardware` list for what nothing else records (a touchscreen, a relay unit).
 Pure: no ssh, no subprocess. The probing lives in scripts/lib/rig_check.py.
 """
@@ -13,17 +14,16 @@ import json
 import re
 from pathlib import Path
 
-from tatbot_cli import nodes
+from tatbot_cli import nodes, stack
 
 SCHEMA = "tatbot.rig-check/1"
 
 # Which part of the demo a role serves. A node's general health (clock, disk,
 # links) is reported under the first part its roles or hardware name.
-PARTS = ("pink drawing", "station", "blue arm")
+PARTS = ("pink drawing", "station")
 ROLE_PART = {"ros": "pink drawing", "overhead-depth": "pink drawing", "bus-router": "pink drawing",
              "track": "pink drawing", "estop-relay": "pink drawing",
-             "station": "station", "rig-clock": "station", "arm": "blue arm", "estop": "blue arm"}
-ARM_PART = {"right": "pink drawing", "left": "blue arm"}
+             "station": "station", "rig-clock": "station"}
 
 # A D405's USB serial descriptor is not the serial vision.toml names (librealsense
 # reads that from the device), so a wrist camera is found by its product id.
@@ -54,12 +54,16 @@ def realsense_cameras(text: str) -> list[dict]:
     return out
 
 
-def _profile_driver(repo: Path) -> dict:
-    path = repo / "config/profiles/tatbot.json"
+def _drawing_arm(repo: Path) -> dict:
+    """The arm that draws (stack.yaml `arms`) and its controller's address: the hardware profile's field that
+    config/arms.json names for it. `address` is None where either file does not say."""
+    arm = stack.drawing_arm(repo)
     try:
-        return json.loads(path.read_text()).get("driver", {})
-    except (OSError, ValueError):
-        return {}
+        field = json.loads((repo / "config/arms.json").read_text())["arms"][arm]["profile_ip_field"]
+        address = json.loads((repo / "config/profiles/tatbot.json").read_text())["driver"].get(field)
+    except (OSError, ValueError, KeyError):
+        address = None
+    return {"id": arm, "address": address}
 
 
 HARDWARE_KINDS = {"usb": ("usb", "id"), "dev": ("devs", "path"), "unit": ("units", "unit"),
@@ -76,16 +80,13 @@ def _hardware(exp: dict, hw: list[dict], user: str) -> None:
         exp[key].append({"name": h["name"], "part": h.get("part", exp["part"]), field: value})
 
 
-def _peers(roles: list[str], part: str, *, lan: bool, gateway, driver: dict, overhead) -> list[dict]:
+def _peers(roles: list[str], part: str, *, lan: bool, gateway, arm: dict, overhead) -> list[dict]:
     """Addresses the node itself must reach: what its roles talk to."""
     want = []
     if lan and gateway:
         want.append(("rig router", gateway, part))
     if "ros" in roles:
-        want.append(("pink controller", driver.get("follower_ip"), "pink drawing"))
-    if "arm" in roles:
-        want += [("blue controller", driver.get("leader_ip"), "blue arm"),
-                 ("pink controller", driver.get("follower_ip"), "blue arm")]
+        want.append((f"{arm['id']} arm controller", arm["address"], "pink drawing"))
     if "overhead-depth" in roles:
         want.append(("overhead D555", overhead, "pink drawing"))
     return [{"name": n, "address": a, "part": p} for n, a, p in want if a]
@@ -95,7 +96,8 @@ def expectations(repo: Path, nmap: dict) -> dict[str, dict]:
     """node -> {"part", "usb", "devs", "units", "user_units", "peers", "lan", "jumbo"}."""
     vision = repo / "rust/visiond/config/vision.toml"
     cams = realsense_cameras(vision.read_text()) if vision.exists() else []
-    ctx = {"gateway": nodes.rig(repo).get("gateway"), "driver": _profile_driver(repo),
+    arm = _drawing_arm(repo)
+    ctx = {"gateway": nodes.rig(repo).get("gateway"), "arm": arm,
            "overhead": nodes.cameras(repo).get("overhead_depth")}
     out = {}
     for name in demo_hosts(nmap):
@@ -107,7 +109,7 @@ def expectations(repo: Path, nmap: dict) -> dict[str, dict]:
         units = [(s["unit"], s.get("part", part)) for s in rec.get("services") or []]
         exp = {"part": part, "devs": [], "user_units": [], "lan": rec.get("lan"), "jumbo": "overhead-depth" in roles,
                "usb": [{"name": f"{c['arm']} wrist D405", "id": D405_USB_ID, "min_mbps": USB3_MBPS,
-                        "part": ARM_PART.get(c["arm"], part)} for c in cams if c["owner_role"] in roles],
+                        "part": "pink drawing" if c["arm"] == arm["id"] else part} for c in cams if c["owner_role"] in roles],
                "units": [{"name": u, "unit": u, "part": p} for u, p in units],
                "peers": _peers(roles, part, lan=bool(rec.get("lan")), **ctx)}
         if "estop-relay" in roles and (line := _estop_gpio(repo)):
@@ -149,7 +151,9 @@ def _r(part: str, node: str, status: str, what: str) -> dict:
 
 
 def _host(node: str, part: str, facts: dict, local_unix: float | None) -> list[dict]:
-    out = [_r(part, node, "ok", f"{node} up {int(facts.get('uptime_s', 0)) // 60} min")]
+    governors = "/".join(facts.get("governors") or [])   # a host setting, reported as found (docs/rig.md)
+    out = [_r(part, node, "ok", f"{node} up {int(facts.get('uptime_s', 0)) // 60} min"
+              + (f", cpu governor {governors}" if governors else ""))]
     warn = []
     if facts.get("ntp_synced") is False:
         warn.append(f"{node} clock not NTP-synced (boots on its last shutdown time)")
@@ -209,7 +213,8 @@ def _usb(node: str, exp: dict, facts: dict) -> list[dict]:
         if want.get("min_mbps") and (hit.get("mbps") or 0) < want["min_mbps"]:
             out.append(_r(want["part"], node, "warn", f"{want['name']} on {node} at {hit.get('mbps')} Mb/s, not USB 3"))
         else:
-            out.append(_r(want["part"], node, "ok", f"{want['name']} on {node}"))
+            power = {"on": ", kept awake", "auto": ", USB autosuspend allowed"}.get(hit.get("power"), "")
+            out.append(_r(want["part"], node, "ok", f"{want['name']} on {node}{power}"))
     return out
 
 

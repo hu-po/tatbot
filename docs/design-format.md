@@ -1,68 +1,70 @@
 ---
-summary: Public vector design and placement format
+summary: Public tattoo art, placement and brief formats, and the robot's acquired artwork
 tags: [art, design, schema]
-updated: 2026-09-04
+updated: 2026-11-02
 audience: [artist, dev]
 ---
 
 # Design format
 
-Artists can contribute vector artwork and placement fixtures without access to
-robot hardware.
+Artists can contribute art and placement fixtures without access to robot
+hardware. There are two halves with one hand-off between them:
 
-## Artwork
+- **Design and placement** work with the source image. Inkmap places it on a
+  body and sizes it freely; nothing there is a stroke.
+- **Strokes** are made from that image at the chosen size by the art pipeline
+  and DrawingBot V3 (`tatbot art separate`), as one acquired artwork per ink.
+  The robot draws those.
 
-Supply licensed raster or SVG source artwork to a version 3 DBV3 acquisition.
-Finished drawing artwork must be acquired `InkmapArtwork/2` with
-`dbv3-batik-paths/1` and a frozen recipe identity. SVG exports and previews remain
-valid; the former public SVG importer is retired.
+The **tattoo brief** is the hand-off: each placed design's image and the width
+to draw it at.
+
+## Source art
+
+`tatbot.inkmap-art/1` (`config/inkmap/art.schema.json`) is one design as an
+image:
+
+- `image`: `image/png` or `image/jpeg`, its SHA-256, pixel size and base64
+  bytes, at most 8 MB.
+- `art_px`: `[x, y, width, height]`, the rectangle the art occupies. It is the
+  art pipeline's crop: the box around every pixel that is not paper (light and
+  neutral, CIELAB L\* above 85 and chroma under 12), padded by 3% of the image's
+  longer side, halves rounded to even. A placement's width is this rectangle's
+  width.
+- `source`: `stock`, `imported` or `generated`, with an identifier, licence,
+  attribution and, for generated art, the prompt, model and generator.
+- `palette`: the catalogue inks (one to five) and style it was made for, or
+  `null`. Inkmap suggests inks for imported art from its colours, and the artist can
+  change them.
+
+The content digest covers the whole record, image bytes included. Readers check
+the digest, the image digest, the pixel size read from the PNG or JPEG header,
+and that `art_px` lies inside the image. `web/inkmap/src/core/art.ts` and
+`tatbot_contracts.art` are the two readers.
+
+The stock collection, `web/inkmap/public/designs/manifest.json`
+(`tatbot.inkmap-art-collection/1`), names each design's image, digest, pixel
+size, `art_px`, source and palette. Inkmap builds each record from those bytes
+and refuses an image that differs. Its designs are Flow-generated and not
+dedicated to the public domain.
 
 ## Placement
 
-`tatbot.surface-placement/2` expresses target-independent placement intent.
-Its shared fields bind the artwork digest, physical size, rotation, mirror,
-review and provenance. The `target` is one of:
-
-- `body`: the existing body identity, surface digest, barycentric anchor,
-  semantic site and supported faces;
-- `plane`: a metric canvas, anchor `(u,v)` and boundary margin;
-- `cylinder`: the same metric chart plus its radius. The `u` axis runs along
-  the cylinder; `v` is circumferential arc length. The chart origin lies on
-  the crest, not at the cylinder axis.
-
-The readers refuse a rotated artwork canvas outside the target margin and
-a cylinder chart covering a full circumference. Analytic placement currently
-requires `warp: null`. These are nominal authoring surfaces: no measured
-robot pose, contact height or execution permission is implied.
-
-The JSON Schema is `config/human-representation/surface-placement-v2.schema.json`.
-Browser and Python constructors produce the same digests. Body v1 imports
-have an explicit migration preserving their binding and constraints; existing
-v1 artifacts retain their original interpretation. Material-stroke planning
-accepts both versions through the same decomposition logic. `InkProgram/2`
-supports both body coordinates and target-bound metric chart coordinates.
-Plane/cylinder curves retain the placement digest and their arc length is
-verified from chart coordinates; readers reject mixed coordinate types and
-rehashed target or length mismatches. Body v2 compilation preserves the same
-material events as v1. Material planning is shared across targets, including
-initial charge, replenishment and color changes. A charged program can resolve
-without a palette; an exhausted charge still requires available supply.
-
-This contract alone does not enable drawing: the robot compiles plane designs
-through `tatbot ros compile` (see [portable design handoff](#portable-design-handoff)).
-
 Use `config/inkmap/placement.schema.json` for the placement record. Keep the
-design identifier, surface/frame, anchor, scale, rotation, mirror state, schema
+design identifier, surface/frame, anchor, size, rotation, mirror state, schema
 version, and provenance together. Validate records before rendering or mapping.
 
+PlacementFile v7 carries its designs as source-art records. Earlier versions
+carried stroke artwork and have no reader.
+
 [InkLang](inklang.md) owns the path from placement description to the exact
-anchor. A PlacementFile v6 embeds the fixed model specification and identity,
+anchor. A PlacementFile embeds the fixed model specification and identity,
 the original description, normalized intent, surface-bound resolution, and any
 explicitly accepted candidate.
 Consumers must reject provenance whose body digest, face, barycentric weights,
 actual site, or region UV disagrees with the placement and current atlas.
 
-Placement v6 distinguishes two surface hashes:
+A placement file distinguishes two surface hashes:
 
 - `asset_sha256` identifies the complete GLB bytes for provenance.
 - `surface_sha256` identifies canonical non-indexed, Z-up XYZ quantized to
@@ -70,113 +72,83 @@ Placement v6 distinguishes two surface hashes:
   anchors. A rig or material export may change
   the asset hash without changing what an anchor means.
 
+A placement's `rotation_rad` turns the design about the surface normal from the
+body's +z projected onto the rest surface. On an arm that is rarely upright:
+Inkmap adds the turn that is ([Inkmap](inkmap.md#projects-editing-and-recovery)).
+
 Pose and robot-relative positioning do not belong in a placement.
 
 The preview is an interchangeable front end. A placement file is not a motion
 program and must not be treated as evidence of physical reachability.
 
-## Projects and artwork
+`tatbot.surface-placement/2`
+(`config/human-representation/surface-placement-v2.schema.json`) binds a
+stroke program to a body: the program digest, physical size, rotation, mirror,
+review, provenance, and a `body` target with the body identity, surface digest,
+barycentric anchor, semantic site and supported faces. It is the input to
+material-stroke planning (`InkProgram/2`); the plane and cylinder targets were
+removed with the paper mounts (2026-11-02). Browser and Python constructors
+produce the same digests. Body v1 imports have an explicit migration preserving
+their binding and constraints.
 
-### Portable editor projects
+## Tattoo brief
 
-`tatbot.inkmap-project/3` encloses an embedded-artwork PlacementFile v6, editor
-pose/appearance/camera settings, bounded placement history, a recoverable
-pending-edit base, and the paper/cylinder editor's working draft. Its content
-digest covers the entire document. Editor-only settings do not alter the
-enclosed placement body/anchor contract. The project reader validates the
-strict JSON Schema and canonical digest, rejects unknown versions/fields and
-missing artwork, and checks all history frames. Loading a project is not
-permission to execute it. `config/inkmap/project.schema.json` defines the
-format.
+`tatbot.inkmap-brief/1` (`config/inkmap/brief.schema.json`) is what Inkmap's
+**Export brief** writes: a name, the body identity, the art records used, and
+the accepted placements in drawing order. Each placement names its `art_id`,
+`width_mm` (to 0.1 mm, the pipeline's 10 px/mm), height, rotation, mirror,
+anchor, site and the sentence that placed it. The art registry holds exactly
+the placed art, and the content digest covers everything.
 
-Projects store the shared artwork records directly in their body and chart
-registries. `chart` and `chart_parked` are required and nullable. Earlier project
-and placement schemas, and records from the retired tracer, require explicit
-DBV3 regeneration and import; readers do not rebuild artwork
-from their original SVG. Rotation stays in radians so reopening does not move
-an unchanged design.
+`tatbot art separate --brief brief.json --out DIR` reads it
+([art pipeline](art.md)), checks it with `tatbot_contracts.art`, and separates
+the placement's image at its width. A brief carries no strokes, tool, palette
+cap or execution authority.
 
-### Typed artwork conversion
+## Robot render
 
-`tatbot.inkmap-artwork/2` contains a frozen `TattooProgram/1`, source hash and
-provenance, acquisition adapter, optional recipe digest and metric decoding
-error bound. Its program is authoritative for geometry, physical dimensions,
-pen widths, path order and ink assignment. Previews derive from that geometry.
-Readers validate nested hashes and source binding without re-running the
-original conversion. They never fetch source identifiers.
+`tatbot.inkmap-render/1` (`config/inkmap/render.schema.json`) is what comes back: `inkmap-render.json`, which
+`tatbot art separate --brief` writes beside each placement's separation. It holds a PNG of the program's predicted ink
+over white at the design's canvas, the digest of the art it was separated from, its `width_mm`, `height_mm` and
+`mirror`, and the separation's `minutes`, `dips`, `rinses`, `lost_inks` and `weakest_source`. It carries no strokes.
+`tatbot_contracts.art` and `web/inkmap/src/core/render-record.ts` are the two readers. The stock collection lists its
+own under each entry's `renders`, in `public/designs/renders/`.
 
-The installed native DBV3 worker emits ordered centerlines directly. Inkmap's
-**Import artwork** accepts acquired JSON records only. Generic paint conversion
-remains source tooling and contract fixtures; it cannot enter the drawing editor.
-A record contains no embedded original SVG or independently stored preview.
-See `config/inkmap/artwork.schema.json`, `tatbot_contracts.artwork` for the
-stdlib path reader, and `tatbot_surface.artwork` for public paint programs.
+## Projects
 
-The `TattooProgram/1` SVG adapter is the shared TypeScript paint materializer
-in `web/inkmap/src/core/human-representation/svg-program.ts`. It preserves
-painted metric regions: fills, compound-path holes, stroke widths/caps/joins,
-nested transforms, colors, and layer order, and it does not infer centerlines
-from filled shapes. Acquired DBV3 paths need none of it: their native
-sequence, direction, closedness and repeated traversals are what the robot
-compile consumes.
+`tatbot.inkmap-project/5` encloses a PlacementFile v7, editor
+pose/appearance/camera settings, bounded placement history and a recoverable
+pending-edit base. Its content digest covers the entire document. Editor-only
+settings do not alter the enclosed placement body/anchor contract. The project
+reader validates the strict JSON Schema and canonical digest, rejects unknown
+versions/fields and missing art, and checks all history frames. Loading a
+project is not permission to execute it. `config/inkmap/project.schema.json`
+defines the format.
 
-The source/fixture SVG paint parser accepts opaque, self-contained geometry with presentation
-attributes or inline styles. Text, external references, filters, gradients,
-translucent paint, unknown style operations, and malformed syntax refuse with
-an element path. Nonuniformly scaled strokes require explicit outline
-conversion. Curves are adaptively flattened with a maximum requested chord
-error of 0.1 mm. Source SVG bytes and their digest remain review provenance.
+Earlier versions have no reader or migration: **Open project** refuses them, and
+one saved in the browser gives way to a new project.
+Rotation stays in radians so reopening does not move an unchanged design.
 
-The shared program preview renders fill regions without an extra outline and
-negative-space masks as transparency rather than white pigment.
+## Acquired artwork
 
-The shared `web/inkmap/public/designs/manifest.json` collection supplies acquired
-CC0 examples to Inkmap and the offline consumers that read the collection.
-It binds artwork JSON hashes, source metadata, acquired physical dimensions and
-pen widths, and disjoint artwork-family train/validation/test splits.
-The editor's picker and every catalogue ID contain only three native DBV3
-acquisitions: orbit, sprout and ridges. The original finished SVG designs,
-hidden showcase artwork and compiler fixtures have been removed. Each example
-is acquired at 30 × 30 mm; a different physical size requires regeneration.
+`tatbot.inkmap-artwork/2` (`config/inkmap/artwork.schema.json`) is what DBV3
+acquisition produces and the robot compiles: a frozen `TattooProgram/1`, source
+hash and provenance, the `dbv3-batik-paths/1` adapter, the frozen recipe
+identity and a metric decoding error bound. Its program is authoritative for
+geometry, physical dimensions, pen widths, path order and ink assignment.
+Previews derive from that geometry. Readers validate nested hashes and source
+binding without re-running the original conversion. They never fetch source
+identifiers. `tatbot_contracts.artwork` is the stdlib reader and
+`tatbot_surface.artwork` builds public paint programs.
 
-## Portable design handoff
+A DBV3 drawing is optimized for its acquisition size and pen width, so it is
+never resized: a different size is a new acquisition from the source image.
+That is why Inkmap places the image and the brief names the width.
 
-`tatbot.inkmap-design/1` contains a name, frozen `InkmapArtwork/2` records, and
-an ordered list of `SurfacePlacement/2` records with unique placement IDs and
-explicit artwork references. The registry contains exactly the used artwork.
-The content digest binds the order, original artwork, conversion, and placement
-intent. Readers validate the frozen artwork, nested hashes and cross-references;
-rehashing an envelope cannot detach a placement from its source program.
-
-The same design format admits body, plane and cylinder targets. It contains no
-robot pose, tool, palette or execution authority. The
-robot compile binds the selected tool and the registered page separately.
-Nominal chart dimensions are not measured pad dimensions.
-
-The body editor's **Export design** action derives each body placement from
-the frozen artwork and its v1 surface binding (`web/inkmap/src/core/body-design.ts`),
-explicitly upgrading that binding. Generated source provenance is retained.
-Existing placement imports remain a versioned interface; their contents are
-not silently reinterpreted. Plane/cylinder design construction is available
-through the shared design API and the **Paper** and **Cylinder**
-workspaces. Each edits its own analytic canvas — a project holds a pad draft
-and a cylinder draft that never mix — with ordered artwork placements,
-rotation and mirroring, choosing artwork from the same library and
-generator as the body and placing it the same way — a ghost under the pointer,
-a click, then drag and handles. Both are previewed in 3D on the bench's
-own fixtures — the 7.5 × 11 in paper pad, 1 cm thick, and the ⌀85 mm × 7.5 in
-paper cylinder, each white with a faint blue ¼ in grid — with the artwork bent
-onto the surface through the same chart frame the placement is checked with;
-`u` follows the cylinder's axis and `v` is arc length from its crest. The
-fixture sizes are the editor's defaults, not measurements of any bench
-setup. **Portable design** and **Open design** (under File) use the same
-portable handoff as body export; **Artwork SVG** exports the selected artwork
-as the editor draws it. Bounds and margins are validated before saving. The
-in-memory draft survives switching workspaces and a reload; save a design file
-before clearing the browser.
-
-`tatbot ros compile design.json` turns a plane design into the ROS 2 stack's
-`program.json` and a `preview.svg` (contact by schedule tier, dashed pen-up
-travel). It accepts plane charts only; a 128 × 172 mm chart is the default
-stencil page. The compile, its refusals and the program format are in
-`ros/README.md` section 4.2. A preview is not a deposition prediction.
+`tatbot ros compile artwork.json` turns one acquisition, or several drawn as
+layers (one per ink, on one canvas), into the ROS 2 stack's `program.json` and
+a `preview.svg`. `--at X,Y` centres it on the 128 × 172 mm stencil page and
+`--stencil DIR` names a generated print. The compile, its refusals and the
+program format are in `ros/README.md` section 4.2. A preview is not a
+deposition prediction. The simulator's single-ink CC0 acquisitions (orbit,
+sprout and ridges, 30 × 30 mm) are in `config/sim2/acquired/`.

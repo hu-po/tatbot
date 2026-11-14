@@ -47,7 +47,7 @@ def _apply(m, xy) -> np.ndarray:
 
 
 class PageFilter:
-    """The tracker's estimator (track.Tracker.field): add, predict, snapshot, corrected, samples, held."""
+    """The tracker's estimator (track.Tracker.field): add, predict, snapshot, corrected, samples, jump, sheet."""
 
     # Tuned by replay (internal/evidence/page_replay.py) on the 23 tracked runs of 2026-10-20..23, held out by halves
     # first, then on all, and rounded: the sheet drifts drift_m_min and turns turn_rad_min per sqrt(minute), the arm's
@@ -65,7 +65,8 @@ class PageFilter:
                  bias_m=0.001, bias_rad=0.005, bias_s=60.0, setup_m=0.0001, setup_rad=0.015, arm_prior_m=0.010,
                  grad_prior=0.2, hold_m=0.003, gate=7.0, confirm_m=0.0015, apart_m=0.003, open_m=0.003,
                  open_rad=0.05, cap_m=0.060, cameras=1, view_m=0.003, view_m_min=0.0001, view_sd_m=0.00015,
-                 stop_s=1.0, move_n=3, move_m=0.0015, move_rad=0.03, wrist_n=4, pull_gate=13.8, moving_m=0.003):
+                 stop_s=1.0, move_n=3, move_m=0.0015, move_rad=0.03, wrist_n=4, pull_gate=13.8, moving_m=0.003,
+                 turn_gate_rad=0.08, turn_rad=0.03):
         extra = 2 * int(cameras) if cameras > 1 else 0   # the stop's error (2), each further camera's offset (2)
         self.c, self.n, self.views = np.asarray(centre, float), CAMERAS + extra, CAMERAS + 2
         self.q = np.r_[np.array([drift_m_min, drift_m_min, turn_rad_min, arm_m_min, arm_m_min, *[arm_grad_min] * 4]) ** 2,
@@ -77,6 +78,7 @@ class PageFilter:
         self.move, self.far = (move_n, move_m, move_rad), []   # the overhead's readings past its gate, in a row
         self.gate, self.confirm, self.apart, self.open, self.cap = gate, confirm_m, apart_m, (open_m, open_rad), cap_m
         self.wrist_n, self.pull_gate, self.recent = int(wrist_n), pull_gate, []   # the last checked readings' jumps
+        self.turn_gate, self.turn_sd = turn_gate_rad, turn_rad
         self.setup = np.array([setup_m, setup_m, setup_rad]) ** 2
         self.x = np.zeros(self.n)
         self.P = np.diag(np.r_[self.setup, np.array([arm_prior_m, arm_prior_m, *[grad_prior] * 4]) ** 2, self.bias,
@@ -153,7 +155,9 @@ class PageFilter:
             if held is None or not self._one_move(u, y, held):
                 self.held = (u, r, np.eye(2) * stop, follow, y, t, camera)
                 return "held"
-            self.P[SHEET, SHEET] += np.diag([self.open[0] ** 2] * 2 + [self.open[1] ** 2])
+            # opened to the jump the two agree on, as a pull is: at open_m alone a 30 mm move two readings agreed on was
+            # taken 23 mm, and the strokes after it stood 1-1.5 mm off (sim2 xarm-mount-shove, 2026-11-12)
+            self.P[SHEET, SHEET] += np.diag([max(self.open[0] ** 2, float(y @ y))] * 2 + [self.open[1] ** 2])
             for hu, hr, hcov, hf, _, ht, hc in (held, (u, r, np.eye(2) * stop, follow, y, t, camera)):
                 hj = self._view_jac(hu, hf, hc)
                 self._update(hr - self._read(hu, hf, hj), hj, hcov)
@@ -164,6 +168,27 @@ class PageFilter:
         self.samples.append((t, u, r))
         self.held = None
         return "added"
+
+    # A wrist reading is the residual at one point: a sheet's turn shows only as readings at several. On the rig
+    # (2026-11-12) a holder pushed 17 mm and turned 13 deg was followed by its slide at the first hover, the stroke
+    # went on, and 30 mm of it ran on a page turned 13 deg wrong, the correction at the pen growing to 5.6 mm, until
+    # a second stop took the turn. A reading's markers also say how the print is turned on the page: to a degree or
+    # two from three markers (the camera's own mount and the arm's wrist are in it), so it is silent on a still
+    # sheet and speaks only for a turn past turn_gate_rad.
+    def turn(self, t: float, yaw: float, follow=None) -> bool:
+        """A wrist reading's own turn of the print on the page in use (`yaw`, rad, by its markers' layout; `follow`
+        the page's follows then), before its residual is added: past turn_gate_rad from the filter's sheet, the
+        sheet's turn opens to it and takes it within turn_rad. True when it did."""
+        self.to(t)
+        followed = 0.0 if follow is None else _yaw(np.asarray(follow, float))
+        off = (yaw + followed - self.x[2] + np.pi) % (2 * np.pi) - np.pi
+        if abs(off) <= self.turn_gate:
+            return False
+        jac = np.zeros((1, self.n))
+        jac[0, 2] = 1.0
+        self.P[2, 2] += off ** 2
+        self._update(np.array([off]), jac, np.array([[self.turn_sd ** 2]]))
+        return True
 
     # On a bicep (2026-10-24) a 6.5 mm move read at once while its stroke drew, on one marker a reading, was taken a
     # little at a time over some 17 s: each such reading weighs little, and the sheet drifts drift_m_min a minute.
@@ -244,7 +269,30 @@ class PageFilter:
         self.P[ARM, ARM], self.P[CAMERAS:, CAMERAS:] = keep, views
         self.held = None
 
+    def retracked(self, sheet_m: float, sheet_rad: float) -> None:
+        """The page in use carried onto the sheet where the overhead's markers read it moved (ArmExecutor._retrack),
+        its follows cleared: the sheet starts again within sheet_m and sheet_rad of it (the carry's own error) and the
+        overhead's error from its own; the arm's part and the cameras' offsets stand, being the arm's and the cameras'."""
+        for part in (SHEET, BIAS):
+            self.x[part], self.P[part, :], self.P[:, part] = 0.0, 0.0, 0.0
+        self.P[SHEET, SHEET] = np.diag([sheet_m ** 2, sheet_m ** 2, sheet_rad ** 2])
+        self.P[BIAS, BIAS] = np.diag(self.bias)
+        self.stop, self.far, self.recent, self.held = None, [], [], None
+
     # --- the tracker's -----------------------------------------------------------------------------------------------
+    def jump(self, after: float = -np.inf) -> float:
+        """How far the held reading (past its gate, no second agreeing yet) lies from where the filter has the print
+        (m); 0 with none held, or one taken at or before `after`."""
+        return 0.0 if self.held is None or self.held[5] <= after else float(np.linalg.norm(self.held[4]))
+
+    def sheet(self) -> np.ndarray:
+        """The sheet's move since setup as the filter has it (3 x 3, setup page metres): its turn about the drawing's
+        centre and its slide there."""
+        move = np.eye(3)
+        move[:2, :2] = _rot(self.x[2])
+        move[:2, 2] = self.c + self.x[:2] - move[:2, :2] @ self.c
+        return move
+
     def predict(self, points, follow=None) -> tuple[np.ndarray, np.ndarray]:
         """(r at each point (N, 2) on the page in use, its sigma (N,)), uncapped; with no follow, the snapshot's."""
         follow = self.follow if follow is None else np.asarray(follow)

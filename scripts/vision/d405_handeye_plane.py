@@ -47,10 +47,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts/lib"))
 from tatbot_paths import bootstrap  # noqa: E402
 
 bootstrap()
+import arm_model  # noqa: E402
 import tool_spec  # noqa: E402
 from kinematic_calibration import KEY as JOINT_OFFSETS_KEY  # noqa: E402
 from kinematic_calibration import validate_offsets  # noqa: E402
-from urdf_kinematics import UrdfChain, driver_joint_names  # noqa: E402
+from urdf_kinematics import UrdfChain  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 URDF = REPO / "urdf/tatbot.urdf"
@@ -219,7 +220,10 @@ def right_workspace(path):
 
 
 def joint_map(joints):
-    return dict(zip(driver_joint_names("right", 6), [float(j) for j in joints], strict=True))
+    """The right arm's revolute chain's joints, by URDF name (a capture records them alone, the carriage apart)."""
+    model = arm_model.for_arm("right", REPO)
+    names = model.joint_names("right")
+    return dict(zip((names[i] for i in model.arm), [float(j) for j in joints], strict=True))
 
 
 def nominal_link6_from_cam(chain, role):
@@ -240,7 +244,7 @@ def load_observations(capture_dirs, chain, roi, offsets):
         sys.exit(f"d405_handeye_plane: no capture-*.npz under {[str(d) for d in capture_dirs]}")
     for f in files:
         z = np.load(f)
-        joints = np.asarray(z["joints"], float) + offsets[:6]
+        joints = np.asarray(z["joints"], float) + offsets[arm_model.for_arm("right", REPO).arm_index]
         root_from_link6 = chain.link_pose(LINK6, joint_map(joints))
         for role in OPTICAL_FRAME:
             if f"depth_{role}" not in z:
@@ -324,7 +328,7 @@ def print_role(role, rec):
 def run(capture_dirs, out, roi, paper_z, urdf):
     chain = UrdfChain(urdf)
     right = right_workspace(WORKSPACE)
-    offsets = np.asarray(validate_offsets(right.get(JOINT_OFFSETS_KEY)))
+    offsets = np.asarray(validate_offsets(right.get(JOINT_OFFSETS_KEY), arm_model.for_arm("right", REPO)))
     z_true = paper_z if paper_z is not None else right.get("paper_plane_z")
     if z_true is None:
         raise ValueError(f"no right paper_plane_z in {WORKSPACE}")
@@ -385,7 +389,7 @@ def self_test(tmp=None, noise_m=0.0):
     paper_z = 0.005945
     intr = np.array([385.0, 385.0, 320.0, 240.0, 640.0, 480.0])
     units_m = 1e-4
-    truth = {"wrist_upper": np.array([np.radians(0.5), np.radians(-0.3), np.radians(0.2), 0, 0, 0.002])}
+    truth = {"wrist_2": np.array([np.radians(0.5), np.radians(-0.3), np.radians(0.2), 0, 0, 0.002])}
     tilts = [(0, 0, 0), (0.25, 0, 0.3), (-0.25, 0, -0.3), (0, 0.25, 1.0), (0, -0.25, -1.0), (0.18, 0.18, 2.0),
              (-0.18, 0.18, -2.0)]
     tmp = Path(tmp or tempfile.mkdtemp(prefix="d405-handeye-selftest-"))

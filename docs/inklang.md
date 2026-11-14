@@ -87,12 +87,13 @@ chosen, so it re-resolves to the same anchor; the original wording stays in
 
 Versions have separate meanings:
 
-- InkLang lexicon 0.3 defines 59 stable leaf sites plus 8 zones, aliases,
+- InkLang lexicon 0.4 defines 59 stable leaf sites plus 9 zones, aliases,
   laterality, 6 aspects, 3 levels, and 6 relative relation kinds.
 - intent schema 1 describes body-independent meaning.
 - atlas schema 2 describes the sole SOMA-specific grounding dataset.
-- resolver version 1 and resolution schema 2 describe the grounding behavior
-  and its result. Schema 2 adds the optional `relative` walk record.
+- resolver version 2 and resolution schema 2 describe the grounding behavior
+  and its result. Schema 2 adds the optional `relative` walk record. Version 2
+  reads the arm by its own axis (below).
 - PlacementFile version 6 stores all model, identity, topology, and
   rest-surface bindings with canonical rest-surface anchors;
   pose does not belong in a PlacementFile.
@@ -100,6 +101,26 @@ Versions have separate meanings:
 Changing a body mesh, vocabulary, atlas representation, resolver algorithm,
 or placement format is therefore a different change and must not be hidden
 under another component's version.
+
+## The arm
+
+The rest surface is a T-pose with the palms down, so an arm lies along x and its
+words cannot be read from the body's frame. Grounding takes them from the limb,
+as a person holding that arm at their side would mean them:
+
+- **Inner and outer** lie round the limb. The upper arm's outer side faces +z, and
+  so does the forearm's back, the side a palm-down hand shows. Inner is -z. Legs
+  keep the body's rule: outer faces away from the midline. `bicep` and `tricep`
+  meet along the outer line, so the outer arm is the outer bicep in front of it and
+  the outer tricep behind.
+- **Upper and lower** follow a region's chart, whose `u` runs proximal to distal:
+  down the body, and out along an arm.
+- **Above and below** walk along the limb, toward the shoulder and the wrist.
+- **Up on the skin** (`AtlasIndex.upAt`) is the body's up, and on an arm toward the
+  shoulder. The two blend over the shoulder.
+
+`arm` is a zone of the bicep, tricep and forearm, so `left arm` asks which. A side
+can sit inside a compound, as in `the back of the left arm`.
 
 ## Relative placement
 

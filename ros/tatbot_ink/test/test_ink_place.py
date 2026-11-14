@@ -4,14 +4,14 @@ import math
 
 import numpy as np
 import pytest
-from ink_designs import artwork, design, element, placement, program
+from ink_designs import artwork, element, placement, program
 from tatbot_description import repo_root
 from tatbot_ink import CompileError
 from tatbot_ink.input import read_input
-from tatbot_ink.place import place_points, placed_strokes, print_page
+from tatbot_ink.place import place_points, placed_strokes, print_page, relocate, stencil_page
 
 
-def test_rotation_mirror_and_page_y_follow_inkmap():
+def test_rotation_mirror_and_page_y_turn_the_canvas_about_its_centre():
     canvas = (.02, .02)
     p = placement(canvas, anchor=(.01, -.02))
     np.testing.assert_allclose(place_points([[.02, .02]], canvas, p), [[.02, -.01]])
@@ -22,10 +22,11 @@ def test_rotation_mirror_and_page_y_follow_inkmap():
 
 
 def test_canvas_height_and_line_footprint_must_fit_clear_area():
-    prog = program([("pen", [element([[0, .01], [.02, .01]])])])
-    doc = read_input(design([("p", prog, placement((.02, .02), anchor=(.035, 0)))]))
+    """The canvas reaches the clear centre's edge (45 mm from the page centre): a line at its edge does not fit."""
+    doc = relocate(read_input(artwork(program([("pen", [element([[0, .01], [.02, .01]])])]))), at_m=[.035, 0])
     with pytest.raises(CompileError, match="footprint"):
         placed_strokes(doc, .0005)
+    assert placed_strokes(relocate(doc, at_m=[.034, 0]), .0005)[1] == stencil_page()
     tall = artwork(program([("pen", [element([[.002, .05], [.018, .05]])])], canvas=(.02, .14)))
     with pytest.raises(CompileError, match="canvas"):
         placed_strokes(read_input(tall), .0005)
@@ -57,9 +58,8 @@ def test_a_generated_print_is_the_page_its_design_must_fit(tmp_path):
 
 
 def test_acquired_layers_stack_on_one_origin_and_move_together():
-    """One DBV3 acquisition per pen, drawn in order without composing a design by hand (2026-10-13)."""
+    """One DBV3 acquisition per pen, drawn in order: the layers share one origin and move together."""
     from tatbot_ink.input import read_layers
-    from tatbot_ink.place import relocate
 
     first = artwork(program([("ink", [element([(0, 0), (0.01, 0)])])]))
     second = artwork(program([("ink", [element([(0, 0.01), (0.01, 0.01)])])]))
@@ -75,6 +75,17 @@ def _stroke(points, path):
     from tatbot_ink.place import Stroke
 
     return Stroke(np.asarray(points, float), False, .0003, {"placement": "p", "layer": "l", "path": path})
+
+
+def test_a_fading_path_cut_at_a_keep_region_keeps_its_deposition_by_arc():
+    from tatbot_ink.place import Stroke, keep_region
+
+    whip = Stroke(np.array([[-.03, 0.], [.03, 0.]]), False, .0005, {"placement": "p", "layer": "l", "path": "whip"},
+                  deposition=np.array([1., 0.]))   # 60 mm fading out, 30 mm each side: cut at x = 0
+    (kept,), _ = keep_region([whip], [[0, -.03], [.03, -.03], [.03, .03], [0, .03]])
+    np.testing.assert_allclose(kept.points_m, [[0, 0], [.03, 0]], atol=1e-15)
+    np.testing.assert_allclose(kept.deposition, [.5, 0.])
+    assert kept.deposition_at(np.array([.015])) == pytest.approx([.25])
 
 
 def test_a_keep_region_keeps_its_paths_as_placed_and_cuts_one_drawn_on_both_sides():

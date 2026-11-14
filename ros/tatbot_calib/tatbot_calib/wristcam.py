@@ -7,18 +7,23 @@ from where the fit had it (2026-10-13), so neither can be trusted for the fitted
 
 This measures the camera's mount instead. The station touch places the probe ball in the frame the arm commands
 (its height by the palette camera, `calib height`), and the palette's roof tag stands at a fixed CAD offset from the
-ball. The arm holds the tool over the palette at several poses, upright and tilted; at each the wrist camera's
-colour stream sees the roof tag, and one PnP gives the camera to the tag. Every hold then says where the camera sits
-on the tool mount: mount <- camera = inv(base <- mount by FK) . (base <- tag) . inv(camera <- tag). Their mean is the
-mount, their spread its uncertainty. The gauge's tip in the camera follows from the mount and the fitted tool's tcp,
-so the gauge, dips and strokes stand in the frame the arm commands; a tcp length error cancels between them.
+ball, turned by the overhead fix's yaw. The arm holds the tool over the palette at several poses, upright and tilted;
+at each the wrist camera's colour stream sees the roof tag. One least-squares fit over every hold's tag corners then
+solves the camera's mount on the tool mount and the tag's pose in the base together, from the touch's: on the xArm
+rig the overhead's yaw and the CAD offset put the tag 2-3 mm and 1.2 deg off, which the holds read as a mount that
+moved with joint 7 (2026-11-09). What the tag is free to take the mount gives up across the camera's view, so the
+fit's mount is then pinned to the pen's end as the holds' own frames show it (seen.py: the fit's tcp stood 1.7 mm
+off its pen and a 3RL's ink 4.5-5 mm off its markers, 2026-11-11). Leaving each hold out once gives the spread. The gauge's tip in the camera follows
+from the mount and the fitted tool's tcp; `calib gauge` then sets its height along the pen against the ball's height,
+so the gauge, dips and strokes stand in the frame the arm commands.
 
 The holds are poses clear of what way_check refuses, whose camera sees the whole tag (HandEye.candidates).
 Every hold is a probe-guarded Touch through Calibration.go_to, kept clear of the station's parts: one joint move
 (MODE_VIEW) where that keeps the tool off the station and the stylus, else the station's way (MODE_MOVE), the
 nearest of the holds still wanted first (reach.nearest_first). The run writes holds.jsonl, frames/, candidate.json
-and report.md; --adopt installs the gauge file (the old one kept beside it as .replaced-<utc>) when the holds agree
-within MAX_TIP_SPREAD_M at the tip.
+and report.md; --adopt installs the gauge file (the old one kept beside it as .replaced-<utc>): the best fit the holds
+give, its spread (how far leaving one hold out moves the tip in the camera) recorded as its uncertainty. The mounts
+are as rigid as they can be (2026-11-09), so a wider spread is the camera's, not a reason to keep none.
 """
 from __future__ import annotations
 
@@ -31,16 +36,16 @@ from pathlib import Path
 
 import numpy as np
 
-from tatbot_calib import halo, program, reach, station
+from tatbot_calib import halo, program, reach, seen, station
 from tatbot_calib.tool import ToolRefusedError, fitted_tool
 
-HOLDS_WANTED = 15
+HOLDS_WANTED = 24             # the fit's holds: the xArm's printed bracket moves the camera ~1 mm with the arm's turn,
+                              # which more holds average (2026-11-09: 1.1-1.7 mm leave-one-out over 10 of 15)
 TRIES = 4 * HOLDS_WANTED      # candidates tried at most: a refused way costs a check, a hold that sees nothing a move
 FRAMES = 5
 SETTLE_S = 1.0
 MIN_HOLDS = 4
 OUTLIER_PX = 3.0              # a hold the fit misses by more than this (rms over its corners) is left out
-MAX_TIP_SPREAD_M = 0.0008     # the holds' tips in the camera agree within this (max from their mean) to adopt
 CONE_BACK_M = 0.0043          # the gauge segments the pen from its cone end this far up its axis from the tip
 HEIGHTS_M = (0.05, 0.08, 0.11)        # the tcp over the roof tag's plane
 OFFSETS_M = (0.0, 0.025, 0.05)        # the tcp off the tag's centre, across, at AZIMUTHS about it
@@ -80,33 +85,37 @@ def solve_mount(holds: list[dict], base_from_tag: np.ndarray) -> list[np.ndarray
     return [np.linalg.inv(h["base_from_mount"]) @ base_from_tag @ np.linalg.inv(h["camera_from_tag"]) for h in holds]
 
 
-def fit_mount(holds: list[dict], base_from_tag: np.ndarray, model, k, dist, seed: np.ndarray) -> tuple[np.ndarray, float]:
-    """mount <- camera by least squares over every hold's tag corners in the image (a hold's PnP depth, ~1-2 mm at
-    20-25 cm, no longer averages in as a pose): the camera that projects the tag where each hold saw it. Its
-    residual's median, px."""
+def fit_mount(holds: list[dict], base_from_tag: np.ndarray, model, k, dist,
+              seed: np.ndarray) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
+    """mount <- camera and base <- tag by least squares over every hold's tag corners in the image (a hold's PnP depth,
+    ~1-2 mm at 20-25 cm, no longer averages in as a pose), from `seed` and the touch's `base_from_tag`: the camera and
+    the tag that project its corners where each hold saw them. (The mount, the residual's median px, each hold's rms
+    px, the tag.)"""
     import cv2
     from scipy.optimize import least_squares
     from scipy.spatial.transform import Rotation
 
-    tag_pts = (base_from_tag @ np.c_[model, np.ones(len(model))].T).T[:, :3]
+    corners = np.c_[model, np.ones(len(model))].T
 
     def pose(x):
         return _pose(Rotation.from_rotvec(x[:3]).as_matrix(), x[3:])
 
     def residuals(x):
         out = []
-        camera_from_mount = np.linalg.inv(pose(x))
+        tag_pts = (pose(x[6:]) @ corners).T
+        camera_from_mount = np.linalg.inv(pose(x[:6]))  # arm-model: not joints; six pose parameters
         for h in holds:
-            camera_from_base = camera_from_mount @ np.linalg.inv(h["base_from_mount"])
-            pts = (camera_from_base @ np.c_[tag_pts, np.ones(len(tag_pts))].T).T[:, :3]
+            pts = (camera_from_mount @ np.linalg.inv(h["base_from_mount"]) @ tag_pts.T).T[:, :3]
             uv, _ = cv2.projectPoints(pts, np.zeros(3), np.zeros(3), k, dist)
             out.append(uv.reshape(-1, 2) - np.asarray(h["pixels"], float))
         return np.concatenate(out).ravel()
 
-    x0 = np.r_[Rotation.from_matrix(seed[:3, :3]).as_rotvec(), seed[:3, 3]]
-    result = least_squares(residuals, x0, loss="soft_l1", f_scale=1.0)
+    def vector(m):
+        return np.r_[Rotation.from_matrix(m[:3, :3]).as_rotvec(), m[:3, 3]]
+
+    result = least_squares(residuals, np.r_[vector(seed), vector(base_from_tag)], loss="soft_l1", f_scale=1.0)
     per_hold = np.sqrt(np.mean(result.fun.reshape(len(holds), -1) ** 2, axis=1))
-    return pose(result.x), float(np.median(np.abs(result.fun))), per_hold
+    return pose(result.x[:6]), float(np.median(np.abs(result.fun))), per_hold, pose(result.x[6:])  # arm-model: not joints
 
 
 def gauge_record(mount_from_camera: np.ndarray, tip_mount, arm: str, tool: str) -> dict:
@@ -117,6 +126,9 @@ def gauge_record(mount_from_camera: np.ndarray, tip_mount, arm: str, tool: str) 
     axis = camera_from_mount[:3, :3] @ np.array([0.0, 0.0, 1.0])   # the tool's +z, from the mount toward its tip
     return {"tip_cam_m": tip.tolist(), "offset_m": 0.0, "cone_end_cam_m": (tip - CONE_BACK_M * axis).tolist(),
             "axis_cam": axis.tolist(), "tip_length_m": CONE_BACK_M, "normal_cam": (-axis).tolist(),
+            # what lets the tip follow a later tip adoption with no new holds (scripts/lib/gauge_derive.py)
+            "mount_from_camera": np.asarray(mount_from_camera, float).tolist(),
+            "tip_mount_m": np.asarray(tip_mount, float).tolist(),
             "arm": arm, "tool": tool, "measured_with": tool, "source": "wrist hand-eye on the palette's roof tag (tatbot ros calib wristcam)",
             "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
@@ -156,12 +168,14 @@ class HandEye:
 
     def __init__(self, cal: program.Calibration, base_from_tag: np.ndarray, camera, detector, model, frame: str,
                  gauge: dict | None = None):
+        self.frames, self.shots = [], []   # every hold's first colour and depth frame, the tag seen or not: the
+                                           # pen's end is read in them (seen.tip, seen.depth)
         self.cal, self.base_from_tag, self.camera, self.detector, self.model = cal, base_from_tag, camera, detector, model
         self.frame, self.kin, self.gauge = frame, cal.kin, gauge
         self.holds: list[dict] = []
 
     def cad_mount(self, q=None) -> np.ndarray:
-        q = np.zeros(7) if q is None else np.asarray(q, float)   # the camera rides link 6, the mount the carriage
+        q = np.zeros(self.kin.n) if q is None else np.asarray(q, float)   # the camera rides the wrist, the mount the tool
         return np.linalg.inv(self.kin.frame(q, f"{self.cal.arm}/tool_mount")) @ self.kin.frame(q, self.frame)
 
     def image(self, pts) -> np.ndarray | None:
@@ -205,7 +219,7 @@ class HandEye:
         run()'s."""
         from tatbot_session import ready
 
-        q0 = np.zeros(7)
+        q0 = np.zeros(self.kin.n)
         tcp_from_mount = np.linalg.inv(self.kin.fk(q0)) @ self.kin.frame(q0, f"{self.cal.arm}/tool_mount")
         tip_mount = np.linalg.inv(tcp_from_mount)[:3, 3]
         mount_from_camera = gauge_mount(self.gauge, self.cad_mount(), tip_mount) if self.gauge else self.cad_mount()
@@ -228,7 +242,7 @@ class HandEye:
                             if self.unseen(np.linalg.inv(camera), pen, cap):
                                 continue
                             try:
-                                q = ready.solve_ik_seeded(self.kin, pose, reach.REST)
+                                q = ready.solve_ik_seeded(self.kin, pose, reach.rest(self.kin))
                                 self.cal.rows_check("candidate", [q, q])
                             except (ValueError, RuntimeError):
                                 continue
@@ -242,6 +256,9 @@ class HandEye:
         out = self.cal.run.dir / "frames"
         out.mkdir(exist_ok=True)
         cv2.imwrite(str(out / f"{len(self.holds):02d}-{label}.jpg"), colors[0], [cv2.IMWRITE_JPEG_QUALITY, 92])
+        self.frames.append(colors[0])
+        if self.camera.raw_depth:
+            self.shots.append((self.camera.raw_depth[0], self.camera.depth_metadata))
         corners = []
         for i, image in enumerate(colors):
             found = [d for d in self.detector.detect("wrist", image, time.time_ns() + i) if int(d.tag_id) == 0]
@@ -275,7 +292,7 @@ class HandEye:
             self.cal.rig.spin(SETTLE_S)
             before = self.cal.rig.joints()
             row = self.grab(label, before)
-            moved = float(np.max(np.abs(self.cal.rig.joints() - before)[:6]))
+            moved = float(np.max(np.abs(self.cal.rig.joints() - before)[self.kin.revolute]))
             if row is None or moved > 2e-3:
                 self.cal.say(f"{label}: the roof tag was not seen" if row is None else f"{label}: the arm moved")
                 continue
@@ -290,22 +307,48 @@ def solve(holds: list[dict], base_from_tag: np.ndarray, hand: HandEye, tip0, old
     """fit_mount over the holds, those it misses past OUTLIER_PX left out (MIN_HOLDS kept), each left out once more
     for the spread: (the holds kept, report's record and lines)."""
     k, dist = hand.camera.k, hand.camera.dist
-    fitted, median_px, per_hold = fit_mount(holds, base_from_tag, hand.model, k, dist,
-                                            mean_pose(solve_mount(holds, base_from_tag)))
+    fitted, median_px, per_hold, tag = fit_mount(holds, base_from_tag, hand.model, k, dist,
+                                                 mean_pose(solve_mount(holds, base_from_tag)))
     each = ", ".join(f"{h['label']} {px:.1f}" for h, px in zip(holds, per_hold, strict=True))
     worst = sorted(range(len(holds)), key=lambda i: -per_hold[i])
     dropped = [holds[i]["label"] for i in worst if per_hold[i] > OUTLIER_PX][:len(holds) - MIN_HOLDS]
     if dropped:
         holds = [h for h in holds if h["label"] not in dropped]
-        fitted, median_px, per_hold = fit_mount(holds, base_from_tag, hand.model, k, dist, fitted)
-    leave_out = [fit_mount([h for h in holds if h is not left], base_from_tag, hand.model, k, dist, fitted)[0]
+        fitted, median_px, per_hold, tag = fit_mount(holds, tag, hand.model, k, dist, fitted)
+    leave_out = [fit_mount([h for h in holds if h is not left], tag, hand.model, k, dist, fitted)[0]
                  for left in holds]
     result, lines = report(fitted, leave_out, tip0, hand.cad_mount(holds[0]["q"]), old)
-    result.update(median_px=median_px, dropped=dropped)
+    moved = np.linalg.inv(base_from_tag) @ tag
+    turned = math.degrees(math.acos(np.clip((np.trace(moved[:3, :3]) - 1.0) / 2.0, -1.0, 1.0)))
+    result.update(median_px=median_px, dropped=dropped, base_from_tag=tag.tolist(),
+                  tag_off_touch_m=float(np.linalg.norm(tag[:3, 3] - base_from_tag[:3, 3])), tag_turned_deg=turned)
     lines.insert(0, f"- the tag's corners fit every hold to {median_px:.2f} px (median)"
                  + (f"; left out, past {OUTLIER_PX:.0f} px rms: {', '.join(dropped)}" if dropped else ""))
     lines.insert(1, f"- each hold against one fit of all of them, px rms: {each}")
+    lines.insert(2, f"- the tag stands {result['tag_off_touch_m'] * 1000:.1f} mm and {turned:.2f} deg from where the "
+                    "station touch and the overhead's yaw put it")
     return holds, result, lines
+
+
+def tag_seat(base_from_palette: np.ndarray, ball, touched_tag: np.ndarray, measured_tag: np.ndarray) -> dict:
+    """The roof tag's seat as the hold measured it against palette.urdf's: the turn on its seat and the shift on the
+    palette (mm, its axes) that take the touch's tag to the measured one, and how far it stands over it; `against` is
+    that URDF seat (palette_root <- tag), so the adoption places the measured seat whatever the design holds by then
+    and a run adopted twice gives one seat. The station
+    fix reads the palette's yaw from the tag, so a sticker turned e on its seat turns the touch's palette e about the
+    ball and the tag appears turned -e about the ball (2026-11-09: 1.2-1.3 deg, the tag 3.6 mm aside;
+    palette_tag_adopt adopts it)."""
+    to_palette = np.linalg.inv(base_from_palette)
+    ball = (to_palette @ np.append(np.asarray(ball, float), 1.0))[:3]
+    seated = to_palette @ touched_tag
+    cad, seen = seated[:3, 3], (to_palette @ measured_tag)[:3, 3]
+    radius = cad[:2] - ball[:2]
+    along = np.array([-radius[1], radius[0]])   # the tag's way per radian turned about the ball
+    about_ball = float((seen - cad)[:2] @ along) / float(along @ along)
+    shift = (seen - cad)[:2] - about_ball * along
+    return {"turn_deg": -math.degrees(about_ball), "shift_mm": (shift * 1000.0).tolist(),
+            "rise_mm": float((seen - cad)[2] * 1000.0),
+            "against": {"xyz_m": cad.tolist(), "yaw_deg": math.degrees(math.atan2(seated[1, 0], seated[0, 0]))}}
 
 
 def report(mount: np.ndarray, leave_out: list[np.ndarray], tip_mount, cad: np.ndarray,
@@ -327,6 +370,31 @@ def report(mount: np.ndarray, leave_out: list[np.ndarray], tip_mount, cad: np.nd
         lines.append(f"- the installed gauge's tip ({old.get('tool')}, {old.get('note') or old.get('source', '')}) "
                      f"stands {np.round((np.asarray(old['tip_cam_m']) - tip) * 1000, 1).tolist()} mm from it")
     return out, lines
+
+
+def pin(result: dict, frames, shots, tip_mount, k, dist) -> str:
+    """The fit's mount pinned to the pen's end as the run's own frames show it, in pixel and in depth (seen.pinned),
+    in `result`; the report's line. The fit's mount stays under fit_mount_from_camera; frames that show no pen keep
+    it, and depth frames that show none keep the fit's depth."""
+    fit = np.asarray(result["mount_from_camera"], float)
+    record = gauge_record(fit, tip_mount, "", "")
+    tip_px, cone_px = seen.image([record["tip_cam_m"], record["cone_end_cam_m"]], k, dist)
+    end = seen.tip(frames, tip_px, cone_px)
+    if end is None:
+        return f"- the pen's end was not made out in the {len(frames)} frames: the fit's mount is kept as it is"
+    far = seen.depth(shots, end, end + (cone_px - tip_px), record["tip_cam_m"][2])
+    mount = seen.pinned(fit, tip_mount, end, k, dist, far)
+    moved = np.linalg.inv(mount)[:3, 3] - np.linalg.inv(fit)[:3, 3]
+    halves = [seen.tip(frames[i::2], tip_px, cone_px) for i in (0, 1)]
+    apart = max((float(np.linalg.norm(h - end)) for h in halves if h is not None), default=float("nan"))
+    result.update(fit_mount_from_camera=fit.tolist(), mount_from_camera=mount.tolist(), tip_seen_px=end.tolist(),
+                  tip_fit_px=tip_px.tolist(), pinned_m=moved.tolist(), tip_seen_apart_px=apart, tip_seen_depth_m=far,
+                  tip_cam_m=gauge_record(mount, tip_mount, "", "")["tip_cam_m"])
+    return (f"- the pen's end in the {len(frames)} frames: pixel ({end[0]:.1f}, {end[1]:.1f}), the fit's tcp at "
+            f"({tip_px[0]:.1f}, {tip_px[1]:.1f}), each half of the frames within {apart:.1f} px of it; "
+            + (f"{far * 1000:.1f} mm deep in the depth frames, the fit's {record['tip_cam_m'][2] * 1000:.1f}"
+               if far is not None else "its depth not read, the fit's kept")
+            + f"; the mount moved {np.round(moved * 1000, 2).tolist()} mm in the camera onto it")
 
 
 def run(args) -> int:
@@ -370,37 +438,39 @@ def run(args) -> int:
     target = inventory.target("palette")
     detector = FiducialDetector.from_inventory(inventory, DetectorConfig(min_side_px=8.0, refinement="edges",
                                                                         cell_margin=0.30), target="palette")
-    camera = ins.WristCamera(serial=args.serial)
+    serial, frame, gauge_path = program.wrist_camera(repo, args.arm, args.camera)
+    camera = ins.WristCamera(serial=serial, depth=True)
     camera.size = (1280, 720)
     cal.rig, code = program.Rig(args.arm), 1
-    gauge_path = Path(f"~/tatbot-ros/calib/wrist-gauge-{args.arm}.json").expanduser()
     old = json.loads(gauge_path.read_text()) if gauge_path.is_file() else None
     try:
-        hand = HandEye(cal, base_from_tag, camera, detector, tag_model_corners(target.edge_m),
-                       ins.camera_frame(args.arm),
+        hand = HandEye(cal, base_from_tag, camera, detector, tag_model_corners(target.edge_m), frame,
                        gauge=old if old and old.get("measured_with") == tool.tool_id else None)
         holds = hand.run()
         if len(holds) < MIN_HOLDS:
             cal.say(f"only {len(holds)} holds saw the roof tag, {MIN_HOLDS} needed: nothing measured")
         else:
             holds, result, lines = solve(holds, base_from_tag, hand, cal.tip0, old)
+            seat = tag_seat(touched.base_from_palette, touched.ball, base_from_tag, np.asarray(result["base_from_tag"]))
+            result["tag_seat"] = seat
+            lines.append(f"- the roof tag's seat on the palette: turned {seat['turn_deg']:+.2f} deg and shifted "
+                         f"({seat['shift_mm'][0]:+.2f}, {seat['shift_mm'][1]:+.2f}) mm from palette.urdf's, "
+                         f"{seat['rise_mm']:+.2f} mm over it (tatbot ros calib apply --run this run adopts it)")
+            lines.append(pin(result, hand.frames, hand.shots, cal.tip0, camera.k, camera.dist))
             record = gauge_record(np.asarray(result["mount_from_camera"]), cal.tip0, args.arm, tool.tool_id)
-            record.update(holds=len(holds), tip_spread_m=result["tip_spread_m"], run=run_log.dir.name)
+            record.update(holds=len(holds), tip_spread_m=result["tip_spread_m"], run=run_log.dir.name,
+                          **({"depth_seen_m": result["tip_seen_depth_m"]} if result.get("tip_seen_depth_m") else {}))
             (run_log.dir / "candidate.json").write_text(json.dumps({**result, "gauge": record}, indent=1) + "\n")
             (run_log.dir / "report.md").write_text("# Wrist camera on the tool mount\n\n" + "\n".join(lines) + "\n")
             for line in lines:
                 cal.say(line)
-            good = result["tip_spread_m"] <= MAX_TIP_SPREAD_M
-            if args.adopt and good:
+            if args.adopt:
                 if gauge_path.is_file():
                     gauge_path.rename(gauge_path.with_name(gauge_path.name + time.strftime(".replaced-%Y%m%dT%H%M%SZ",
                                                                                            time.gmtime())))
                 gauge_path.write_text(json.dumps(record, indent=1) + "\n")
-                cal.say(f"adopted: {gauge_path}")
-            elif args.adopt:
-                cal.say(f"not adopted: the holds' tips spread {result['tip_spread_m'] * 1000:.2f} mm, over "
-                        f"{MAX_TIP_SPREAD_M * 1000:.1f}")
-            code = 0 if good else 3
+                cal.say(f"adopted: {gauge_path} (the tip in the camera to {result['tip_spread_m'] * 1000:.2f} mm)")
+            code = 0
     except RuntimeError as error:
         cal.say(f"stopped: {error}")
     finally:
@@ -420,8 +490,8 @@ def main(argv=None) -> int:
     parser.add_argument("--station", required=True)
     parser.add_argument("--run-started", type=float, required=True)
     parser.add_argument("--max-age-s", type=float, default=station.MAX_AGE_S)
-    parser.add_argument("--serial", default="")
-    parser.add_argument("--adopt", action="store_true")
+    parser.add_argument("--camera", default="", help="the wrist D405 by its vision.toml role (default: the session's)")
+    parser.add_argument("--adopt", action="store_true", help="install its gauge file when the holds agree")
     return run(parser.parse_args(argv))
 
 

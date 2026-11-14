@@ -31,12 +31,10 @@ def synthetic_catalog(tmp_path, monkeypatch):
     monkeypatch.setattr(sys.modules[__name__], "REPO", tmp_path)
 
 
-def _policy(tool_id: str = "lutin-ballpoint-dot"):
+def _policy(tool_id: str = "lutin-3rl-bugpin", mode: str | None = None):
     tool = tool_spec.load_tool(tool_id, REPO)
     policy = ink_spec.policy_for(tool)
-    if tool_id == "lutin-ballpoint-dot":
-        policy = replace(ink_spec.policy_for(tool_spec.load_tool("lutin-3rl-bugpin", REPO)), mode="rehearsal")
-    return tool, policy
+    return tool, (replace(policy, mode=mode) if mode else policy)
 
 
 def _curve(length_m: float) -> dict:
@@ -87,7 +85,7 @@ def _program(needs: list[tuple[float, str]], policy, initial_fraction: float = 0
             "kind": "stroke",
             "curve": _curve(length_m),
             "start_choice": "start",
-            "allowed_tool_class": "ballpoint",
+            "allowed_tool_class": "tattoo-needle",
             "speed_m_s": 0.004,
             "orientation_tolerance_rad": 0.12,
             "contact_envelope_m": [-0.0002, 0.0002],
@@ -121,7 +119,7 @@ def test_mapping_table_has_one_owner_for_every_session_sensitive_field():
 
 
 def test_dry_rehearsal_resolves_and_produces_a_derivable_ledger():
-    tool, policy = _policy()
+    tool, policy = _policy(mode="rehearsal")
     palette = ink_spec.load_palette(REPO)
     dry = ink_spec.supply_load("dry", palette, repo=REPO)
     program = _program([(0.02, "example_black"), (0.02, "example_black")], policy)
@@ -183,7 +181,7 @@ def test_no_ink_unavailable_cap_over_capacity_and_tampered_dip_refuse():
 
 
 def test_tool_classes_are_closed_and_explicit():
-    assert ink_program.tool_class("lutin-ballpoint-dot") == "ballpoint"
+    assert ink_program.tool_class("picosecond-laser-pen") == "non-contact-laser"
     assert ink_program.tool_class("lutin-3rl-bugpin") == "tattoo-needle"
     with pytest.raises(ink_program.InkProgramRefusal):
         ink_program.tool_class("unknown")

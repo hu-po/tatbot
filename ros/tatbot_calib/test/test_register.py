@@ -226,8 +226,28 @@ def test_planned_holds_stay_upright_solved_from_the_hold_before_each():
                                           heading_deg=register.rest_heading_deg(kin), spread_m=0.06,
                                           heights_m=(0.15,), count=8, ready=ready, posture=posture)
     assert len(poses) >= 6 and len(sigma["dq_mrad"]) == 4
-    q = register.REST
+    q = np.array(kin.arm_model.rest)
     for pose in poses:
         q = ready.solve_ik_seeded(kin, pose, q)
         assert posture.ok(pose, q)
         assert register.off_hold(kin, q, pose) is None
+
+
+def test_an_arm_with_no_registration_plans_holds_clear_of_itself_upright_over_its_own_cube():
+    """The xArm's first registration: no registration places it, and the installed stack.yaml drives the WXAI, yet
+    its holds are checked against its own bodies and its cube's tags (5, 30, 4) stand over its tool mount."""
+    from fiducials import load_inventory
+    from tatbot_description import robot_description
+    from tatbot_motion import Kinematics
+    from tatbot_session import ready
+
+    repo = register.Path(__file__).resolve().parents[3]
+    register._lib(repo)
+    kin = Kinematics(robot_description(None, arms=("xarm",)), "xarm")
+    guard = register.self_guard(repo, kin)
+    target = load_inventory(repo / "config" / "fiducials.json").target(register.TARGETS["xarm"])
+    posture = register.Posture(kin, ready, -0.04, lambda q: guard.self_gap("xarm", q))
+    assert sorted(posture.cube) == sorted(f"xarm/wrist_tag{tag}" for tag in target.ids)
+    pose = register.hold_poses((0.40, 0.0), -0.04, heading_deg=register.rest_heading_deg(kin))[0]
+    q = ready.solve_ik_seeded(kin, pose, posture.reference(pose))
+    assert guard.self_gap("xarm", q) > 0.0 and posture.ok(pose, q)

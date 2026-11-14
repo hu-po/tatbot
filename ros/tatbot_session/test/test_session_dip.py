@@ -182,7 +182,7 @@ def test_a_dip_aims_by_the_touch_dwells_with_the_machine_on_and_returns_to_the_p
     touched = station.anchored(FIX_POSE, rig.touch.ball, station.ball_in_palette(REPO / "urdf/palette.urdf"))
     from tatbot_motion.dip import read_cap
 
-    cap = read_cap(rig.ex.repo, "inkcap_large_2", "right", touched)
+    cap = read_cap(rig.ex.repo, "inkcap_large_2", touched)
     local = np.linalg.inv(cap.base_from_cap) @ np.append(dwell[:3, 3], 1.0)
     assert np.hypot(*local[:2]) < 3e-4
     assert local[2] == pytest.approx(0.0005 + 0.7 * 0.0135 + 0.0005, abs=3e-4)
@@ -194,6 +194,45 @@ def test_a_dip_aims_by_the_touch_dwells_with_the_machine_on_and_returns_to_the_p
     assert rig.lease.in_cap("right") is None
     assert any("dip inkcap_large_2 at heading -60 deg, the touch's" in text and "from the overhead fix" in text
                for text in rig.ex.events)
+
+
+def test_a_draining_dip_holds_over_the_rim_with_the_machine_still_running_before_it_retracts(rig, kin):
+    """A resource whose dip has a drain_s: after the dwell the tool's end rises to drain_above_rim_m over the rim and
+    holds, the machine on from the dwell through the drain and off before the retract."""
+    from tatbot_motion.dip import read_cap
+
+    rig.resource["dip"] = {**rig.resource["dip"], "drain_s": 1.0, "drain_above_rim_m": 0.003}
+    assert rig.cap.dip(rig.ex, rig.resource, "d0", 1, rig.ledger) is True
+    phases = [(row["phase"], row["status"]) for row in rig.ledger.rows() if row["event"] == "dip_phase"]
+    assert phases == [(p, "ok") for p in ("approach", "descend", "dwell", "drain", "retract", "return")]
+    touched = station.anchored(FIX_POSE, rig.touch.ball, station.ball_in_palette(REPO / "urdf/palette.urdf"))
+    cap = read_cap(rig.ex.repo, "inkcap_large_2", touched)
+    drain = rig.ex.io.goals[3]
+    local = np.linalg.inv(cap.base_from_cap) @ np.append(kin.fk(drain.q[-1])[:3, 3], 1.0)
+    assert np.hypot(*local[:2]) < 3e-4 and local[2] == pytest.approx(cap.rim_m + 0.003, abs=3e-4)
+    assert drain.duration_s >= 1.0
+    # off for the approach and descent, on at the dwell and again (already running) at the drain, off after it
+    assert rig.ex.machine_log == ["off", "off", "off", "on", "on", "off", "off", "off"]
+    assert any("a 1 s drain 3.0 mm over the rim" in text for text in rig.ex.events)
+    assert rig.lease.in_cap("right") is None
+
+
+def test_a_dwell_that_ends_off_its_place_stops_the_machine_before_the_drain(rig, monkeypatch):
+    rig.resource["dip"] = {**rig.resource["dip"], "drain_s": 1.0, "drain_above_rim_m": 0.003}
+    ended, seen = rig.cap.Cycle.ended, []
+
+    def off_once(self, phase):
+        if phase == "dwell" and not seen:
+            seen.append(phase)
+            return "off", "the tool's end is +1.50 mm from its dwell height"
+        return ended(self, phase)
+    monkeypatch.setattr(rig.cap.Cycle, "ended", off_once)
+    assert rig.cap.dip(rig.ex, rig.resource, "d0", 1, rig.ledger) is True
+    phases = [(row["phase"], row["status"]) for row in rig.ledger.rows() if row["event"] == "dip_phase"]
+    assert phases[:5] == [("approach", "ok"), ("descend", "ok"), ("dwell", "off"), ("retract", "ok"), ("return", "ok")]
+    assert phases[5:] == [(p, "ok") for p in ("approach", "descend", "dwell", "drain", "retract", "return")]
+    log = rig.ex.machine_log
+    assert log[log.index("on") + 1] == "off"   # the missed dwell's machine stopped before the withdrawal
 
 
 def test_a_dip_goes_only_at_the_touchs_heading_and_refuses_a_cap_it_does_not_reach(rig):
@@ -211,12 +250,87 @@ def test_a_dip_goes_only_at_the_touchs_heading_and_refuses_a_cap_it_does_not_rea
     assert any("dip inkcap_large_2 at heading +180 deg, the touch's" in text for text in rig.ex.events)
 
 
+def test_a_descent_that_cannot_be_planned_leaves_no_in_cap_marker(rig, monkeypatch):
+    """2026-10-24: the descent into L2 was refused by the station check before anything moved, the tool still at the
+    hover, but the marker written before it was planned refused every landing until the run was resumed."""
+    plan = rig.cap.Cycle.plan
+
+    def refuse(self, phase, q):
+        if phase == "descend":
+            raise RuntimeError("dip: right/carriage_left_0 cannot clear station part palette_estop")
+        return plan(self, phase, q)
+    monkeypatch.setattr(rig.cap.Cycle, "plan", refuse)
+    with pytest.raises(RuntimeError, match="dip descend"):
+        rig.cap.dip(rig.ex, rig.resource, "d0", 1, rig.ledger)
+    assert [(row["phase"], row["status"]) for row in rig.ledger.rows()] == [("approach", "ok"), ("descend", "unplanned")]
+    assert rig.lease.in_cap("right") is None
+
+
+def test_a_dip_its_approach_cannot_reach_from_the_pen_goes_from_over_the_page_centre(rig, monkeypatch):
+    """2026-10-25: from a stroke's end at the tile's corner joint 3 met its guarded limit on the way to cap L1 and the
+    run ended. The approach is planned again from over the page's centre, and the dip says so."""
+    from tatbot_motion import dip as cap_motion
+
+    plan, tried = cap_motion.plan_approach, []
+
+    def corner(dip, **kw):
+        tried.append(kw.get("via_xy"))
+        if kw.get("via_xy") is None:
+            raise RuntimeError("joint right/joint_3 reaches its guarded limit (-1.5381) at sample 552")
+        return plan(dip, **kw)
+    monkeypatch.setattr(cap_motion, "plan_approach", corner)
+    assert rig.cap.dip(rig.ex, rig.resource, "d0", 1, rig.ledger) is True
+    assert tried == [None, (0.0, 0.0)]
+    assert any("from where the pen stands" in text and "over the page's centre" in text for text in rig.ex.events)
+
+
 def test_without_a_recorded_needle_reach_the_dwell_holds_with_the_machine_off(rig):
     sheet = rig.ex.repo / "config/tools/lutin-3rl-bugpin.yaml"
     _reach(sheet, "null")
     assert rig.cap.dip(rig.ex, rig.resource, "d0", 1, rig.ledger) is True
     assert "on" not in rig.ex.machine_log
     assert any("machine off (no needle reach recorded)" in text for text in rig.ex.events)
+
+
+def test_a_rehearsals_dry_dip_flies_to_the_caps_hover_and_back_never_into_it_the_machine_off(rig, kin):
+    """A hover resource (ros_program.rehearsal with dip_slot) dips dry: the approach to the cap's hover, its drop
+    included, and the return, no descent into what the cap holds and the machine off throughout; a cap that is not
+    there, or not declared, refuses before anything moves."""
+    from tatbot_motion.dip import read_cap
+
+    load = rig.ex.repo / "config/palette_load.yaml"
+    slots = yaml.safe_load(load.read_text())
+    slots["slots"]["inkcap_medium_1"] = {"ink": "water", "cap_present": True, "level_lower_bound_m": 0.0075}
+    slots["slots"]["inkcap_medium_2"] = {"ink": None, "cap_present": False, "level_lower_bound_m": None}
+    load.write_text(yaml.safe_dump(slots))
+    dry = {**rig.resource, "pen_mode": "hover", "slot": "inkcap_medium_1"}
+    assert rig.cap.dip(rig.ex, dry, "d0", 1, rig.ledger) is True
+    phases = [(row["phase"], row["status"]) for row in rig.ledger.rows() if row["event"] == "dip_phase"]
+    assert phases == [("approach", "ok"), ("return", "ok")] and "on" not in rig.ex.machine_log
+    assert any("machine off (a dry dip: to the hover and back, not into the cap)" in text for text in rig.ex.events)
+    touched = station.anchored(FIX_POSE, rig.touch.ball, station.ball_in_palette(REPO / "urdf/palette.urdf"))
+    cap = read_cap(rig.ex.repo, "inkcap_medium_1", touched)
+    local = np.array([np.linalg.inv(cap.base_from_cap) @ np.append(kin.fk(q)[:3, 3], 1.0)
+                      for goal in rig.ex.io.goals for q in goal.q])
+    over = local[np.hypot(local[:, 0], local[:, 1]) < cap.bore_radius_m + 0.010]   # over the cap's opening
+    assert over[:, 2].min() == pytest.approx(cap.rim_m + rig.resource["dip"]["hover_m"], abs=3e-4)   # the hover, no lower
+    assert rig.lease.in_cap("right") is None
+    np.testing.assert_allclose(kin.fk(rig.ex.io.q)[:3, 3], rig.start[:3, 3], atol=1e-3)
+    goals = len(rig.ex.io.goals)
+    for slot, why in (("inkcap_medium_2", "no cap"), ("inkcap_small_1", "not declared")):
+        with pytest.raises(RuntimeError, match=f"a dry dip flies to a cap that stands there: {slot} is {why}"):
+            rig.cap.dip(rig.ex, {**dry, "slot": slot}, "d1", 2, rig.ledger)
+    assert len(rig.ex.io.goals) == goals
+
+
+def test_a_rehearsals_real_dip_goes_into_its_cap_with_the_machine_off(rig):
+    """A hover resource marked dip_in_cap (ros_program.rehearsal real_dips) dips as with ink, into the cap it is
+    declared in and out again, but the machine stays off: the dips practised over empty caps (2026-10-28)."""
+    real = {**rig.resource, "pen_mode": "hover", "dip_in_cap": True}
+    assert rig.cap.dip(rig.ex, real, "d0", 1, rig.ledger) is True
+    phases = [row["phase"] for row in rig.ledger.rows() if row["event"] == "dip_phase"]
+    assert phases[0] == "approach" and phases[-1] == "return" and len(phases) > 2 and "on" not in rig.ex.machine_log
+    assert any("machine off (a rehearsal: into the cap)" in text for text in rig.ex.events)
 
 
 def test_an_interrupted_descent_withdraws_along_the_axis_and_dips_again(rig, kin):
@@ -242,7 +356,7 @@ def lagging(kin, short_m):
 @pytest.mark.parametrize(("short_m", "status"), [(0.003, "ok"), (0.005, "off")])
 def test_a_retract_may_end_a_little_under_its_hover_as_the_arm_catches_up(rig, kin, short_m, status):
     """2026-10-05: a retract out of cap M2 ended 0.5 mm under its hover and the dip stopped for a decision, though
-    the tool was 7.5 mm over the rim. Ending within HOVER_LAG_M (4 mm since the owner doubled the stops) goes on; one
+    the tool was 7.5 mm over the rim. Ending within HOVER_LAG_M (4 mm since the stops were doubled) goes on; one
     further short withdraws and dips again once with no key."""
     rig.ex.io.script = [("ok", None)] * 3 + [("ok", lagging(kin, short_m))]
     ledger = rig.ledger
@@ -334,7 +448,7 @@ def test_another_cartridge_in_the_same_machine_carries_the_touch(rig):
 @pytest.mark.parametrize("shift_m", [0.0005, 0.0015])
 def test_a_palette_moved_under_twice_the_fixs_repeat_is_dipped_at_the_carried_ball(rig, kin, monkeypatch, shift_m):
     """Past the fix's 1 mm repeatability the touched ball is carried across by the fixes' own shift, up to twice it
-    (owner, 2026-10-20: every stop doubled); within it the ball stays where the touches found it. 4 mm refuses."""
+    (2026-10-20: every stop doubled); within it the ball stays where the touches found it. 4 mm refuses."""
     moved = station.StationFix("right", FIX_POSE.copy(), rig.fix.ball + [shift_m, 0, 0], rig.fix.measured_utc,
                                "overhead_tag", rig.fix.detail)
     moved.base_from_palette[0, 3] += shift_m

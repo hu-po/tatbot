@@ -1,0 +1,101 @@
+{
+  "schema_version": 2,
+  "calibration_status": "nominal",
+  "generated_utc": "2026-11-08T21:00:00Z",
+  "inventory_hash": "ca861f24458ddb890ac6f40231c95b35010cc09ca7ebae43b96a0d8b4e97442a",
+  "target_ids": [
+    5,
+    30,
+    4
+  ],
+  "edge_m": 0.046,
+  "parent_frame": "xarm/end_effector",
+  "note": "R7's three-face cube as the dual-D405 bracket holds it: each sticker centred on its 72 mm face. Nominal: the faces are CAD's; which face carries which ID and each sticker's quarter turn were fitted to one D555 view of the arm at rest (1.15 px rms over 8 frames, the black edge fitting 47.0 mm), the table's plane in that frame's depth choosing among the corner's three symmetric fits (base up 1.1 deg from the table's normal; the others 89). A registration's chain report measures it.",
+  "source": "urdf/xarm7.urdf's cube (urdf/meshes/ee/xarm-dual-d405-v5/provenance.json) and one D555 rest view",
+  "tags": {
+    "5": {
+      "ee_from_tag": [
+        [
+          -0.0,
+          1.0,
+          0.0,
+          0.146569933
+        ],
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.001936
+        ],
+        [
+          0.0,
+          0.0,
+          -1.0,
+          -0.069511889
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "30": {
+      "ee_from_tag": [
+        [
+          -0.0,
+          0.0,
+          1.0,
+          0.182569933
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0,
+          0.001936
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          -0.033511889
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    "4": {
+      "ee_from_tag": [
+        [
+          -0.0,
+          1.0,
+          0.0,
+          0.146569933
+        ],
+        [
+          -0.0,
+          0.0,
+          -1.0,
+          -0.034064
+        ],
+        [
+          -1.0,
+          -0.0,
+          0.0,
+          -0.033511889
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  }
+}

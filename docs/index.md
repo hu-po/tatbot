@@ -78,7 +78,8 @@ imitation_learning
 inkmap
 human-representation
 drawingbot
-research
+art
+lab
 inklang
 ink
 palette

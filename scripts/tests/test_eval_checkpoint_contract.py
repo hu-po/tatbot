@@ -22,8 +22,8 @@ def _act_rgbd_checkpoint(tmp_path: Path, sidecar: dict | None = None) -> Path:
                 "type": "act",
                 "input_features": {
                     "observation.state": {"shape": [14]},
-                    "observation.images.wrist_upper": {"shape": [3, 480, 640]},
-                    "observation.images.wrist_upper_depth": {"shape": [1, 480, 640]},
+                    "observation.images.wrist_2": {"shape": [3, 480, 640]},
+                    "observation.images.wrist_2_depth": {"shape": [1, 480, 640]},
                 },
             }
         )

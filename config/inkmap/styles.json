@@ -1,5 +1,5 @@
 {
-  "inklang": "0.3",
+  "inklang": "0.4",
   "comment": "Inklang style lexicon: three small closed axes (style, technique, color) plus open-vocabulary motif. `name` is the form the realizer emits in modifier position ('a fine line octopus'); aliases are accepted by the parser. technique 'machine' and color null are defaults the realizer omits. The robot is black-ink-only today: programs requesting a color the hardware cannot honor must fail validation loudly, never produce a lying caption. Each term's `prompt` is the fragment the generator folds into its image prompt when the term is requested.",
   "styles": {
     "american-traditional": {

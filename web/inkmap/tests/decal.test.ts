@@ -143,3 +143,16 @@ test("a design that runs off the open end of the tube is refused", () => {
     (error: unknown) => error instanceof SurfaceChartError && /open edge/.test(error.message),
   );
 });
+
+test("a design's wrap is how far the skin turns across it, past a half turn too", () => {
+  const { g } = cylinder();
+  const anchor = { face: 400, barycentric: [1 / 3, 1 / 3, 1 / 3] as [number, number, number] };
+  const around = (mm: number) => buildDecal(g, g, { anchor, rotationRad: 0, sizeMm: [mm, 20] }).quality.wrapDeg;
+  const arc = (mm: number) => (mm / 40) * 180 / Math.PI;
+  const facet = 360 / 48;
+  for (const mm of [30, 60, 150]) {
+    assert.ok(Math.abs(around(mm) - arc(mm)) <= facet, `${mm} mm round a 40 mm radius: ${around(mm)} vs ${arc(mm)}`);
+  }
+  const turned = buildDecal(g, g, { anchor, rotationRad: Math.PI / 2, sizeMm: [60, 20] }).quality.wrapDeg;
+  assert.ok(Math.abs(turned - arc(20)) <= facet, `the design's 60 mm runs along the limb, its 20 mm round it: ${turned}`);
+});

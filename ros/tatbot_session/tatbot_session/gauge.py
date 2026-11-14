@@ -12,6 +12,8 @@ It holds while the tool and the camera stay mounted as they are. Once fitted, th
 on the fitted axis rather than its colour, so any ink's cartridge serves (on 2026-10-03's frames of the teal
 sky-blue cartridge the two ways' heights agreed within 0.12 mm, 1 sigma). Its end along the axis does not show
 a moved pen: without the colour, the depth's mixed pixels between the tip and the paper run on along the axis.
+A fit therefore starts from a previous one (`fit --seed`), whose axis finds the pen: the teal ballpoint that a
+first fit found by its colour was retired on 2026-11-02, and a needle cartridge has no colour to find.
 """
 from __future__ import annotations
 
@@ -26,8 +28,7 @@ from pathlib import Path
 import numpy as np
 
 CALIB = Path("~/tatbot-ros/calib").expanduser()
-PEN_HUE = (78, 100)        # the ballpoint's teal body in OpenCV's 0-180 hue
-PEN_NEAR_M = 0.17          # the pen rides 100-150 mm from the camera; anything teal farther is the room
+PEN_NEAR_M = 0.17          # the pen rides 100-150 mm from the camera; anything farther is the room
 PAPER_BOX_PX = 150         # the paper fitted: within this of the pen in the image, and behind its middle
 CONTACT_BAND_M = 0.001     # a fit's contacts: the trips within this of the lowest decile
 AXIS_M = 0.003             # a fitted pen's points: within this of its axis (the cone's narrow end) ...
@@ -48,7 +49,7 @@ SQUARE_SHARE = 0.5
 
 def surface_colour(hsv: np.ndarray) -> np.ndarray:
     """Which OpenCV HSV pixels (..., 3) can be the surface drawn on: not strongly coloured, not dark."""
-    hsv = np.asarray(hsv).astype(int)
+    hsv = np.asarray(hsv)   # compared as given: a frame's uint8, with no copy of it widened
     return (hsv[..., 1] < SURFACE_S_MAX) & (hsv[..., 2] > SURFACE_V_MIN)
 
 
@@ -73,10 +74,10 @@ def _points(depth_raw, meta: dict, shape) -> tuple[np.ndarray, np.ndarray, np.nd
     """The depth frame's points in the colour camera's frame and the colour pixel (u, v) each falls on."""
     depth = np.asarray(depth_raw, np.float32) * float(meta["depth_units_m"])
     di = meta["intrinsics"]
-    v, u = np.mgrid[0:depth.shape[0], 0:depth.shape[1]]
     ok = (depth > 0.04) & (depth < 0.40)
+    v, u = np.nonzero(ok)
     z = depth[ok]
-    pts = np.stack([(u[ok] - di["ppx"]) / di["fx"] * z, (v[ok] - di["ppy"]) / di["fy"] * z, z], axis=1)
+    pts = np.stack([(u - di["ppx"]) / di["fx"] * z, (v - di["ppy"]) / di["fy"] * z, z], axis=1)
     ex = meta["color_from_depth"]
     pc = pts @ np.array(ex["rotation"], float).reshape(3, 3, order="F").T + np.array(ex["translation_m"], float)
     k = np.array(meta["color_intrinsics"]["k"], float)
@@ -102,33 +103,30 @@ def on_paper(depth_raw, meta: dict, frame: Frame, shape, within_m: float = 0.003
 
 
 def measure(depth_raw, color_bgr, meta: dict, cal: dict | None = None, curved: bool = False,
-            near_m: float | None = None) -> Frame | None:
+            near_m: float | None = None, fitted_pen: bool = False) -> Frame | None:
     """The pen and the paper in one frame (WristCamera depth, unaligned, and its colour); None when either is
-    missing. The pen is teal (the sky-blue cartridge the fit was made with), or with a fitted `cal` the points on
-    its axis by the cone end, whatever their colour; the paper (any surface drawn on) is bright and not strongly
+    missing. The pen is the points on a fitted `cal`'s axis by the cone end, whatever their colour (None without
+    a fitted cone: no colour marks a cartridge); the paper (any surface drawn on) is bright and not strongly
     coloured (the arm's shadow darkens it, the print's dots drop out by value) and off the pen; with `near_m`, only
-    within that of the pen's axis through the fitted tip, read as a small surface square to the pen (_square)."""
+    within that of the pen's axis through the fitted tip, read as a small surface square to the pen (_square).
+    With `fitted_pen` and a fitted tip, a pen the depth hardly shows stands at its fitted place (_pen_place) and the
+    frame's pen is empty, so a fit never pools it: the height is the fitted tip's either way (height)."""
     import cv2
 
     pc, uc, vc = _points(depth_raw, meta, color_bgr.shape)
-    hsv = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2HSV)
-    teal = ((hsv[..., 0] >= PEN_HUE[0]) & (hsv[..., 0] <= PEN_HUE[1]) & (hsv[..., 1] > 90)
-            & (hsv[..., 2] > 70)).astype(np.uint8)
-    seen = hsv[vc, uc].astype(int)
-    paper = surface_colour(seen) & ~teal[vc, uc].astype(bool)
-    if cal is not None and "cone_end_cam_m" in cal:
-        s, off = _along(pc, cal)
-        pen = (off < AXIS_M) & (s > CONE_M[0]) & (s < CONE_M[1]) & (pc[:, 2] < PEN_NEAR_M)
-        paper &= ~((off < BODY_M) & (s < 0.001))
-    else:
-        core = cv2.erode(teal, np.ones((7, 7), np.uint8))   # off the body's edges, where depths blend
-        pen = core[vc, uc].astype(bool) & (pc[:, 2] < PEN_NEAR_M)
-    if pen.sum() < 100:
+    if cal is None or "cone_end_cam_m" not in cal:
         return None
-    pp = pc[pen]
-    box = ((uc > uc[pen].min() - PAPER_BOX_PX) & (uc < uc[pen].max() + PAPER_BOX_PX)
-           & (vc > vc[pen].min() - PAPER_BOX_PX) & (vc < vc[pen].max() + PAPER_BOX_PX))
-    q = pc[paper & box & (pc[:, 2] > np.median(pp[:, 2]))]
+    hsv = cv2.cvtColor(color_bgr, cv2.COLOR_BGR2HSV)
+    paper = surface_colour(hsv)[vc, uc]
+    s, off = _along(pc, cal)
+    pen = (off < AXIS_M) & (s > CONE_M[0]) & (s < CONE_M[1]) & (pc[:, 2] < PEN_NEAR_M)
+    paper &= ~((off < BODY_M) & (s < 0.001))
+    found = _pen_place(pc, uc, vc, pen, cal if fitted_pen else None, meta)
+    if found is None:
+        return None
+    pp, (u0, u1, v0, v1), behind = found
+    box = (uc > u0 - PAPER_BOX_PX) & (uc < u1 + PAPER_BOX_PX) & (vc > v0 - PAPER_BOX_PX) & (vc < v1 + PAPER_BOX_PX)
+    q = pc[paper & box & (pc[:, 2] > behind)]
     q = _support(q, cal, curved, near_m)
     if len(q) < 300:
         return None
@@ -154,6 +152,20 @@ def measure(depth_raw, color_bgr, meta: dict, cal: dict | None = None, curved: b
     if curved and cal is not None and "tip_cam_m" in cal:
         return _curved(pp, q, c, n, np.asarray(cal["tip_cam_m"], float))
     return Frame(pp, c, n, float(np.std(r[keep])))
+
+
+def _pen_place(pc, uc, vc, pen, cal: dict | None, meta: dict):
+    """The pen's points, image box (u0, u1, v0, v1) and middle depth as the depth shows it; with a fitted tip in `cal`,
+    a pen it hardly shows at its fitted place (its axis over CONE_M, no points): a clean 3RL's clear nozzle read 0-63
+    depth points against lit skin, an inked one ~340-400 (2026-10-24). None without either."""
+    if pen.sum() >= 100:
+        return pc[pen], (uc[pen].min(), uc[pen].max(), vc[pen].min(), vc[pen].max()), float(np.median(pc[pen][:, 2]))
+    if cal is None or not {"cone_end_cam_m", "axis_cam", "tip_cam_m"} <= cal.keys():
+        return None
+    axis = np.asarray(cal["cone_end_cam_m"], float) + np.outer(np.linspace(*CONE_M, 8), np.asarray(cal["axis_cam"], float))
+    k = np.array(meta["color_intrinsics"]["k"], float)
+    u, v = k[0, 0] * axis[:, 0] / axis[:, 2] + k[0, 2], k[1, 1] * axis[:, 1] / axis[:, 2] + k[1, 2]
+    return np.zeros((0, 3)), (u.min(), u.max(), v.min(), v.max()), float(np.median(axis[:, 2]))
 
 
 def _support(q, cal: dict | None, curved: bool, near_m: float | None) -> np.ndarray:
@@ -193,14 +205,14 @@ SUPPORT_M = 0.040         # ... and reads only the surface within this of the ti
 def pool(depths, need: float = 0.6) -> np.ndarray:
     """One raw depth frame from several taken at one hold: each pixel's median over the frames that read it, kept
     where at least `need` of them did. On a pale skin under window glare (2026-10-08) most pixels by the tip read in
-    only some frames, 2-5 mm apart, and single frames' curved readings spread 4 mm; medians of five spread ~1 mm."""
-    stack = np.stack([np.asarray(d) for d in depths]).astype(np.float32)
-    read = stack > 0
-    stack[~read] = np.nan
-    out = np.zeros(stack.shape[1:], np.float32)
-    keep = read.mean(axis=0) >= need
-    out[keep] = np.nanmedian(stack[:, keep], axis=0)
-    return np.round(out).astype(np.asarray(depths[0]).dtype)
+    only some frames, 2-5 mm apart, and single frames' curved readings spread 4 mm; medians of five spread ~1 mm.
+    Sorted unread-last (none reads the dtype's top): the nanmedian's frames at 2.4x its speed (2026-10-25)."""
+    stack = np.stack([np.asarray(d) for d in depths])
+    n = np.count_nonzero(stack, axis=0)
+    ranked = np.where(stack == 0, np.iinfo(stack.dtype).max, stack)
+    ranked.sort(axis=0)
+    low, high = (np.take_along_axis(ranked, k[None], axis=0)[0].astype(np.float32) for k in ((n - 1) // 2, n // 2))
+    return np.round(np.where(n / len(depths) >= need, (low + high) / 2, np.float32(0))).astype(stack.dtype)
 
 
 def _curved(pen, paper, c, n, tip) -> Frame | None:
@@ -362,6 +374,12 @@ class WristGauge:
             others = pool.submit(beside)
             shots = self._pooled(ex._wrist_frames(name, q, count, every=curved), pooled)
             frames = [] if shots is None else self._measured(shots, cal, curved)
+            # every frame missed the pen: read at its fitted place once a hold of this setup saw it there (never a
+            # setup's first hold, so a pen missing or moved off its axis still reads nothing)
+            unseen = shots is not None and not any(f is not None for f in frames) and any(
+                read.get("pen_seen", True) for read in (getattr(ex, "page_record", None) or {}).get("gauge", []))
+            if unseen:
+                frames = self._measured(shots, cal, curved, fitted_pen=True)
             others = others.result()
         heights = [height(f, cal) for f in frames if f is not None]
         if not heights:
@@ -380,7 +398,7 @@ class WristGauge:
             patch = np.concatenate([surface.hold_patch(f, cal, base_from_camera, tcp, turn) for f in frames
                                     if f is not None])
         point = np.asarray(tcp, float)[:3, 3] - float(np.median(heights)) * normal
-        return GaugeRead(heights, point, normal, patch, (shots, frames, cal), tuple(further))
+        return GaugeRead(heights, point, normal, patch, (shots, frames, cal), tuple(further), pen_seen=not unseen)
 
     @staticmethod
     def _pooled(shots, pooled: int):
@@ -392,20 +410,33 @@ class WristGauge:
         return [shots[0][k] for k in groups], [pool(shots[1][k:k + pooled]) for k in groups], shots[2], shots[0]
 
     @staticmethod
-    def _measured(shots, cal: dict, curved: bool) -> list:
+    def _measured(shots, cal: dict, curved: bool, fitted_pen: bool = False) -> list:
         """Each of `shots`' (colours, raw depths, meta) frames measured with `cal` (measure; None where no pen)."""
-        return [measure(d, c, shots[2], cal, **({"curved": True} if curved else {}))
+        return [measure(d, c, shots[2], cal, **({"curved": True} if curved else {}),
+                        **({"fitted_pen": True} if fitted_pen else {}))
                 for c, d in zip(shots[0], shots[1], strict=True)]
 
 
-def wrist(stack: dict) -> str:
+def wrist(stack: dict, arm: str | None = None) -> str:
     """stack.yaml `sensing.wrist`: auto is the real wrist on real hardware, else none. Real hardware takes auto or
-    real only (ValueError): a simulator's truth would set its page up unmeasured, and none draw a curved one flat."""
+    real only (ValueError): a simulator's truth would set its page up unmeasured, and none draw a curved one flat.
+    Given the arm, auto is none on an arm that carries no wrist camera (rust/visiond vision.toml assigns each D405 to
+    one, in the checkout the stack runs): an arm without them sets its fixed page up without them."""
     kind, real = (stack.get("sensing") or {}).get("wrist", "auto"), stack.get("hardware") == "real"
     if kind not in (("auto", "real") if real else ("auto", "real", "sim", "none")):
         allowed = "auto or real on real hardware" if real else "auto, real, sim or none"
         raise ValueError(f"stack.yaml sensing.wrist is {allowed}, not {kind!r}")
+    if real and kind == "auto" and arm is not None and not _carries_wrist_cameras(arm):
+        return "none"
     return "real" if real else ("none" if kind == "auto" else kind)
+
+
+def _carries_wrist_cameras(arm: str) -> bool:
+    """The rig's camera mounting is its checkout's (vision.toml, config/arms.json), not a run's own repo copy."""
+    import wrist_cameras  # scripts/lib, which tatbot_description puts on the path
+    from tatbot_description import repo_root
+
+    return bool(wrist_cameras.mounted_for_arm(repo_root(None), arm))
 
 
 def sensing(stack: dict, ex):
@@ -413,7 +444,7 @@ def sensing(stack: dict, ex):
     over sensing.truth, a simulator's surface) or none."""
     from tatbot_session.ports import NoSensing
 
-    wrist_ = wrist(stack)
+    wrist_ = wrist(stack, getattr(ex, "arm", None))
     if wrist_ == "real":
         return WristGauge(ex)
     if wrist_ == "sim":
@@ -424,26 +455,28 @@ def sensing(stack: dict, ex):
 
 
 def main(argv=None) -> int:
+    from tatbot_description import drawing_arm
+
     doc = __doc__ or ""
     parser = argparse.ArgumentParser(prog="tatbot_session gauge", description=doc.split("\n\n")[0])
     sub = parser.add_subparsers(dest="action", required=True)
     f = sub.add_parser("fit", help="fit the pen's tip in the wrist camera's frame from touch runs' snapshots")
     f.add_argument("runs", nargs="+", help="ros-touch run directories whose touches/ hold trip snapshots")
-    f.add_argument("--arm", default="right")
+    f.add_argument("--arm", default=drawing_arm())
     f.add_argument("--tool", default="", help="the fitted tool, recorded with the fit")
-    f.add_argument("--seed", default="", help="a previous fit (a wrist-gauge json) whose axis finds the pen whatever "
-                   "its colour: another cartridge in the same mount; without it the pen must be the teal cartridge")
+    f.add_argument("--seed", required=True, help="a previous fit (a wrist-gauge json) whose axis finds the pen "
+                   "whatever its colour: the same mount, any cartridge")
     f.add_argument("--write", action="store_true", help=f"adopt: write {CALIB}/wrist-gauge-<arm>.json")
     t = sub.add_parser("turn", help="fit the wrist camera's turn from curved setups' gauge holds (curved.fit_turn)")
     t.add_argument("runs", nargs="+", help="ros-touch or ros-draw run directories of curved setups (page.json with "
                    "gauge holds, touches/gauge-<n>.npz)")
-    t.add_argument("--arm", default="right")
+    t.add_argument("--arm", default=drawing_arm())
     t.add_argument("--write", action="store_true", help="adopt: write the turn to CALIB/wrist-turn-<arm>.json")
     args = parser.parse_args(argv)
     if args.action == "turn":
         return _turn(args)
     names, frames = [], []
-    seed = json.loads(Path(args.seed).expanduser().read_text()) if args.seed else None
+    seed = json.loads(Path(args.seed).expanduser().read_text())
     for run in map(Path, args.runs):
         for npz in sorted(run.glob("touches/*.npz"), key=lambda p: [int(x) for x in p.stem.split("-")]):
             frame = load_snapshot(npz, seed)
@@ -509,7 +542,7 @@ def _misses(setup: dict, cal: dict, turn) -> list[float]:
     holds = [{"xy": h["xy"], "point": _point(h, turn) if h["agrees"] else None, "tip": h["tcp"][:3, 3],
               "patch": curved.hold_patch(h["frame"], cal, h["base_from_camera"], h["tcp"], turn)} for h in setup["holds"]]
     size = setup.get("size_m") or (0.083, 0.127)
-    field, report = curved.fit(setup["page"], holds, {"degree": 4}, bounds=(size[0] / 2 - 0.002, size[1] / 2 - 0.002),
+    field, report = curved.fit(setup["page"], holds, bounds=(size[0] / 2 - 0.002, size[1] / 2 - 0.002),
                                turned=turn is not None)
     tilt = None if turn is not None else report["camera_tilt_rad"]
     return [curved.check_miss(setup["page"], field, curved.hold_patch(c["frame"], cal, c["base_from_camera"], c["tcp"],

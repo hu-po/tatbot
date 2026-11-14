@@ -225,7 +225,7 @@ def plane_depth(depth: np.ndarray, k, dist, keep: np.ndarray, px, min_px: int = 
 # D555's fix of 8 shots repeats to 0.1 mm across and 0.3 mm in height, one shot's to 0.3 and 1.0 (2026-09-29).
 MOVED_M = {"overhead_tag": 0.001, "wrist_tag": 0.001}
 MOVED_RAD = math.radians(0.5)
-# A dip goes at a palette moved up to twice that since its touch (owner, 2026-10-20: every stop doubled), the touched
+# A dip goes at a palette moved up to twice that since its touch (2026-10-20: every stop doubled), the touched
 # ball carried across by the fixes' own shift, which repeats to 0.1 mm; farther, the station is touched again.
 DIP_MOVED_M, DIP_MOVED_RAD = 0.002, math.radians(1.0)
 # The tag's free pose may tilt this far from the base's vertical before it is refused: the palette stands on the
@@ -384,8 +384,10 @@ TOUCH_TCP_CHANGE_M = 0.005   # a tcp moved further than this since the touches i
 FIX_HEIGHT_M = 0.004
 # A height the palette camera measured is the arm's own reading of the ball; the overhead's bias against it is the
 # overhead's (3-6 mm high at times, 2026-10-12; +5.2 mm with the D555 hung 0.58 m over the playroom table on 2026-10-16,
-# where the camera's 82.90 mm matched 10-14's 82.81). Such a height is checked only for a gross error.
-FIX_HEIGHT_CAMERA_M = 0.008
+# where the camera's 82.90 mm matched 10-14's 82.81; 8.9 mm low on the xArm rig, 2026-11-09, where both wrist D405s read
+# the table 7-12 mm over the D555 too). Such a height is checked only for a gross error: the misread tip that set one
+# 12.1 mm low (2026-10-22) is now refused before any height is read, by the sweep's in-focus sighting and scale checks.
+FIX_HEIGHT_CAMERA_M = 0.012
 CARRY_HEIGHT_XY_M = 0.003
 
 
@@ -431,10 +433,10 @@ class StationTouch:
 
 def joint_offsets(repo: Path, arm: str) -> list[float]:
     """config/workspace.yaml `<arm>.joint_offsets_rad`, the model correction the kinematics carry (zeros if none)."""
-    import yaml
+    from tatbot_description import arm_model, tool_spec
 
-    section = yaml.safe_load((Path(repo) / "config" / "workspace.yaml").read_text()).get(arm) or {}
-    return [float(v) for v in section.get("joint_offsets_rad") or [0.0] * 7]
+    section = tool_spec.read_workspace(repo).get(arm) or {}
+    return [float(v) for v in section.get("joint_offsets_rad") or [0.0] * arm_model.for_arm(arm, repo).n]
 
 
 def load_touch(arm: str, path: Path | None = None) -> StationTouch:

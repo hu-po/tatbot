@@ -19,7 +19,7 @@ def rot(axis, angle):
 
 
 def test_the_drawing_arms_label_resolves_to_its_controller_and_tag_triplet():
-    """Only the pink (drawing) arm is calibrated here; the blue leader is teleop's alone (owner, 2026-10-23)."""
+    """Only the WXAI follower (label `pink`) is calibrated here; the blue leader is teleop's alone (2026-10-23)."""
     pink = recipe.selected_arm(REPO, "pink")
     assert (pink.arm_id, pink.controller_role, pink.wrist_target, pink.tag_parent) == ("right", "follower", "wrist", "right/gripper_left")
     assert recipe.fiducial_target(REPO, "wrist")["ids"] == [2, 3, 4]
@@ -75,9 +75,9 @@ def test_owner_capture_binding_keeps_per_frame_joints_and_reports_motion(tmp_pat
         *([i*.01]*7 + [.2]*7 + [0.]*7), 1, 0, 1) for i,t in enumerate([100_000_000,110_000_000,120_000_000,130_000_000])))
     def metadata(stamp, seq):
         return {'sequence': seq, 'timestamps': {'normalized_unix_ns': stamp}}
-    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_upper'])),
-             owner_frames_wrist_upper=np.array(json.dumps([{'metadata': metadata(112_000_000, 8)}])),
-             owner_color_metadata_wrist_upper=np.array(json.dumps(metadata(121_000_000, 9))))
+    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_2'])),
+             owner_frames_wrist_2=np.array(json.dumps([{'metadata': metadata(112_000_000, 8)}])),
+             owner_color_metadata_wrist_2=np.array(json.dumps(metadata(121_000_000, 9))))
     result = recipe.bind_wrist_capture(capture, telemetry)
     assert not result['motion_authority'] and result['physical_accuracy_bound_m'] is None
     assert [pair['stream'] for pair in result['pairs']] == ['depth', 'color']
@@ -86,9 +86,9 @@ def test_owner_capture_binding_keeps_per_frame_joints_and_reports_motion(tmp_pat
     assert result['maximum_skew_ms'] == 2
     assert result['capture_joint_span_rad'] == pytest.approx([.02]*6)
     assert result['capture_max_measured_velocity_rad_s'] == .2
-    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_upper'])),
-             owner_frames_wrist_upper=np.array(json.dumps([{'metadata': metadata(140_000_000, 10)}])),
-             owner_color_metadata_wrist_upper=np.array(json.dumps(metadata(121_000_000, 9))))
+    np.savez(capture, camera_roles=np.array(json.dumps(['wrist_2'])),
+             owner_frames_wrist_2=np.array(json.dumps([{'metadata': metadata(140_000_000, 10)}])),
+             owner_color_metadata_wrist_2=np.array(json.dumps(metadata(121_000_000, 9))))
     with pytest.raises(recipe.RecipeError, match='bracketed'):
         recipe.bind_wrist_capture(capture, telemetry)
 

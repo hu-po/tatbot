@@ -13,7 +13,7 @@ def test_trace_preserves_observation_normalized_and_decoded(tmp_path: Path) -> N
         tmp_path,
         timestep=7,
         observation={
-            "wrist_upper": np.arange(18, dtype=np.uint8).reshape(2, 3, 3),
+            "wrist_2": np.arange(18, dtype=np.uint8).reshape(2, 3, 3),
             "joint_0.pos": 0.25,
             "task": "laser off",
         },
@@ -30,6 +30,6 @@ def test_trace_preserves_observation_normalized_and_decoded(tmp_path: Path) -> N
     assert loaded["observation_state"].shape == (7,)
     assert loaded["normalized_action"].shape == (1, 16, 7)
     assert loaded["decoded_action"].shape == (16, 7)
-    assert np.array_equal(loaded["observation__wrist_upper"], np.arange(18).reshape(2, 3, 3))
+    assert np.array_equal(loaded["observation__wrist_2"], np.arange(18).reshape(2, 3, 3))
     assert metadata["observation_metadata"]["task"] == "laser off"
     assert metadata["schema_version"] == 2

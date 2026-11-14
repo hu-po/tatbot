@@ -1,5 +1,5 @@
-"""Production paired draw and its wake recovery, plus a draw interrupted while it lands for a cartridge swap,
-each on a fresh isolated fake driver; no physical arm or camera."""
+"""The production draw path held, then landed, then drawn again after a wake, plus a draw interrupted while it lands
+for a cartridge swap, each on a fresh isolated fake driver; no physical arm or camera."""
 import importlib.util
 import json
 import shlex
@@ -33,8 +33,8 @@ def graph(tmp_path):
         pico.running = False
 
 
-def test_production_pair_holds_lands_and_draws_again_after_wake(graph, tmp_path, monkeypatch):
-    spec = importlib.util.spec_from_file_location('paired_ros_backend', sg.repo()/'scripts/lib/tatbot_cli/tatbot_ros.py')
+def test_a_held_draw_a_landing_draw_and_a_draw_after_wake(graph, tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location('ros_backend', sg.repo()/'scripts/lib/tatbot_cli/tatbot_ros.py')
     backend = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(backend)
     env_keys = ('TATBOT_REPO', 'TATBOT_LOG_ROOT', 'ROS_LOG_DIR', 'ROS_DOMAIN_ID', 'RMW_IMPLEMENTATION', 'ZENOH_CONFIG_OVERRIDE')
@@ -45,7 +45,7 @@ def test_production_pair_holds_lands_and_draws_again_after_wake(graph, tmp_path,
     monkeypatch.setattr(backend, 'ros_target', lambda: target)
     # Graph owns processes directly, not system units. All status and action traffic is real ROS.
     monkeypatch.setattr(backend, 'UNIT_UP', 'true')
-    monkeypatch.setattr(backend, 'restart', lambda *args: pytest.fail('a pair must not restart its active controller'))
+    monkeypatch.setattr(backend, 'restart', lambda *args: pytest.fail('a draw must not restart its active controller'))
 
     def execute(target, command, runner):
         result = graph.run(['bash', '-c', command], timeout=180)
@@ -54,29 +54,25 @@ def test_production_pair_holds_lands_and_draws_again_after_wake(graph, tmp_path,
 
     monkeypatch.setattr(backend, 'run_cancellable', execute)
     runner = backend.Runner(False)
-    backend.ready(SimpleNamespace(arm='right'), runner)
+    backend.wake(target, runner, 'right')
     runtimes = []
     for index in range(2):
-        program = sg.square_program(tmp_path, name=f'pair-{index}', sides=(.004,))
-        document = json.loads(program.read_text())
-        document['research'] = {'study_sha256': 'a'*64, 'trial': '0000', 'side': 'ab'[index],
-                                'page': 'synthetic-pair', 'slot': f'0:{index}', 'slot_m': [.026, .026]}
-        program.write_text(json.dumps(document))
+        program = sg.square_program(tmp_path, name=f'square-{index}', sides=(.004,))
         # Camera inspection needs the physical rig; this software test explicitly omits it.
-        args = ['draw', str(program), '--no-wake', '--no-inspect'] + (['--hold'] if index == 0 else [])
+        args = ['draw', str(program), '--arm', 'right', '--no-wake', '--no-inspect'] + (['--hold'] if index == 0 else [])
         assert backend.draw(backend.parser().parse_args(args), runner) == 0
         assert _status(graph)['landed'] is (index == 1)
-        receipt = graph.evidence('synthetic-pair', f'0:{index}')
-        assert receipt.returncode == 0, receipt.stderr
-        evidence = json.loads(receipt.stdout)
-        assert evidence['meta']['hardware'] == 'fake' and evidence['meta']['status'] == 'ok'
-        assert evidence['runtime_live'] and evidence['runtime'] == evidence['meta']['runtime']
-        assert evidence['inspection'] is None
-        assert [r['event'] for r in evidence['ledger'] if r['event'] in ('sent', 'done') and r['op'][0] == 's'] == ['sent', 'done']
-        (tmp_path/f'evidence-{index}.json').write_text(json.dumps(evidence, indent=2)+'\n')
-        runtimes.append(evidence['runtime'])
+        run = graph.runs()[-1]
+        meta = json.loads((run/'meta.json').read_text())
+        assert meta['hardware'] == 'fake' and meta['status'] == 'ok'
+        identity, live = graph.runtime()
+        assert live and meta['runtime'] == identity
+        assert not (run/'inspect').exists()
+        rows = sg.ledger(str(run))
+        assert [r['event'] for r in rows if r['event'] in ('sent', 'done') and r['op'][0] == 's'] == ['sent', 'done']
+        runtimes.append(meta['runtime'])
     assert runtimes[0] == runtimes[1]
-    # The pair's second draw already landed this driver. Its next draw exercises recovery from that sleep pose.
+    # The second draw already landed this driver. Its next draw exercises recovery from that sleep pose.
     wake = graph.client("wake", "--arm", "right", timeout=60)
     assert wake.returncode == 0, wake.stdout + wake.stderr
     draw = graph.client("draw", str(sg.square_program(graph.tmp, name="after-wake", sides=(.004,))),
@@ -103,7 +99,7 @@ def test_a_draw_interrupted_landing_for_a_swap_does_not_wait_for_the_keypad(grap
     """SIGTERM while a draw lands for a cartridge swap: the client cancels it and exits once the arm has landed. It
     used to go on to wait for the keypad's Enter with every signal ignored after the cancel."""
     keypad = sg.base_stack()['keypad']   # the committed stack.yaml, which the client reads through the install
-    assert keypad.get('port') and keypad.get('arm') == 'right', keypad
+    assert keypad.get('port'), keypad
     log = 'swap-sigterm.log'
     proc = graph.client_bg('draw', str(_swap_program(graph)), '--arm', 'right', log=log)
     try:

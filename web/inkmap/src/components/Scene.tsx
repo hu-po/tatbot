@@ -3,7 +3,7 @@ import { Canvas, useLoader, useThree, type ThreeEvent } from "@react-three/fiber
 import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { useStore, type LoadedBody } from "../store.ts";
+import { renderFor, uprightAt, useStore, type LoadedBody } from "../store.ts";
 import {
   applyBodyRotation,
   BODY_SPEC,
@@ -15,10 +15,14 @@ import {
   type BodySpec,
 } from "../core/body.ts";
 import { POSE_CATALOG, poseRecord } from "../core/pose.ts";
-import { anchorToPoint, frameAt, pointToAnchor } from "../core/anchor.ts";
+import { anchorToPoint, posedFrame, pointToAnchor } from "../core/anchor.ts";
 import { buildDecal } from "../core/decal.ts";
 import { selectionView } from "../core/selection-view.ts";
-import { artworkTexture } from "../core/svg.ts";
+import { STENCIL_TILES } from "../core/tiles.ts";
+import { registerCapture } from "../capture.ts";
+import { useSettled } from "../settled.ts";
+import { useUi } from "../ui.ts";
+import { artTexture, renderTexture } from "../core/art-image.ts";
 import type { Placement } from "../core/schema.ts";
 import { AtlasIndex, parseAtlas, validateExclusionMask, type RegionRef } from "../core/atlas.ts";
 import type { OrbitControls as OrbitControlsImpl } from "three/examples/jsm/controls/OrbitControls.js";
@@ -51,11 +55,47 @@ export function Scene() {
         <ShowcaseSiteMarker />
         <ShowcaseCamera />
         <ProjectCamera />
+        <ViewCapture />
         <SelectionControls />
       </CanvasErrorBoundary>
       <OrbitControls enabled={!surfaceInteraction} makeDefault target={[0, 0, eye * 0.6]} minDistance={0.3} maxDistance={8} />
     </Canvas>
   );
+}
+
+/** The camera that shows one placement close to, whatever stands in front of it. */
+function closeView(body: LoadedBody, placement: Placement): { position: THREE.Vector3; target: THREE.Vector3 } {
+  const frame = anchorToPoint(body.skin.geometry, placement.anchor);
+  const close = THREE.MathUtils.clamp(Math.max(...placement.size_mm) / 1000 * 8, 0.32, 0.72);
+  const position = selectionView(body.skin.geometry, placement.anchor, close)
+    ?? frame.p.clone().addScaledVector(frame.n, close).addScaledVector(new THREE.Vector3(0, 0, 1), close * 0.12);
+  return { position, target: frame.p };
+}
+
+/** Lets an export render the view and read it at once; the camera is back where it was before anything repaints. */
+function ViewCapture() {
+  const { gl, scene, camera, invalidate } = useThree();
+  useEffect(() => {
+    registerCapture((placement) => {
+      const body = useStore.getState().body;
+      const [position, quaternion] = [camera.position.clone(), camera.quaternion.clone()];
+      if (placement && body) {
+        const view = closeView(body, placement);
+        camera.position.copy(view.position);
+        camera.lookAt(view.target);
+      }
+      camera.updateMatrixWorld();
+      gl.render(scene, camera);
+      const url = gl.domElement.toDataURL("image/jpeg", 0.9);
+      camera.position.copy(position);
+      camera.quaternion.copy(quaternion);
+      camera.updateMatrixWorld();
+      invalidate();
+      return url;
+    });
+    return () => registerCapture(null);
+  }, [gl, scene, camera, invalidate]);
+  return null;
 }
 
 function ProjectCamera() {
@@ -88,11 +128,7 @@ function ProjectCamera() {
       const state = useStore.getState();
       const placement = state.placements.find(item => item.id === state.selected);
       if (!placement) return;
-      const frame = anchorToPoint(body.skin.geometry, placement.anchor);
-      target = frame.p;
-      const close = THREE.MathUtils.clamp(Math.max(...placement.size_mm) / 1000 * 8, 0.32, 0.72);
-      position = selectionView(body.skin.geometry, placement.anchor, close)
-        ?? target.clone().addScaledVector(frame.n, close).addScaledVector(new THREE.Vector3(0, 0, 1), close * 0.12);
+      ({ position, target } = closeView(body, placement));
     } else {
       const direction = command.preset === "front" ? new THREE.Vector3(0, -1, 0)
         : command.preset === "back" ? new THREE.Vector3(0, 1, 0)
@@ -430,7 +466,7 @@ function SelectionControls() {
   const placement = useStore(s => s.placements.find(item => item.id === s.selected));
   const interaction = useStore(s => s.surfaceInteraction);
   const frame = useMemo(() => body && placement
-    ? frameAt(body.skin.geometry, placement.anchor, placement.rotation_rad)
+    ? posedFrame(body.restSkin.geometry, body.skin.geometry, placement.anchor, placement.rotation_rad)
     : null, [body, placement]);
   const line = useMemo(() => {
     if (!frame || !placement) return null;
@@ -494,31 +530,72 @@ function Placements() {
   if (!body) return null;
   const ghostDesign = placing ? designs.find((d) => d.id === placing) : undefined;
   const ghost: Placement | null = placing && hover && ghostDesign
-    ? { id: "__ghost", design_id: ghostDesign.id, anchor: hover, rotation_rad: draft.rotation_rad, size_mm: draft.size_mm, mirror: false }
+    ? { id: "__ghost", design_id: ghostDesign.id, anchor: hover, rotation_rad: draft.rotation_rad + uprightAt(hover), size_mm: draft.size_mm, mirror: false }
     : null;
   // The ghost is judged by the same atlas rule commit applies, so a spot that
   // looks placeable cannot then be refused for being outside the domain.
   const ghostInvalid = Boolean(ghost && atlas && !atlas.isValidAnchor(ghost.anchor));
+  const selectedPlacement = placements.find((p) => p.id === selected);
   return (
     <>
-      {placements.map((p) => <Decal key={p.id} placement={p} selected={p.id === selected} />)}
+      {placements.map((p) => <Decal key={p.id} placement={p} />)}
       {ghost && <Decal placement={ghost} ghost invalid={ghostInvalid} />}
+      {selectedPlacement && <TileOutline placement={selectedPlacement} />}
     </>
   );
 }
 
-function Decal({ placement, ghost = false, selected = false, invalid = false }: { placement: Placement; ghost?: boolean; selected?: boolean; invalid?: boolean }) {
+/** A tile's edge as a texture: the rectangle a stencil lays on the skin, nothing inside it. */
+function tileTexture([width, height]: readonly [number, number]): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512; canvas.height = Math.round(512 * height / width);
+  const ctx = canvas.getContext("2d")!;
+  ctx.lineWidth = canvas.width / width;   // 1 mm
+  ctx.strokeStyle = "#61e8ff";
+  ctx.setLineDash([4 * ctx.lineWidth, 2 * ctx.lineWidth]);
+  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, canvas.width - ctx.lineWidth, canvas.height - ctx.lineWidth);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** The chosen stencil tile on the body round the selected design: centred and turned with it, as the compile places
+ *  a design on its page. Where the skin cannot chart the tile there is no outline, and nothing else changes. */
+function TileOutline({ placement }: { placement: Placement }) {
   const body = useStore((s) => s.body)!;
-  const designs = useStore((s) => s.designs);
+  const { anchor, rotation_rad } = useSettled(placement);
+  const tileId = useUi((s) => s.tile);
+  const tile = STENCIL_TILES.find((item) => item.id === tileId)!;
+  const texture = useMemo(() => tileTexture(tile.size_mm), [tile]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  const geometry = useMemo(() => {
+    try {
+      return buildDecal(body.restSkin.geometry, body.skin.geometry,
+        { anchor, rotationRad: rotation_rad, sizeMm: tile.size_mm }).geometry;
+    } catch { return null; }
+  }, [body, anchor, rotation_rad, tile]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+  if (!geometry) return null;
+  return (
+    <mesh geometry={geometry} raycast={() => undefined}>
+      <meshBasicMaterial map={texture} transparent depthWrite={false} polygonOffset polygonOffsetFactor={-5} polygonOffsetUnits={-5} />
+    </mesh>
+  );
+}
+
+function Decal({ placement, ghost = false, invalid = false }: { placement: Placement; ghost?: boolean; invalid?: boolean }) {
+  const body = useStore((s) => s.body)!;
   const select = useStore((s) => s.select);
-  const design = designs.find((d) => d.id === placement.design_id);
+  // The art itself: its texture is the image's ink, whatever size the tattoo is given.
+  const record = useStore((s) => s.designs.find((d) => d.id === placement.design_id)?.embedded);
+  const render = useStore((s) => (s.showRender && !ghost ? renderFor(s, record?.content_sha256, placement.size_mm[0], placement.mirror) : null));
   const [tex, setTex] = useState<THREE.Texture | null>(null);
 
   useEffect(() => {
     let live = true;
-    if (!design) setTex(null);
-    if (design) {
-      artworkTexture(design, placement.size_mm).then((texture) => {
+    if (!record) setTex(null);
+    if (record) {
+      (render ? renderTexture(render) : artTexture(record)).then((texture) => {
         if (!live) {
           texture.dispose();
           return;
@@ -529,7 +606,7 @@ function Decal({ placement, ghost = false, selected = false, invalid = false }: 
     return () => {
       live = false;
     };
-  }, [design, placement.size_mm[0], placement.size_mm[1]]);
+  }, [record, render]);
   // Keep the mesh pickable during resizing; retire its previous texture only
   // after the replacement has reached the rendered mesh.
   useEffect(() => () => tex?.dispose(), [tex]);
@@ -562,14 +639,16 @@ function Decal({ placement, ghost = false, selected = false, invalid = false }: 
     else if (error?.startsWith("preview: ")) setError(null);
   }, [ghost, refusal]);
 
-  // Mirror by flipping the texture, not the geometry, so the anchor and frame are untouched.
+  // Mirror by flipping the texture, not the geometry, so the anchor and frame are untouched. A render was
+  // separated mirrored, so it already is.
   useEffect(() => {
     if (!tex) return;
-    tex.repeat.x = mirror ? -1 : 1;
-    tex.offset.x = mirror ? 1 : 0;
+    const flip = mirror && !render;
+    tex.repeat.x = flip ? -1 : 1;
+    tex.offset.x = flip ? 1 : 0;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.needsUpdate = true;
-  }, [tex, mirror]);
+  }, [tex, mirror, render]);
 
   if (!tex || !geometry) return null;
   return (
@@ -586,7 +665,11 @@ function Decal({ placement, ghost = false, selected = false, invalid = false }: 
       onPointerUp={ghost ? undefined : () => useStore.getState().setSurfaceInteraction(null)}
       onClick={ghost ? undefined : (e) => { if (useStore.getState().placing) return; e.stopPropagation(); select(placement.id); }}
     >
-      <meshStandardMaterial
+      {render
+        // Ink filters what lies under it, so the render multiplies the lit skin: any tone, and white leaves it alone.
+        ? <meshBasicMaterial map={tex} transparent premultipliedAlpha blending={THREE.MultiplyBlending} toneMapped={false}
+          depthWrite={false} polygonOffset polygonOffsetFactor={-4} polygonOffsetUnits={-4} />
+        : <meshStandardMaterial
         map={tex}
         transparent
         opacity={ghost ? 0.65 : 1}
@@ -595,9 +678,10 @@ function Decal({ placement, ghost = false, selected = false, invalid = false }: 
         polygonOffsetFactor={-4}
         polygonOffsetUnits={-4}
         roughness={0.9}
-        emissive={invalid ? "#ff2020" : selected ? "#3355ff" : "#000000"}
-        emissiveIntensity={invalid ? 0.6 : selected ? 0.25 : 0}
-      />
+        // The handles, ruler and toolbar mark the selection: a tint would misstate the inks while they are judged.
+        emissive={invalid ? "#ff2020" : "#000000"}
+        emissiveIntensity={invalid ? 0.6 : 0}
+      />}
     </mesh>
   );
 }

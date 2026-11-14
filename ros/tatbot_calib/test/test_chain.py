@@ -58,7 +58,7 @@ def test_the_seat_and_the_offsets_come_back_within_their_sigma_where_a_rigid_fit
     c, rng = _chain(), np.random.default_rng(3)
     run = _run(c, "a", _camera(), rng, holds=24)
     fitted = chain.fit(c, [run])
-    for j in chain.FREE_JOINTS:
+    for j in c.free:
         name = c.kin.joint_names[j].split("/")[-1]
         assert abs(fitted["dq"][j] - TRUE_DQ[j]) < max(4 * fitted["sigma"][name], 1e-3), name
     seat, sd = chain._vector(fitted["seat"]), np.asarray(fitted["sigma"]["seat"])
@@ -73,7 +73,7 @@ def test_held_out_the_model_that_made_the_data_beats_the_rigid_one():
             _run(c, "b", _camera((2.5, 0.2, -0.3), (0.08, 0.05, 0.72)), rng, holds=10),
             _run(c, "c", _camera((2.7, 0.35, -0.1), (0.02, 0.12, 0.78)), rng, holds=10)]
     report, fits = chain.compare(c, runs)
-    assert report["best"] == "seat+joints" and set(fits) == set(chain.MODELS)
+    assert report["best"] == "seat+joints" and set(fits) == set(c.models())
     held = {name: row["held_out"] for name, row in report["models"].items()}
     assert held["rigid"]["by"] == "run" and set(held["rigid"]["each"]) == {"a", "b", "c"}
     assert held["seat+joints"]["median_px"] < 0.35 * held["rigid"]["median_px"]   # 0.30 with the seated layout

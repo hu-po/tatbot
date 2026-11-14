@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 from tatbot_bridge import capture
+from tatbot_description import drawing_arm
 from tatbot_motion.timelaw import axis_rotation
 
 
@@ -25,8 +26,10 @@ def __getattr__(name):
 
 
 WORKFLOW = "ros-register"
-TARGETS = {"right": "wrist"}   # the pink arm's wrist tags; the blue arm is the teleop leader alone
-LABELS = {"right": "pink"}
+# Each registered arm's tags (config/fiducials.json): the WXAI's wrist tags, the xArm's cube; the blue arm is the
+# teleop leader alone
+TARGETS = {"right": "wrist", "xarm": "xarm_cube"}
+LABELS = {"right": "pink", "xarm": "xarm"}
 VISION = Path("~/tatbot-logs/vision").expanduser()
 STACK_CALIB = Path("~/tatbot-ros/calib").expanduser()
 # The gates a candidate must pass before --adopt installs it. A 47 mm tag spans about 23 px at 640x360 from
@@ -78,13 +81,14 @@ def _axis(axis: str, deg: float) -> np.ndarray:
 
 # Each grid point takes these tool attitudes in turn: (turn about the tool axis from the arm's own heading,
 # base axis tilted about, tilt), degrees. The pen sits off the wrist axis, so its heading is far from free: on
-# the pink arm at the page only 60 deg either side of its rest heading reaches, with joint margins of 0.5-0.7 rad
+# the WXAI follower at the page only 60 deg either side of its rest heading reaches, with joint margins of 0.5-0.7 rad
 # at +-30 deg; a tilt about base x keeps them, one about base y costs them (2026-09-29, register --plan-only).
 ATTITUDES = ((0.0, "x", 0.0), (30.0, "x", -20.0), (-30.0, "x", 20.0))
 
 
-def rest_heading_deg(kin, rest=(0.0, 0.0, 0.0, 0.0, 0.0, 1.5708, 0.0)) -> float:
-    """The tool's heading at rest: its x axis's direction in the base's xy plane, degrees."""
+def rest_heading_deg(kin, rest=None) -> float:
+    """The tool's heading at rest (None: the arm's model's rest): its x axis's direction in the base's xy plane, degrees."""
+    rest = kin.arm_model.rest if rest is None else rest
     x_axis = kin.fk(np.asarray(rest, float))[:3, 0]
     return math.degrees(math.atan2(x_axis[1], x_axis[0]))
 
@@ -109,26 +113,26 @@ VIEW_TURNS = (-40.0, -20.0, 0.0, 20.0, 40.0)
 VIEW_TILTS = (("x", 0.0), ("x", 20.0), ("x", -20.0), ("y", 15.0), ("y", -15.0))
 
 
-REST = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.5708, 0.0])   # where a run starts
 
 
 class Posture:
     """Whether the arm holds a pose as an inspection view must be held (tatbot_session.inspect.upright): the pen
     within 30 deg of straight down, each wrist joint within 40 deg of the pen-down joints over the hold
-    (pen_down_reference) and the wrist cube over the tool mount; with `self_gap` (the stack's Guard.self_gap for the
-    arm) inspect.VIEW_SELF_MARGIN_M clear of the arm's own bodies. Seeded from rest, the planner's IK took the base
+    (pen_down_reference) and the arm's tag cube (inspect.cube_frames) over the tool mount; with `self_gap`
+    (self_guard's for the arm) inspect.VIEW_SELF_MARGIN_M clear of the arm's own bodies. Seeded from rest, the planner's IK took the base
     yaw 80 deg round with the wrist turned back, and 10 of its 27 holds stood within 15 mm of the arm's own bodies,
-    one 18 mm into the guard's floor (pink, 2026-10-01)."""
+    one 18 mm into the guard's floor (the WXAI, 2026-10-01)."""
 
     def __init__(self, kin, ready, table_z: float, self_gap=None):
         from tatbot_session import inspect
 
         self.kin, self.ready, self.inspect, self.self_gap = kin, ready, inspect, self_gap
+        self.rest = np.array(kin.arm_model.rest, float)   # where a run starts
         # the table, z up; pen_down_reference turns the pen through every heading itself, so its yaw is free
         self.page = np.eye(4)
         self.page[2, 3] = table_z
-        self.cube = inspect.frames_of(kin, REST, inspect.CUBE)
-        self.mount = (inspect.frames_of(kin, REST, ("{arm}/tool_mount",)) or [None])[0]
+        self.cube = inspect.cube_frames(kin)
+        self.mount = (inspect.frames_of(kin, self.rest, ("{arm}/tool_mount",)) or [None])[0]
         self.references: dict = {}
 
     def reference(self, pose: np.ndarray):
@@ -136,7 +140,7 @@ class Posture:
         key = tuple(np.round(pose[:3, 3], 4))
         if key not in self.references:
             self.references[key] = self.inspect.pen_down_reference(
-                self.kin, self.ready.solve_ik_seeded, self.page, pose[:2, 3], REST, float(pose[2, 3] - self.page[2, 3]))
+                self.kin, self.ready.solve_ik_seeded, self.page, pose[:2, 3], self.rest, float(pose[2, 3] - self.page[2, 3]))
         return self.references[key]
 
     def ok(self, pose: np.ndarray, q) -> bool:
@@ -158,7 +162,8 @@ def planned_poses(kin, arm: str, prior: dict, target, center_xy, table_z: float,
                                  spread_m=spread_m, heights_m=heights_m, ready=ready, posture=posture)
     jacobians = {}
     left = choose_holds(kin, arm, prior, target, candidates, count, jacobians)
-    tour, here, q = [], kin.fk(REST)[:3, 3], REST
+    rest = np.array(kin.arm_model.rest, float)   # where a run starts
+    tour, here, q = [], kin.fk(rest)[:3, 3], rest
     while left:
         nearest = min(left, key=lambda i: float(np.linalg.norm(candidates[i][0][:3, 3] - here)))
         left.remove(nearest)
@@ -197,7 +202,8 @@ def view_candidates(kin, arm: str, prior: dict, target, center_xy, table_z: floa
             q = ready.solve_ik_seeded(kin, pose, seed)
         except ValueError:
             continue
-        if float(np.min(np.minimum(q[:6] - kin.lower[:6], kin.upper[:6] - q[:6]))) < 0.15 or not posture.ok(pose, q):
+        r = kin.revolute
+        if float(np.min(np.minimum(q[r] - kin.lower[r], kin.upper[r] - q[r]))) < 0.15 or not posture.ok(pose, q):
             continue
         views = predicted_views(kin, arm, q, prior["camera_from_base"], prior["k"], prior["dist"], target,
                                 prior["size"])
@@ -212,14 +218,14 @@ def choose_holds(kin, arm: str, prior: dict, target, candidates, count: int, jac
     (tatbot_calib.chain.information: the camera, the tags' seat, joints 1-4, linearised at the prior's camera),
     among those at least DISTINCT_M or DISTINCT_DEG from every hold chosen. Today's registrations, planned for the
     tags each hold shows, would pin joints 1-4 to 3-6 mrad at 0.8 px; chosen this way 40 holds over the same
-    candidates pin them to 1.2-2.0 (pink, 2026-10-01). Returns candidate indices; `jacobians` keeps each one's rows."""
+    candidates pin them to 1.2-2.0 (WXAI, 2026-10-01). Returns candidate indices; `jacobians` keeps each one's rows."""
     from tatbot_calib import chain
 
     c = chain.Chain(kin, arm, target)
     for i, (_, q, seen) in enumerate(candidates):
         jacobians[i] = chain.information(c, prior["k"], prior["dist"], prior["camera_from_base"], q, seen)
     chosen = []
-    info = np.eye(6 + 6 + len(chain.FREE_JOINTS)) * 1e-9
+    info = np.eye(6 + 6 + len(c.free)) * 1e-9
 
     def distinct(i):
         pose = candidates[i][0]
@@ -234,6 +240,16 @@ def choose_holds(kin, arm: str, prior: dict, target, candidates, count: int, jac
         chosen.append(best)
         info = info + jacobians[best].T @ jacobians[best]
     return chosen
+
+
+def self_guard(repo: Path, kin):
+    """The guard of the arm's clearance from itself (motion.yaml `collision`), its rest its landed pose. Its own
+    bodies alone: where the arm stands does not enter, so the nominal place serves before its first registration
+    (the xArm's, 2026-11-08), and an arm the installed stack.yaml does not drive is guarded all the same."""
+    from tatbot_motion import load_motion
+    from tatbot_motion.collision import Guard
+
+    return Guard.from_registrations(repo, {kin.arm: np.eye(4)}, load_motion(), {kin.arm: kin.arm_model.rest})
 
 
 def run_path(value: str) -> Path:
@@ -573,14 +589,15 @@ def adopt(run_dir: Path, arm: str, reused_bundle: bool) -> list[str]:
         install(run_dir / f"arm-registration-{arm}.json", directory / f"arm-registration-{arm}-current.json",
                 replaced / directory.name)
         done.append(str(directory / f"arm-registration-{arm}-current.json"))
-    install(run_dir / "robot-world.json", VISION / "robot-world-current.json", replaced)
-    done.append(str(VISION / "robot-world-current.json"))
+    if (run_dir / "robot-world.json").is_file():   # the WXAI follower's alone (write_outputs)
+        install(run_dir / "robot-world.json", VISION / "robot-world-current.json", replaced)
+        done.append(str(VISION / "robot-world-current.json"))
     return done
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="register", description=__doc__.split("\n\n")[0])
-    parser.add_argument("--arm", default="right", choices=sorted(TARGETS))
+    parser.add_argument("--arm", default=drawing_arm(), choices=sorted(TARGETS))
     parser.add_argument("--center", type=float, nargs=2, metavar=("X", "Y"), default=None,
                         help="the grid's centre in <arm>/base_link, m (default: the configured page's centre)")
     parser.add_argument("--table-z", dest="table_z", type=float, default=None,
@@ -613,7 +630,7 @@ def main(argv=None) -> int:
     center = ns.center or fixed[:2]
     table_z = fixed[2] if ns.table_z is None else ns.table_z
     kin = Kinematics(robot_description(None, arms=(ns.arm,)), ns.arm)   # the nominal mount: world = URDF root
-    root_from_base = np.linalg.inv(kin.frame(np.zeros(7), names.WORLD))
+    root_from_base = np.linalg.inv(kin.frame(np.zeros(kin.n), names.WORLD))
     inventory = load_inventory(repo / "config" / "fiducials.json")
     target = inventory.target(TARGETS[ns.arm])
     detector = FiducialDetector.from_inventory(inventory, DetectorConfig(min_side_px=8.0, refinement="edges"),
@@ -624,13 +641,13 @@ def main(argv=None) -> int:
     # zenoh, as it did right after a setup's restart (2026-10-22, the station agent's calibration)
     rig = Rig(ns.arm) if ns.prior == "rest" or not ns.dry_run else None
     try:
-        return _main(ns, argv, repo, stack, kin, root_from_base, target, detector, ready, rig, center, table_z)
+        return _main(ns, argv, repo, kin, root_from_base, target, detector, ready, rig, center, table_z)
     finally:
         if rig is not None:
             rig.close()
 
 
-def _main(ns, argv, repo, stack, kin, root_from_base, target, detector, ready, rig, center, table_z) -> int:
+def _main(ns, argv, repo, kin, root_from_base, target, detector, ready, rig, center, table_z) -> int:
     import tatbot_runlog
 
     prior = None
@@ -641,18 +658,13 @@ def _main(ns, argv, repo, stack, kin, root_from_base, target, detector, ready, r
     elif ns.prior:
         prior = load_prior(ns.prior)
     if prior is not None:
-        from tatbot_motion import load_motion
-        from tatbot_motion.collision import Guard
-
-        guard, text = Guard.from_stack(repo, stack, load_motion())
-        print(f"# {text}", flush=True)
-        posture = Posture(kin, ready, table_z, (lambda q: guard.self_gap(ns.arm, q)) if guard is not None else None)
+        guard = self_guard(repo, kin)
+        posture = Posture(kin, ready, table_z, lambda q: guard.self_gap(ns.arm, q))
         poses, sigma = planned_poses(kin, ns.arm, prior, target, center, table_z, heading_deg=rest_heading_deg(kin),
                                      spread_m=ns.spread, heights_m=tuple(ns.heights), count=ns.holds, ready=ready,
                                      posture=posture)
-        print(f"# {len(poses)} upright holds planned from the fit of run {prior['run']}"
-              + ("" if guard is not None else ", their self clearance unchecked (no guard)")
-              + f"; at 0.8 px they would pin joints 1-4 to {sigma['dq_mrad']} mrad and the tags' seat to "
+        print(f"# {len(poses)} upright holds planned from the fit of run {prior['run']}, each clear of the arm "
+              f"itself; at 0.8 px they would pin joints 1-4 to {sigma['dq_mrad']} mrad and the tags' seat to "
               f"{sigma['seat_mm']} mm", flush=True)
     else:
         poses = hold_poses(center, table_z, heading_deg=rest_heading_deg(kin), spread_m=ns.spread,
@@ -700,11 +712,11 @@ def _run(ns, run_dir: Path, repo: Path, kin, root_from_base, target, detector, p
 
 def plan_only(kin, poses, ready) -> None:
     """Reach-check the holds from rest, the way the stack's joint fallback solves them; move nothing."""
-    q = REST
+    q = np.array(kin.arm_model.rest, float)
     for i, pose in enumerate(poses):
         try:
             q = ready.solve_ik_seeded(kin, pose, q)
-            margin = float(np.min(np.minimum(q[:6] - kin.lower[:6], kin.upper[:6] - q[:6])))
+            margin = float(np.min(np.minimum(q[kin.revolute] - kin.lower[kin.revolute], kin.upper[kin.revolute] - q[kin.revolute])))
             print(f"hold {i:02d} xyz {np.round(pose[:3, 3], 3).tolist()} reach ok, joint margin {margin:.3f} rad")
         except ValueError as error:
             print(f"hold {i:02d} xyz {np.round(pose[:3, 3], 3).tolist()} unreachable: {error}")
@@ -851,7 +863,7 @@ def write_outputs(arm: str, run_dir: Path, kin, target, record: dict) -> None:
     (run_dir / f"arm-registration-{arm}.json").write_text(json.dumps(record, indent=2) + "\n")
     if arm != "right":
         return
-    zero = np.zeros(7)
+    zero = np.zeros(kin.n)
     layout = {str(t): np.linalg.solve(kin.frame(zero, target.parent_frame),
                                       kin.frame(zero, f"{arm}/wrist_tag{t}")).tolist() for t in target.ids}
     (run_dir / "robot-world.json").write_text(json.dumps(robot_world_record(record, target.parent_frame, layout),

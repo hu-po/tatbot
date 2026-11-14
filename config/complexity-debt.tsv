@@ -25,10 +25,8 @@ scripts/lib/tatbot_cli/cli.py	parse_globals	18
 scripts/lib/tatbot_cli/completion.py	bash	13
 scripts/lib/tatbot_cli/status.py	_systemd_services	11
 scripts/lib/tatbot_cli/status.py	_validate_remote	11
-scripts/lib/tatbot_runlog.py	prune	13
 scripts/lib/tatbot_runlog.py	why_not_deletable	12
 scripts/lib/tool_spec.py	_validate	14
-scripts/lib/tool_spec.py	load_substrate	12
 scripts/lib/tool_spec.py	parse_simple_yaml	11
 scripts/tests/test_body_shared.py	test_bootstrap_and_audit_refuse_bad_cache_bytes	11
 scripts/tests/test_inklang.py	test_no_phrase_resolves_to_two_things	12

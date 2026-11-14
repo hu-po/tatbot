@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from tatbot_description import arm_model
 from tatbot_session import geometry, ready
 
 STAGED = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.5707963267948966, 0.0])
@@ -107,7 +108,9 @@ def test_a_configured_joint_move_from_rest_lifts_off_slowly_then_speeds_up_under
 def test_a_seeded_solve_falls_back_to_the_middle_of_the_limits(monkeypatch):
     from types import SimpleNamespace
 
-    kin = SimpleNamespace(lower=np.full(7, -1.0), upper=np.array([1.0, 3.0, 1.0, 1.0, 1.0, 1.0, 0.04]))
+    wxai = arm_model.load("trossen-wxai")
+    kin = SimpleNamespace(lower=np.full(7, -1.0), upper=np.array([1.0, 3.0, 1.0, 1.0, 1.0, 1.0, 0.04]),
+                          arm_model=wxai, revolute=wxai.arm_index, carriage=wxai.carriage)
     seeds = []
 
     def solve_ik(kin, target, q_seed):
@@ -163,12 +166,10 @@ def test_a_new_page_takes_the_dips_heading_where_it_keeps_its_margin(kin):
     """2026-10-20, a forearm print's set-up page: the search took -105 deg, and every dip turned the wrist 76 deg to
     the station touch's -30 and back at 8 deg/s, ~36 s a dip. The touch's heading first, then 15 deg steps either side
     of it: -30 keeps 0.32 rad, -45 the floor, and its whole curved design planned there."""
-    from tatbot_session import inspect as ins
-
     page = geometry.rpy_matrix([0.3429, 0.0275, 0.0808], [-0.0857, 0.1174, -0.0157])
     clear = [0.045, 0.063]
-    assert _base_yaw(page, ready.pen_heading(kin, page, clear, 0.010, ins.REST)) == pytest.approx(-105.3, abs=0.5)
-    assert _base_yaw(page, ready.pen_heading(kin, page, clear, 0.010, ins.REST, prefer=_touch(-30.0))) == \
+    assert _base_yaw(page, ready.pen_heading(kin, page, clear, 0.010, STAGED)) == pytest.approx(-105.3, abs=0.5)
+    assert _base_yaw(page, ready.pen_heading(kin, page, clear, 0.010, STAGED, prefer=_touch(-30.0))) == \
         pytest.approx(-45.3, abs=0.5)
 
 
@@ -176,15 +177,13 @@ def test_the_dips_heading_steps_to_the_nearest_heading_that_keeps_the_margin(kin
     """Over a page near the base line (x along the base's -y) the search's own best is -30 deg (0.56 rad); from a
     touch at -75 (0.16) the steps go -60 / -90, -45 / -105, -30 / -120: the nearest that keeps the margin. The
     margins follow the fitted tool's tip in urdf/tatbot.urdf, so each threshold sits between the two it separates."""
-    from tatbot_session import inspect as ins
-
     page = np.eye(4)
     page[:3, :3] = [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
     page[:3, 3] = [0.296, 0.013, 0.003]
     clear = [0.090, 0.134]
 
     def chosen(**kw):
-        return _base_yaw(page, ready.pen_heading(kin, page, clear, 0.010, ins.REST, **kw))
+        return _base_yaw(page, ready.pen_heading(kin, page, clear, 0.010, STAGED, **kw))
 
     assert chosen() == pytest.approx(-30.0, abs=0.1)
     assert chosen(prefer=_touch(-75.0)) == pytest.approx(-30.0, abs=0.1)        # -45 keeps 0.36 rad

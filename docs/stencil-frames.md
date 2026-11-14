@@ -19,9 +19,14 @@ clear: the design is drawn over the markers.
 | `--preset` | Tile | Markers | Notes |
 |---|---|---|---|
 | `forearm` (default) | 45 × 63 mm (sheet 53 × 82) | 3 × 4 of 2 mm cells (12 mm) at 16.5 mm | codes at least 6 bits apart under every turn |
+| `forearm18` | 40 × 62 mm | 2 × 3 of 3 mm cells (18 mm) at 22 mm | two columns near a forearm's crest; codes none of the `forearm` tile's |
 | `silicone` | 111 × 157.5 mm (sheet 121 × 172) | 19 of 3 mm cells (18 mm) at 23.25 mm, four 40 mm corner anchors | the anchors decode overhead at 1280x720; a 4 mm ruler gap keeps the edge markers apart from the rulers |
 
-`--seed` (an integer) picks the codes and their order. Marker black is printed
+The geometry is `config/stencil-tiles.json`, which [Inkmap](inkmap.md#fit-and-cost) reads to judge a design's size.
+`--seed` (an integer) picks the codes and their order. The `forearm18` tile has
+six markers and only six codes to give them, so every seed prints the same
+codes in another order: several `forearm18` tiles on one skin are sheets of one
+print. Marker black is printed
 0.4 mm smaller per edge; a skin transfer bleeds it back. The silicone layout's
 seed 0 is the drawing stack's default page (`page.pattern_id` in
 `ros/tatbot_bringup/config/stack.yaml`).

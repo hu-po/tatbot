@@ -1,7 +1,9 @@
 #include "tatbot_hardware/backend.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
+#include <tuple>
 
 namespace tatbot_hardware
 {
@@ -40,15 +42,28 @@ void FakeBackend::command(const Vec7 & q, const Vec7 & qd)
     state_.qd.fill(0.0);
     return;
   }
+  // The command delay_s ago: until one is that old, the arm holds where it stands.
+  Vec7 target = q, feed = qd;
+  if (o_.delay_s > 0) {
+    delayed_.emplace_back(q, qd);
+    if (delayed_.size() <= static_cast<size_t>(std::lround(o_.delay_s / o_.dt))) {
+      target = state_.q;
+      feed.fill(0.0);
+    } else {
+      std::tie(target, feed) = delayed_.front();
+      delayed_.pop_front();
+    }
+  }
   Vec7 next = state_.q;
   for (size_t i = 0; i < kJoints; ++i) {
-    next[i] += o_.dt * (qd[i] + (q[i] - state_.q[i]) / o_.tau);
+    next[i] += o_.dt * (feed[i] + (target[i] - state_.q[i]) / o_.tau);
   }
   if (o_.page_stiffness_n_m > 0 && o_.fk) {
     // A sprung page: the tip goes through, and the joints feel J^T f (finite-difference Jacobian).
     const TipPose tip = o_.fk(next);
     const double depth = std::max(0.0, o_.page_z - tip.p[2]);
-    for (size_t j = 0; j < kCarriage; ++j) {
+    for (size_t j = 0; j < kJoints; ++j) {
+      if (j == o_.carriage) {continue;}
       Vec7 dq = next;
       dq[j] += 1e-6;
       const TipPose pj = o_.fk(dq);
@@ -74,12 +89,14 @@ void FakeBackend::disconnect()
   std::lock_guard<std::mutex> lock(mutex_);
   idle_ = true;   // the SDK's cleanup() idles every motor
   connected_ = false;
+  delayed_.clear();   // an idle arm drops what was in flight
 }
 
 void FakeBackend::set_idle()
 {
   std::lock_guard<std::mutex> lock(mutex_);
   idle_ = true;
+  delayed_.clear();
 }
 
 std::string FakeBackend::error()

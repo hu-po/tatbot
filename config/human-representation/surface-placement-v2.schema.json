@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tatbot.dev/schemas/human-representation/surface-placement-v2.schema.json",
-  "description": "Target placement intent. Plane/cylinder coordinates are metric, with cylinder u axial and v circumferential arc length. Runtime readers also enforce the rotated canvas, margin and injective circumference bounds. No robot pose or hardware authority.",
+  "description": "Target placement intent: a design on a body's rest surface at a semantic site and surface anchor. No robot pose or hardware authority.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -106,179 +106,73 @@
       "$ref": "common.schema.json#/$defs/provenance"
     },
     "target": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "body_identity_sha256",
-            "rest_surface_sha256",
-            "semantic_site",
-            "laterality",
-            "anchor",
-            "tangent_frame_rule",
-            "supported_domain"
-          ],
-          "properties": {
-            "kind": {
-              "const": "body"
-            },
-            "body_identity_sha256": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
-            },
-            "rest_surface_sha256": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
-            },
-            "semantic_site": {
-              "type": "string",
-              "minLength": 1
-            },
-            "laterality": {
-              "enum": [
-                "left",
-                "right",
-                "midline",
-                "not_applicable"
-              ]
-            },
-            "anchor": {
-              "$ref": "common.schema.json#/$defs/surfaceCoordinate"
-            },
-            "tangent_frame_rule": {
-              "type": "string",
-              "minLength": 1
-            },
-            "supported_domain": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "face_indices",
-                "margin_m"
-              ],
-              "properties": {
-                "face_indices": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 36107
-                  },
-                  "minItems": 1
-                },
-                "margin_m": {
-                  "type": "number",
-                  "minimum": 0
-                }
-              }
-            }
-          }
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "body_identity_sha256",
+        "rest_surface_sha256",
+        "semantic_site",
+        "laterality",
+        "anchor",
+        "tangent_frame_rule",
+        "supported_domain"
+      ],
+      "properties": {
+        "kind": {
+          "const": "body"
         },
-        {
+        "body_identity_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "rest_surface_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "semantic_site": {
+          "type": "string",
+          "minLength": 1
+        },
+        "laterality": {
+          "enum": [
+            "left",
+            "right",
+            "midline",
+            "not_applicable"
+          ]
+        },
+        "anchor": {
+          "$ref": "common.schema.json#/$defs/surfaceCoordinate"
+        },
+        "tangent_frame_rule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supported_domain": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "kind",
-            "canvas_m",
-            "anchor_uv_m",
+            "face_indices",
             "margin_m"
           ],
           "properties": {
-            "kind": {
-              "const": "plane"
-            },
-            "canvas_m": {
+            "face_indices": {
               "type": "array",
-              "minItems": 2,
-              "maxItems": 2,
               "items": {
-                "type": "number",
-                "exclusiveMinimum": 0
-              }
-            },
-            "anchor_uv_m": {
-              "type": "array",
-              "minItems": 2,
-              "maxItems": 2,
-              "items": {
-                "type": "number"
-              }
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 36107
+              },
+              "minItems": 1
             },
             "margin_m": {
               "type": "number",
               "minimum": 0
             }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "canvas_m",
-            "anchor_uv_m",
-            "margin_m",
-            "radius_m"
-          ],
-          "properties": {
-            "kind": {
-              "const": "cylinder"
-            },
-            "canvas_m": {
-              "type": "array",
-              "minItems": 2,
-              "maxItems": 2,
-              "items": {
-                "type": "number",
-                "exclusiveMinimum": 0
-              }
-            },
-            "anchor_uv_m": {
-              "type": "array",
-              "minItems": 2,
-              "maxItems": 2,
-              "items": {
-                "type": "number"
-              }
-            },
-            "margin_m": {
-              "type": "number",
-              "minimum": 0
-            },
-            "radius_m": {
-              "type": "number",
-              "exclusiveMinimum": 0
-            }
-          }
-        }
-      ]
-    }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "target": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "plane",
-                  "cylinder"
-                ]
-              }
-            }
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "warp": {
-            "type": "null"
           }
         }
       }
     }
-  ]
+  }
 }

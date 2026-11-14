@@ -35,8 +35,7 @@ def lerobot_py(ctx: Ctx, rel: str, *args: str, **kw) -> Plan:
     TATBOT_SERVE_ROOT / TATBOT_TRAIN_ROOT); anywhere else a missing plugin
     venv means `uv run`, which syncs the pinned arm SDK, never a neighbour
     role's environment that happens to exist on this host: the arm node's
-    leftover training venv carries no trossen_arm, and picking it made every
-    retained-source `session capture-paper` fail on import (2026-09-16).
+    leftover training venv carries no trossen_arm, so picking it fails on import.
     """
     from tatbot_cli import nodes as fleet_nodes
 

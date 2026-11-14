@@ -132,6 +132,23 @@ def test_the_pen_presses_or_rides_its_stroke_over_the_touched_page(kin, motion, 
     assert settled(traj) <= 0.01   # no dwell at touchdown
 
 
+def test_a_fading_stroke_rises_out_by_its_tools_fade_lift(kin, motion, page):
+    """A whip's deposition 1 -> 0 over its second half rides (1 - deposition) of the fitted tool's fade lift higher:
+    level, then rising 2 mm off the page by its end; only ever up. With no fade lift recorded it does not plan."""
+    whip = _stroke([[-0.01, 0.0], [0.0, 0.0], [0.01, 0.0]], deposition=[1.0, 1.0, 0.0])
+    with pytest.raises(ValueError, match="fade_lift_mm"):
+        tm.plan.page_points(whip, page, 0.0)
+    pen = tm.PenDown(tm.PRESS, 0.0, 0.0, fade_m=0.002)
+    q0 = _pose_over(kin, page, (-0.01, 0.0), 0.03)
+    traj = tm.plan_op(whip, base_from_page=page, q_seed=q0, kin=kin, motion=motion, speed_m_s=SPEED, pen=pen)
+    tip = traj.tip[traj.phase == tm.PHASE_DRAW]
+    x, height = (tip - page[:3, 3]) @ page[:3, 0], _height(page, tip)
+    assert np.abs(height[x < -0.001]).max() < 1e-4                        # full ink: on the page
+    assert height[-1] == pytest.approx(0.002, abs=1e-4)                   # lifted out at its end
+    np.testing.assert_allclose(height[x > 0.001], 0.002 * x[x > 0.001] / 0.01, atol=1.5e-4)   # the ramp between
+    assert np.all(np.diff(height[x > 0]) > -1e-5)                         # rising, never pressing back in
+
+
 def test_the_hover_pen_draws_the_path_over_the_page_with_the_machine_off(kin, motion, page, tmp_path):
     """hover rehearses a drawing without a mark: the path pen.hover.height_m over the page, no tool facts needed,
     the machine off; motion.yaml refuses a hover under the page or above the stroke's standoff."""
@@ -280,6 +297,18 @@ def test_a_travel_to_where_the_pen_stands_plans(kin, motion, page):
         traj = tm.plan_travel(q_seed=q0, base_from_tcp=target, kin=kin, motion=motion)
         np.testing.assert_allclose(traj.tip[-1], target[:3, 3], atol=1e-6)
         assert set(traj.phase.tolist()) == {tm.PHASE_TRAVEL}
+
+def test_a_short_hop_takes_the_same_samples_whatever_the_last_bit_of_its_normals():
+    """The simulator's two drivers planned a setup hop one tick apart (2026-11-08): a short hop's longest leg is
+    its rise, 120 sampling steps exactly, and a unit normal one bit over made it 121."""
+    here, there, rise = np.array([0.30, 0.00, 0.10]), np.array([0.31, 0.00, 0.10]), 0.020
+    counts = set()
+    for turn in np.linspace(0.0, 1.2, 200):   # normals of unit length to the last bit or two
+        up = np.array([np.sin(turn) * 0.3, np.sin(turn) * 0.4, np.cos(turn)])
+        up[:2] *= np.sqrt(max(0.0, 1.0 - up[2] ** 2)) / max(float(np.linalg.norm(up[:2])), 1e-300)
+        counts.add(len(tm.hop_via(here, up, there, up, rise)))
+    assert counts == {round(3.0 * rise / tm.plan.HOP_STEP_M) - 1}
+
 
 def test_a_hop_rises_off_one_hold_and_comes_down_onto_the_next_in_one_move(kin, motion, page):
     """Two gauge holds 35 mm apart 10 mm over the page: one pen-up move from rest to rest that leaves along the
@@ -482,6 +511,27 @@ def test_a_trim_moves_the_pen_along_the_page_normal(kin, motion, page):
         assert moved.info["trim"] == tm.Trim(h) and np.all(moved.q[:, 6] == traj.q[:, 6])
 
 
+def test_a_dwell_holds_a_stroke_plan_at_its_first_pen_down_knot_for_the_keys(kin, motion, page):
+    """The depth hold's goal: a stroke's own approach to its first pen-down knot, where a stopping stroke stands still,
+    then that knot held for the window; a trim there moves the tip along the page normal and nowhere else. A later
+    window is the held knot alone."""
+    q0 = _pose_over(kin, page, (-0.01, -0.01), 0.01)
+    traj = tm.plan_op(_stroke(SQUARE), base_from_page=page, q_seed=q0, kin=kin, motion=motion, speed_m_s=SPEED)
+    down = int(np.flatnonzero(traj.phase == tm.PHASE_DRAW)[0])
+    assert np.abs(traj.qd[down]).max() < 1e-5
+    dt = float(traj.t[1] - traj.t[0])
+    hold = tm.dwell(traj, 0, down, 4.0, dt)
+    assert hold.t[-1] == pytest.approx(traj.t[down] + 4.0) and np.all(np.diff(hold.t) > 0)
+    np.testing.assert_array_equal(hold.q[:down + 1], traj.q[:down + 1])
+    assert np.all(hold.q[down:] == traj.q[down]) and not hold.qd[down:].any()
+    cfg = motion["pen"]["trim"]
+    pressed = tm.compose(hold, tm.Trim(0.001).to(float(hold.t[down]) + 0.5, -0.001, cfg))
+    np.testing.assert_allclose(pressed.tip[-1] - hold.tip[-1], -0.001 * page[:3, 2], atol=1e-12)
+    np.testing.assert_allclose(kin.fk(pressed.q[-1])[:3, 3] - kin.fk(hold.q[-1])[:3, 3], -0.001 * page[:3, 2], atol=5e-6)
+    again = tm.dwell(traj, down, down, 2.0, dt)
+    assert again.t[0] == 0.0 and again.t[-1] == pytest.approx(2.0) and np.all(again.q == traj.q[down])
+
+
 def test_a_trim_change_eases_in_ahead_and_leaves_the_past_alone(kin, motion, page):
     """A change mid-goal: the composed goal is the running one until the change starts, then a quintic ramp no
     faster than pen.trim speed_m_s, its velocity feed-forward the composed joints' own rate."""
@@ -536,6 +586,7 @@ def test_a_hover_stops_over_the_strokes_start_and_the_stroke_descends_from_it(ki
 
 class _Cartesian:
     """A plant whose joints are the tip (q[:3]), a fixed tool (q[3:6]) and the carriage, for the guard band alone."""
+    arm, n, revolute, carriage = "plant", 7, slice(0, 6), 6
     joint_names = [f"j{i}" for i in range(7)]
     lower, upper = np.array([0.0] * 6 + [-0.01]), np.array([1.0] * 6 + [0.01])
 
@@ -562,3 +613,118 @@ def test_a_plan_may_start_inside_the_joint_margin_and_never_goes_farther_toward_
     assert plan(+0.05).q[-1, 1] == pytest.approx(0.0666, abs=2e-3)   # back out of the margin
     with pytest.raises(PlanError, match="guarded limit"):
         plan(-0.01)                                                    # toward the stop: refused
+
+
+# --- stroke ends drawn moving (motion.yaml draw.ends: fly) ----------------------------------------------------------
+LINE = [[-0.01, 0.0], [0.01, 0.0]]
+
+
+def _flying(motion, **fly):
+    return {**motion, "draw": {**motion["draw"], "ends": "fly", "fly": {**motion["draw"]["fly"], **fly}}}
+
+
+def _local(page, traj):
+    return (traj.tip - page[:3, 3]) @ page[:3, :3]
+
+
+def test_stopping_ends_plan_as_they_did_before_the_setting(kin, motion, page):
+    """draw.ends: stop is today's stroke: the plan of a motion.yaml without the key, knot for knot."""
+    q0 = _pose_over(kin, page, (-0.01, -0.01), 0.02)
+    before = {**motion, "draw": {k: v for k, v in motion["draw"].items() if k not in ("ends", "fly")},
+              "corners": {k: v for k, v in motion["corners"].items() if k != "blend_radius_m"}}
+    assert motion["draw"]["ends"] == "stop" and motion["corners"]["blend_radius_m"] == 0.0
+    for points, extra in ((SQUARE, {}), (LINE, {"lift_at_end": False}), ([[0.0, 0.0]], {})):
+        op = _stroke(points, generation_width_m=0.0003)
+        was = tm.plan_op(op, base_from_page=page, q_seed=q0, kin=kin, motion=before, speed_m_s=SPEED, **extra)
+        now = tm.plan_op(op, base_from_page=page, q_seed=q0, kin=kin, motion=motion, speed_m_s=SPEED,
+                         clear_m=[0.1, 0.1], **extra)
+        assert np.array_equal(was.q, now.q) and np.array_equal(was.phase, now.phase) and "ends" not in now.info
+        assert np.array_equal(was.arc_m, now.arc_m, equal_nan=True)
+
+
+def test_flying_ends_come_down_and_leave_at_the_draw_speed(kin, motion, page):
+    q0 = _pose_over(kin, page, (-0.01, 0.0), 0.02)
+    fly = tm.plan.stroke_ends(_flying(motion))
+    traj = tm.plan_op(_stroke(LINE), base_from_page=page, q_seed=q0, kin=kin, motion=_flying(motion), speed_m_s=SPEED,
+                      clear_m=[0.1, 0.1])
+    assert traj.info["ends"] == {"start": "fly", "end": "fly", "why": []}
+    assert _segments(traj.phase) == [tm.PHASE_TRAVEL, tm.PHASE_DESCEND, tm.PHASE_SETTLE, tm.PHASE_DESCEND,
+                                     tm.PHASE_DRAW, tm.PHASE_LIFT]
+    local, dt = _local(page, traj), traj.t[1] - traj.t[0]
+    x, h = local[:, 0], local[:, 2]
+    speed = np.r_[0.0, np.linalg.norm(np.diff(local[:, :2], axis=0), axis=1) / dt]
+    marking = h < fly.band_m
+    assert speed[marking].min() > 0.99 * SPEED and speed[marking].max() < 1.01 * SPEED   # never slow inside the band
+    assert -0.0105 < x[marking].min() < -0.0100 and 0.0100 < x[marking].max() < 0.0105   # 0.4 mm outside each end
+    slow = speed < 0.5 * SPEED                                   # the eases and the vertical legs: over the band
+    assert h[slow].min() > fly.band_m + 0.5 * fly.clear_m
+    run = tm.plan.fly_run_m(fly, SPEED)
+    assert x.min() == pytest.approx(-0.01 - run, abs=2e-4) and x.max() == pytest.approx(0.01 + run, abs=2e-4)
+    drawn = traj.phase == tm.PHASE_DRAW
+    assert traj.arc_m[drawn][0] < 2e-5 and traj.arc_m[drawn][-1] == pytest.approx(0.02, abs=2e-5)
+    assert np.all(np.diff(traj.arc_m[drawn]) >= 0.0) and np.isnan(traj.arc_m[~drawn]).all()
+    on_path = drawn & (x > -0.01 + fly.inset_m + 1e-4) & (x < 0.01 - fly.inset_m - 1e-4)
+    assert np.abs(h[on_path]).max() < 2e-4                       # on its pen-down path between the insets
+    assert np.abs(local[:, 1]).max() < 2e-4 and h[-1] == pytest.approx(motion["approach"]["standoff_m"], abs=2e-4)
+    assert traj.info["max_model_error_m"] <= motion["clik"]["max_model_error_m"] and np.all(traj.qd[-1] == 0.0)
+    assert np.allclose(traj.axis, page[:3, 2])                   # a trim still moves every knot along the normal
+
+
+def test_an_end_without_room_or_joined_to_its_neighbour_stops(kin, motion, page):
+    q0 = _pose_over(kin, page, (-0.01, 0.0), 0.02)
+    flying = _flying(motion)
+    edge = tm.plan_op(_stroke(LINE), base_from_page=page, q_seed=q0, kin=kin, motion=flying, speed_m_s=SPEED,
+                      clear_m=[0.0205, 0.1])                     # 0.25 mm of clear area past each end
+    assert (edge.info["ends"]["start"], edge.info["ends"]["end"]) == ("stop", "stop")
+    assert "run-in would leave the page's clear area" in edge.info["ends"]["why"][0]
+    stop = tm.plan_op(_stroke(LINE), base_from_page=page, q_seed=q0, kin=kin, motion=motion, speed_m_s=SPEED)
+    assert np.array_equal(edge.q, stop.q)                        # exactly the stopping stroke
+    # the op after it continues its path: the end stays down, eased to rest on the skin as it is today
+    first = tm.plan_op(_stroke(LINE), base_from_page=page, q_seed=q0, kin=kin, motion=flying, speed_m_s=SPEED,
+                       lift_at_end=False)
+    assert first.info["ends"] == {"start": "fly", "end": "stop", "why": []}
+    assert int(first.phase[-1]) == tm.PHASE_DRAW and abs(_height(page, first.tip[-1])) < 2e-4
+    second = tm.plan_op(_stroke([[0.01, 0.0], [0.01, 0.01]], continues=True), base_from_page=page, q_seed=first.q[-1],
+                        kin=kin, motion=flying, speed_m_s=SPEED, pen_down_at_start=True)
+    assert second.info["joined"] and second.info["ends"] == {"start": "stop", "end": "fly", "why": []}
+    assert _segments(second.phase) == [tm.PHASE_DRAW, tm.PHASE_LIFT]
+    assert _local(page, second)[:, 2].min() > -2e-4
+    # resumed part-way after a stop, pen up: it comes down on the arc it reached, and its end still flies
+    resumed = tm.plan_op(_stroke(LINE), base_from_page=page, q_seed=q0, kin=kin, motion=flying, speed_m_s=SPEED,
+                         from_arc_m=0.008)
+    assert resumed.info["ends"] == {"start": "stop", "end": "fly", "why": []}
+    short = tm.plan_op(_stroke([[0.0, 0.0], [0.002, 0.0]]), base_from_page=page, q_seed=q0, kin=kin, motion=flying,
+                       speed_m_s=SPEED)
+    assert short.info["ends"]["start"] == "stop" and "shorter than" in short.info["ends"]["why"][0]
+    dot = tm.plan_op(_stroke([[0.0, 0.0]]), base_from_page=page, q_seed=q0, kin=kin, motion=flying, speed_m_s=SPEED)
+    assert dot.info["ends"]["start"] == "stop"
+
+
+def test_a_flying_plan_the_check_refuses_falls_back_to_stopping_ends(kin, motion, page):
+    q0 = _pose_over(kin, page, (-0.01, 0.0), 0.02)
+    stop = tm.plan_op(_stroke(LINE), base_from_page=page, q_seed=q0, kin=kin, motion=motion, speed_m_s=SPEED)
+    longest = len(stop.q)
+    seen = []
+
+    def check(rows):   # a guard that refuses the longer way the flying ends take
+        seen.append(len(rows))
+        raise tm.PlanError("the arm's way brings its wrist onto its forearm")
+
+    traj = tm.plan_op(_stroke(LINE), base_from_page=page, q_seed=q0, kin=kin, motion=_flying(motion), speed_m_s=SPEED,
+                      check=check)
+    assert len(seen) == 1 and seen[0] > longest == len(traj.q)   # asked about the flying way only
+    assert traj.info["ends"]["start"] == traj.info["ends"]["end"] == "stop"
+    assert "wrist onto its forearm" in traj.info["ends"]["why"][0] and np.array_equal(traj.q, stop.q)
+
+
+def test_a_blend_radius_rounds_a_planned_corner_within_half_the_mark(kin, motion, page):
+    q0 = _pose_over(kin, page, (-0.01, -0.01), 0.02)
+    rounded = {**motion, "corners": {**motion["corners"], "blend_radius_m": 0.001}}
+    op = _stroke(SQUARE, generation_width_m=0.0006)
+    sharp = tm.plan_op(op, base_from_page=page, q_seed=q0, kin=kin, motion=motion, speed_m_s=SPEED)
+    blent = tm.plan_op(op, base_from_page=page, q_seed=q0, kin=kin, motion=rounded, speed_m_s=SPEED)
+    assert blent.duration_s < sharp.duration_s - 0.2             # three corners no longer slowed to 1.7 mm/s
+    drawn = _local(page, blent)[blent.phase == tm.PHASE_DRAW][:, :2]
+    corner = np.linalg.norm(drawn - [0.01, -0.01], axis=1).min()
+    assert 5e-5 < corner <= 0.0003 * (np.sqrt(2.0) - 1.0) + 3e-5   # cut by at most the bulge of a 0.3 mm arc
+    assert tm.joins(op, blent.tip[blent.phase == tm.PHASE_DRAW][0], base_from_page=page, motion=rounded)

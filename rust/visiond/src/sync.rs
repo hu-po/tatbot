@@ -50,15 +50,11 @@ pub struct SynchronizedFrameSet {
 #[derive(Debug)]
 pub struct FrameSynchronizer {
     sensor_names: Vec<String>,
-    minimum_sensors: usize,
     tolerance_ns: u128,
-    maximum_wait_ns: Option<u128>,
     capacity: usize,
     buffers: BTreeMap<String, VecDeque<FrameRecord>>,
     sequence: u64,
     dropped_unmatched: u64,
-    complete_sets: u64,
-    partial_sets: u64,
 }
 
 impl FrameSynchronizer {
@@ -74,49 +70,8 @@ impl FrameSynchronizer {
             return Err("frame synchronizer capacity must be positive".into());
         }
         let sensor_names: Vec<String> = sensor_names.into_iter().collect();
-        let minimum_sensors = sensor_names.len();
-        Self::new_inner(sensor_names, minimum_sensors, tolerance_ns, None, capacity)
-    }
-
-    /// Build a synchronizer that emits a complete set immediately, but after
-    /// `maximum_wait_ns` may emit a fresh subset containing at least
-    /// `minimum_sensors`. This is for latency-sensitive tracking only;
-    /// evidence/calibration callers should continue to use [`Self::new`].
-    pub fn new_partial(
-        sensor_names: impl IntoIterator<Item = String>,
-        minimum_sensors: usize,
-        tolerance_ns: u128,
-        maximum_wait_ns: u128,
-        capacity: usize,
-    ) -> Result<Self, String> {
-        let sensor_names: Vec<String> = sensor_names.into_iter().collect();
-        Self::new_inner(
-            sensor_names,
-            minimum_sensors,
-            tolerance_ns,
-            Some(maximum_wait_ns),
-            capacity,
-        )
-    }
-
-    fn new_inner(
-        sensor_names: Vec<String>,
-        minimum_sensors: usize,
-        tolerance_ns: u128,
-        maximum_wait_ns: Option<u128>,
-        capacity: usize,
-    ) -> Result<Self, String> {
         if sensor_names.is_empty() || sensor_names.iter().any(|name| name.trim().is_empty()) {
             return Err("frame synchronizer needs non-empty sensor names".into());
-        }
-        if minimum_sensors == 0 || minimum_sensors > sensor_names.len() {
-            return Err(format!(
-                "frame synchronizer minimum sensors must be in 1..={}, got {minimum_sensors}",
-                sensor_names.len()
-            ));
-        }
-        if maximum_wait_ns == Some(0) {
-            return Err("partial frame synchronizer maximum wait must be positive".into());
         }
         let mut buffers = BTreeMap::new();
         for name in &sensor_names {
@@ -129,15 +84,11 @@ impl FrameSynchronizer {
         }
         Ok(Self {
             sensor_names,
-            minimum_sensors,
             tolerance_ns,
-            maximum_wait_ns,
             capacity,
             buffers,
             sequence: 0,
             dropped_unmatched: 0,
-            complete_sets: 0,
-            partial_sets: 0,
         })
     }
 
@@ -159,14 +110,6 @@ impl FrameSynchronizer {
         self.dropped_unmatched
     }
 
-    pub fn complete_sets(&self) -> u64 {
-        self.complete_sets
-    }
-
-    pub fn partial_sets(&self) -> u64 {
-        self.partial_sets
-    }
-
     fn drain_ready(&mut self) -> Vec<SynchronizedFrameSet> {
         let mut output = Vec::new();
         loop {
@@ -176,17 +119,10 @@ impl FrameSynchronizer {
                 .filter_map(|name| {
                     let frame = self.buffers.get(name)?.front()?;
                     let (basis, timestamp) = frame_sync_time(frame)?;
-                    Some((
-                        name.clone(),
-                        basis,
-                        timestamp,
-                        frame.metadata.timestamps.host_unix_ns,
-                    ))
+                    Some((name.clone(), basis, timestamp))
                 })
-                .min_by_key(|(_, _, timestamp, _)| *timestamp);
-            let Some((reference_name, reference_basis, reference_time, reference_host_unix_ns)) =
-                reference
-            else {
+                .min_by_key(|(_, _, timestamp)| *timestamp);
+            let Some((reference_name, reference_basis, reference_time)) = reference else {
                 break;
             };
 
@@ -245,21 +181,7 @@ impl FrameSynchronizer {
                     candidates.remove(name);
                 }
             }
-            let complete = candidates.len() == self.sensor_names.len();
-            let latest_host_unix_ns = self
-                .buffers
-                .values()
-                .flat_map(|queue| queue.iter())
-                .map(|frame| frame.metadata.timestamps.host_unix_ns)
-                .max()
-                .unwrap_or(reference_host_unix_ns);
-            let waited_ns = latest_host_unix_ns
-                .saturating_sub(reference_host_unix_ns)
-                .max(0) as u128;
-            let partial_ready = self.maximum_wait_ns.is_some_and(|maximum_wait_ns| {
-                candidates.len() >= self.minimum_sensors && waited_ns >= maximum_wait_ns
-            });
-            if complete || partial_ready {
+            if candidates.len() == self.sensor_names.len() {
                 let maximum_skew_ns = candidates
                     .values()
                     .map(|(_, timestamp)| timestamp.abs_diff(reference_time))
@@ -280,11 +202,6 @@ impl FrameSynchronizer {
                         .expect("synchronizer candidate disappeared");
                     frames.insert(name, frame);
                 }
-                if complete {
-                    self.complete_sets = self.complete_sets.saturating_add(1);
-                } else {
-                    self.partial_sets = self.partial_sets.saturating_add(1);
-                }
                 output.push(SynchronizedFrameSet {
                     sequence: self.sequence,
                     timestamp_basis: reference_basis.to_string(),
@@ -301,10 +218,7 @@ impl FrameSynchronizer {
                     .get(name)
                     .is_some_and(|queue| !queue.is_empty())
             });
-            let partial_expired = self
-                .maximum_wait_ns
-                .is_some_and(|maximum_wait_ns| waited_ns >= maximum_wait_ns);
-            if all_present || partial_expired {
+            if all_present {
                 self.drop_front(&reference_name);
                 continue;
             }
@@ -401,7 +315,7 @@ pub fn pairwise_sync_report(
         other_samples: other_times.len(),
         matched_samples: signed_offsets.len(),
         median_signed_offset_ns: Some(median(&signed_offsets)),
-        median_absolute_offset_ns: Some(median_unsigned(&absolute_offsets)),
+        median_absolute_offset_ns: Some(median(&absolute_offsets)),
         p95_absolute_offset_ns: Some(percentile_unsigned(&absolute_offsets, 95)),
         maximum_absolute_offset_ns: absolute_offsets.last().copied(),
     })
@@ -464,27 +378,23 @@ impl ClockOffsetEstimator {
         }
         let mut values: Vec<_> = self.samples.iter().copied().collect();
         values.sort_unstable();
-        let median = median(&values);
+        let median_offset = median(&values);
         let mut deviations: Vec<_> = values
             .iter()
-            .map(|value| (value - median).unsigned_abs())
+            .map(|value| (value - median_offset).unsigned_abs())
             .collect();
         deviations.sort_unstable();
         SyncAssessment {
             sample_count: values.len(),
-            median_offset_ns: Some(median),
-            median_absolute_deviation_ns: Some(median_unsigned(&deviations)),
+            median_offset_ns: Some(median_offset),
+            median_absolute_deviation_ns: Some(median(&deviations)),
             min_offset_ns: values.first().copied(),
             max_offset_ns: values.last().copied(),
         }
     }
 }
 
-fn median(values: &[i128]) -> i128 {
-    values[values.len() / 2]
-}
-
-fn median_unsigned(values: &[u128]) -> u128 {
+fn median<T: Copy>(values: &[T]) -> T {
     values[values.len() / 2]
 }
 
@@ -612,73 +522,6 @@ mod tests {
         assert!(synchronizer.dropped_unmatched() > 0);
     }
 
-    #[test]
-    fn partial_mode_waits_then_emits_a_fresh_subset() {
-        let mut synchronizer = FrameSynchronizer::new_partial(
-            [
-                "camera1".to_string(),
-                "camera2".to_string(),
-                "camera3".to_string(),
-            ],
-            2,
-            10,
-            50,
-            4,
-        )
-        .unwrap();
-        assert!(
-            synchronizer
-                .push(frame("camera1", 1_000))
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            synchronizer
-                .push(frame("camera2", 1_005))
-                .unwrap()
-                .is_empty()
-        );
-        let sets = synchronizer.push(frame("camera3", 1_065)).unwrap();
-        assert_eq!(sets.len(), 1);
-        assert_eq!(sets[0].frames.len(), 2);
-        assert!(sets[0].frames.contains_key("camera1"));
-        assert!(sets[0].frames.contains_key("camera2"));
-        assert_eq!(synchronizer.partial_sets(), 1);
-        assert_eq!(synchronizer.complete_sets(), 0);
-    }
-
-    #[test]
-    fn partial_mode_still_emits_complete_sets_without_waiting() {
-        let mut synchronizer = FrameSynchronizer::new_partial(
-            [
-                "camera1".to_string(),
-                "camera2".to_string(),
-                "camera3".to_string(),
-            ],
-            2,
-            10,
-            50,
-            4,
-        )
-        .unwrap();
-        assert!(
-            synchronizer
-                .push(frame("camera1", 1_000))
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            synchronizer
-                .push(frame("camera2", 1_005))
-                .unwrap()
-                .is_empty()
-        );
-        let sets = synchronizer.push(frame("camera3", 1_007)).unwrap();
-        assert_eq!(sets.len(), 1);
-        assert_eq!(sets[0].frames.len(), 3);
-        assert_eq!(synchronizer.complete_sets(), 1);
-        assert_eq!(synchronizer.partial_sets(), 0);
-    }
     #[test]
     fn aligned_depth_waits_for_the_same_color_sequence_and_epoch() {
         let mut sync =

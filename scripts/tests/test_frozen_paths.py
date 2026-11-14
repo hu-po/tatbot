@@ -26,6 +26,19 @@ def frozen():
     return freeze_program(geometry(), source_sha256='a'*64, name='frozen', adapter='dbv3-batik-paths/1')
 
 
+def test_a_path_fades_by_one_deposition_or_one_per_point():
+    value = geometry()
+    line = value["layers"][0]["elements"][0]
+    line["deposition"] = [1.0, 0.5, 0.0]   # a whip: lifted out at its end
+    program, _ = freeze_program(value, source_sha256='a'*64, name='whip', adapter='tatbot-art-shade/1')
+    validate_path_program(program)
+    for bad, message in (([1.0, 0.5], "one value per point"), ([0.0, 0.0, 0.0], "inks none"),
+                         ([1.0, 0.5, 1.2], "outside"), (0, "positive")):
+        line["deposition"] = bad
+        with pytest.raises(ValueError, match=message):
+            freeze_program(value, source_sha256='a'*64, name='whip', adapter='tatbot-art-shade/1')
+
+
 def test_frozen_paths_validate_without_regenerating_source():
     program, svg = frozen()
     assert program == validate_path_program(json.loads(json.dumps(program)))
@@ -88,7 +101,8 @@ process.stdout.write(program.content_sha256);'''
     assert process.stdout == program['content_sha256']
 
 
-def test_frozen_artwork_binds_geometry_source_and_acquisition_across_languages():
+def test_frozen_artwork_binds_geometry_source_and_acquisition():
+    """Inkmap places source images and reads no acquired artwork, so this record has one reader, in Python."""
     from tatbot_contracts.artwork import freeze_artwork, validate_path_artwork
     program, _ = frozen()
     record = freeze_artwork(program, name='frozen', source={
@@ -96,17 +110,6 @@ def test_frozen_artwork_binds_geometry_source_and_acquisition_across_languages()
         conversion={'adapter': 'dbv3-batik-paths/1', 'recipe_sha256': 'b'*64, 'chord_error_m': .000005})
     assert validate_path_artwork(record) == record
     assert 'original_svg' not in record
-    node = shutil.which('node')
-    if node is None:
-        pytest.skip('browser parity requires Node 22+')
-    code = '''import { validateArtworkRecord } from './src/core/artwork-record.ts';
-import { readFileSync } from 'node:fs';
-const record = await validateArtworkRecord(JSON.parse(readFileSync(0, 'utf8')));
-process.stdout.write(record.content_sha256);'''
-    process = subprocess.run([node, '--experimental-strip-types', '--input-type=module', '-e', code],
-        cwd=ROOT/'web/inkmap', input=json.dumps(record), text=True, capture_output=True, timeout=15)
-    assert process.returncode == 0, process.stderr
-    assert process.stdout == record['content_sha256']
     stale = copy.deepcopy(record)
     stale['program']['layers'][0]['elements'][0]['points_m'].reverse()
     stale['content_sha256'] = canonical_digest(stale)

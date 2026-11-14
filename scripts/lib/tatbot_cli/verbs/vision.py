@@ -274,16 +274,22 @@ def surface_attachment_benchmark(ctx, ns, rest):
 def _capture_args(p):
     p.add_argument("mode", choices=("once",), help="once: one capture")
     p.add_argument("dir", help="where capture-<k>.npz go")
-    p.add_argument("--arm", choices=("right",),
-                   help="the arm whose wrist cameras answer (required, never a default; the pink arm's alone carry any)")
+    p.add_argument("--arm", help="the arm whose wrist cameras answer (required, never a default; vision.toml says "
+                                 "which carry any)")
     p.add_argument("--fake", action="store_true", help="synthetic tilted-plane depth; no cameras opened")
     p.add_argument("--from-owner", action="store_true", help="subscribe to the existing D405 camera owner")
 
 
 def _capture_arm(ns) -> str:
-    """The arm a capture invocation names: stated, never defaulted."""
+    """The arm a capture invocation names: stated, never defaulted, and one vision.toml mounts wrist cameras on."""
+    from wrist_cameras import capture_roles
+
+    from tatbot_cli.registry import repo_root
+    carrying = sorted(arm for arm, roles in capture_roles(repo_root()).items() if roles)
     if not ns.arm:
-        raise ValueError("vision capture once needs --arm right: the arm whose wrist cameras answer")
+        raise ValueError(f"vision capture once needs --arm ({' or '.join(carrying)}): the arm whose wrist cameras answer")
+    if ns.arm not in carrying:
+        raise ValueError(f"--arm {ns.arm}: vision.toml mounts no wrist camera on it (they ride {', '.join(carrying)})")
     return ns.arm
 
 
@@ -319,7 +325,7 @@ def _capture_owner_role(ns) -> str:
       validate=_capture_validate,
       summary="the wrist D405s without an executor: one capture of the named arm's wrist cameras",
       wraps=("scripts/vision_capture.py",), passthrough="vision_capture.py", args=_capture_args,
-      example=("once", "/tmp/capture", "--arm", "right"),
+      example=("once", "/tmp/capture", "--arm", "xarm"),
       doc="docs/surface-formats.md",
       invariants=("Each capture carries t_wall.",
                   "Runs on the owner of the named arm's wrist cameras (vision.toml `owner_role`); --arm is stated."))

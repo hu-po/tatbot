@@ -1,0 +1,10 @@
+# Wrist D405s: keep the USB device awake. The kernel's default lets a USB device
+# suspend after two idle seconds, and the drawing stack opens and closes these
+# cameras all day (readings, the idle feed), so each open may first resume one.
+# Not installed by any deploy; `tatbot rig check --all` shows what a host has.
+#
+# Install on the node whose USB holds the cameras (docs/rig.md "Host settings"):
+#   sudo cp config/udev/99-tatbot-realsense.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb --action=add
+# then check:  cat /sys/bus/usb/devices/*/power/control   (the cameras read "on")
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="8086", ATTR{idProduct}=="0b5b", TEST=="power/control", ATTR{power/control}="on"

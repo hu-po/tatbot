@@ -18,7 +18,7 @@ from rclpy.duration import Duration as RosDuration
 from tatbot_description import names
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-from tatbot_session import ports
+from tatbot_session import ports, timing
 from tatbot_session.ports import WALL, SafetyReadings, execute, goal_points, goal_tag, stop_reason
 
 LATCH_TEXT = {
@@ -226,7 +226,7 @@ class ArmIO(SafetyReadings):
         """One-point hold trajectory at q, zero velocity."""
         from tatbot_motion import Trajectory
 
-        return Trajectory(self.joint_names, np.array([seconds]), q[None, :], np.zeros((1, 7)),
+        return Trajectory(self.joint_names, np.array([seconds]), q[None, :], np.zeros((1, len(q))),
                           np.full((1, 3), np.nan), np.array([np.nan]), np.zeros(1, dtype=np.uint8))
 
     def goal(self, traj, first: int = 0) -> FollowJointTrajectory.Goal:
@@ -244,11 +244,15 @@ class ArmIO(SafetyReadings):
 
         def on_result(future):
             box["result"] = future.result()
-            done.set()
+            try:
+                timing.result(self, identity, box["result"])
+            finally:
+                done.set()
 
         def on_accepted(future):
             box["handle"], box["t0"] = future.result(), self.clock.now() if start is None else start
             box["accepted"].set()
+            timing.accepted(self, identity, box["handle"].accepted, getattr(box["handle"], "goal_id", None))
             if box["handle"].accepted:
                 box["handle"].get_result_async().add_done_callback(on_result)
                 if box.get('cancel'):
@@ -268,7 +272,11 @@ class ArmIO(SafetyReadings):
             goal.trajectory.header.stamp = Time()
         if stamp is not None:
             goal.trajectory.header.stamp = stamp.to_msg()
-        self.jtc.send_goal_async(goal).add_done_callback(on_accepted)
+        identity = timing.sent(self, traj, first, scheduled_start=start)
+        if getattr(self, 'pipeline_trace', None) is None:
+            self.jtc.send_goal_async(goal).add_done_callback(on_accepted)
+        else:
+            self.jtc.send_goal_async(goal, feedback_callback=lambda msg: timing.feedback(self, identity, traj, msg, scheduled_start=start)).add_done_callback(on_accepted)
         return done, box
 
     def _retarget(self, retarget, elapsed: float, stamp, start: float, running: tuple) -> tuple:
@@ -288,7 +296,8 @@ class ArmIO(SafetyReadings):
     def execute(self, traj, *, watch_latch: bool = True, on_tick=None, should_stop=None, poll: float = 0.02,
                 retarget=None):
         """Run one FollowJointTrajectory goal. Returns (status, sample index reached, text) with status
-        ok | failed | latched | cancelled. A latch or a stop request cancels the goal. A landed arm is sent
+        ok | failed | latched | cancelled. A latch or a stop request cancels the goal, and so does an on_tick,
+        retarget or should_stop that raises, before its error leaves. A landed arm is sent
         no goal (failed): its driver would ignore it, and JTC report it a success. Nor is a way that brings
         the arm onto itself (self.clearance). `retarget(elapsed_s, active)` may return a trajectory on
         the same knot times to replace the running one (a pen trim, at most pen.trim.limit_m off the way the
@@ -297,6 +306,7 @@ class ArmIO(SafetyReadings):
                        self.node.get_logger().warning)
 
     def _run(self, traj, watch_latch: bool, on_tick, should_stop, poll: float, retarget=None):
+        self._timing_goal = None
         self.last_command = None  # unless it completes, JTC holds the measured pose: seed from measured
         if not self.jtc.wait_for_server(timeout_sec=5.0):
             return "failed", 0, f"{names.follow_joint_trajectory(self.arm)} is not available"
@@ -305,24 +315,33 @@ class ArmIO(SafetyReadings):
         done, box = self._send(traj, stamp, start=start)
         index, sent_at = 0, self.clock.now()
         while not done.wait(poll):
-            if 't0' in box:
-                elapsed = self.clock.now() - box["t0"]
-                index = min(int(np.searchsorted(traj.t, elapsed)), len(traj.t) - 1)
-                if on_tick:
-                    on_tick(index)
-                if retarget is not None and elapsed > 2 * ports.REPLACE_BACK_S and not box.get("cancel"):
-                    done, box, retarget = self._retarget(retarget, elapsed, stamp, start, (done, box))
+            try:   # the caller's on_tick, retarget and should_stop: one that raises must not leave its goal running
+                if 't0' in box:
+                    elapsed = self.clock.now() - box["t0"]
+                    index = min(int(np.searchsorted(traj.t, elapsed)), len(traj.t) - 1)
+                    if on_tick:
+                        on_tick(index)
+                    if retarget is not None and elapsed > 2 * ports.REPLACE_BACK_S and not box.get("cancel"):
+                        done, box, retarget = self._retarget(retarget, elapsed, stamp, start, (done, box))
+                stop = stop_reason(self, watch_latch, should_stop)
+            except BaseException:
+                self._cancel(done, box)
+                raise
             deadline = box['t0'] + float(traj.t[-1]) + 30.0 if 't0' in box else sent_at + 5.0
-            stop = stop_reason(self, watch_latch, should_stop)
             if stop or self.clock.now() > deadline:
-                box['cancel'] = True
-                if (handle := box.get('handle')) is not None and handle.accepted:
-                    handle.cancel_goal_async()
-                done.wait(2.0)
+                self._cancel(done, box)
                 text = {"latched": self.latch_text(), "cancelled": "stop requested"}.get(
                     stop, "no result 30 s past the end" if 't0' in box else "no goal acceptance within 5 s")
                 return stop or "failed", index, text
         return self._outcome(box, self.active, index, watch_latch)
+
+    @staticmethod
+    def _cancel(done: threading.Event, box: dict) -> None:
+        """Cancel the goal in `box` (one not accepted yet is cancelled when it is), waiting up to 2 s for its end."""
+        box['cancel'] = True
+        if (handle := box.get('handle')) is not None and handle.accepted:
+            handle.cancel_goal_async()
+        done.wait(2.0)
 
     def _outcome(self, box: dict, traj, index: int, watch_latch: bool):
         handle, result = box.get("handle"), box.get("result")

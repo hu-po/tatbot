@@ -54,7 +54,7 @@ TOOL_SOURCES = {"flag": "--ee-tool", "environment": "TATBOT_EE_TOOL",
 FLAG_HINT = "state it with --ee-tool <id>; `tatbot tool list` names them"
 
 
-def configured_tool(repo: Path, arm: str = "right") -> tuple[str | None, str | None]:
+def configured_tool(repo: Path) -> tuple[str | None, str | None]:
     """(tool_id, problem) — the fitted-tool pointer, read through tool_spec.
 
     One pointer, written by a touch-off. This never copies it, and reading it
@@ -65,12 +65,12 @@ def configured_tool(repo: Path, arm: str = "right") -> tuple[str | None, str | N
     except ImportError as exc:  # a checkout without the datasheet library
         return None, f"cannot read the fitted-tool pointer ({exc})"
     try:
-        return tool_spec.active_tool_id(repo, arm), None
+        return tool_spec.active_tool_id(repo), None
     except (OSError, ValueError) as exc:
         return None, f"the fitted-tool pointer is unreadable ({exc})"
 
 
-def resolve_tool(repo: Path, stated: str | None, *, arm: str = "right") -> tuple[str | None, str, str | None]:
+def resolve_tool(repo: Path, stated: str | None) -> tuple[str | None, str, str | None]:
     """(tool_id, source, error) for the tool in the mount.
 
     Precedence, most explicit first: the ``--ee-tool`` flag, then an
@@ -88,7 +88,7 @@ def resolve_tool(repo: Path, stated: str | None, *, arm: str = "right") -> tuple
             if value not in known:
                 return None, source, f"unknown tool '{value}' from {TOOL_SOURCES[source]} (known: {listing})"
             return value, source, None
-    configured, problem = configured_tool(repo, arm)
+    configured, problem = configured_tool(repo)
     if problem:
         return None, "configured", f"{problem}; {FLAG_HINT}"
     if not configured:

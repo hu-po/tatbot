@@ -169,9 +169,8 @@ def update_checkout(p, stage: Path, repo: Path, sha: str, node: str, service: li
 
 
 def prepare_artwork_runtime(p, stage: Path, repo: Path, node: dict, service: list[str]) -> bool:
-    """The design stage's Node dependencies in the checkout the CLI hop runs
-    in, so the first design compile after a deploy pays no install. Only the
-    arm node runs that stage; a
+    """Inkmap's Node dependencies in the checkout the CLI hop runs in, for the
+    CLI's inkmap resolve verb. Only the arm node's checkout gets them; a
     `--service` deploy moved no checkout. npm resolves as the build did: the
     release's private runtime, the user's provisioned one, then PATH."""
     if service or 'arm' not in node.get('roles', []):
@@ -180,8 +179,7 @@ def prepare_artwork_runtime(p, stage: Path, repo: Path, node: dict, service: lis
     try:
         return artwork_runtime.prepare(repo, npm=npm)
     except ValueError as error:
-        p.exit(3, f'install stopped: {error}; the checkout is at the built revision and its first '
-                  'design compile retries the install\n')
+        p.exit(3, f'install stopped: {error}; the checkout is at the built revision\n')
 
 
 def _install_context(p, args):

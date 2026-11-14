@@ -60,7 +60,7 @@ impl Credentials {
 }
 impl Bus {
     /// A session on the fleet bus: a client of `connect` (the router), or with no
-    /// endpoint a peer that only this process's other sessions reach (tests). It
+    /// endpoint a peer that nothing else reaches, so a test talks to itself. It
     /// never listens: the router is the only listener the fleet runs. A client
     /// presents this node's fleet credential when it holds one.
     pub fn open(connect: &[String]) -> zenoh::Result<Self> {

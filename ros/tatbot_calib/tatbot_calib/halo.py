@@ -2,8 +2,8 @@
 
 A tool the station can probe ends in a halo (its datasheet's `calibration.face_kind: halo`): a ring, the tube's
 end, around a hole. The laser pen's nose is a chrome ring 9.0 mm in radius outside, around a 7.7 mm hole with the
-lens recessed in it. A ballpoint's moving refill can project from its narrow plastic nozzle (`ballpoint_tip`), so
-its side touches meet the rigid nozzle at its side height. Contacts use the wall, never the hole:
+lens recessed in it; a needle cartridge's is its tube's end, around the needles' exit. Contacts use the wall, never
+the hole:
 
 - **side**: the tool moves across its own axis until the wall's side meets the ball. The ball's centre is then
   `side_radius` from the axis (the wall's radius + the ball's, less the trigger's bias). Opposed pairs cancel
@@ -20,8 +20,8 @@ the hole: edge passes stop with the ball still under the ring, and a side touch 
 equator is on the wall. A cartridge's bore is narrower than the ball, which cannot enter it (`Halo.hole_takes_ball`).
 
 The rest of the tool, its envelope (the datasheet's profile, never inside the wall), is what must stay clear of the
-station's other parts (`meets`). Poses are 4x4 <arm>/base_link <- tcp (the tcp is the halo end plane's centre or
-the compressed working ballpoint; +z along the tool). Pure numpy.
+station's other parts (`meets`). Poses are 4x4 <arm>/base_link <- tcp (the tcp is the halo end plane's centre; +z
+along the tool). Pure numpy.
 """
 from __future__ import annotations
 
@@ -39,13 +39,12 @@ ENVELOPE_CHECKED_M = 0.120   # the tool's envelope checked against the station u
 
 @dataclass(frozen=True)
 class Halo:
-    """Rigid nozzle sides, with axial reference on its ring or the compressed working ball. Metres."""
+    """A rigid tube's end: its sides, with the axial reference on its ring. Metres."""
     wall_radius_m: float    # calibration.wall_radius_m: the ring's outside, where side touches meet the ball
     hole_radius_m: float    # calibration.face_radius_m: the hole (the laser's lens face, a cartridge's bore)
     rim_radius_m: float     # calibration.rim_touch_radius_m: an edge pass over a bore stops with the ball under it
     side_height_m: float    # calibration.side_touch_height_m: a side touch meets the ball this far up the wall
     envelope: tuple = ()    # ((h, r), ...): the tool's outside radius r, h up the axis from the end plane
-    axial_tip: bool = False  # ballpoint_tip: the working ball moves; the side touches meet the rigid nozzle
     # An edge pass over the ball can trip the probe. A needle cartridge's (accuracy_profile needle-tube) never has:
     # 0 of 41 passes over 9 runs of the 3RL and 11RL, 2026-10-05..12; its floating needles graze the ball without
     # the force the probe trips at (seen by the operator, 2026-10-12).
@@ -56,16 +55,15 @@ class Halo:
         """The halo a datasheet's `calibration:` block declares, with its body `profile` ((z, r), ..., the tip
         last) as the envelope; ValueError when it declares none, or a dimension is missing or out of order (the
         hole inside the ring's middle, inside its outside)."""
-        axial_tip = calibration.get("face_kind") == "ballpoint_tip"
-        if calibration.get("face_kind") not in ("halo", "ballpoint_tip"):
-            raise ValueError(f"calibration.face_kind is {calibration.get('face_kind')!r}, not halo or ballpoint_tip")
+        if calibration.get("face_kind") != "halo":
+            raise ValueError(f"calibration.face_kind is {calibration.get('face_kind')!r}, not halo")
         fields = ("wall_radius_m", "face_radius_m", "rim_touch_radius_m", "side_touch_height_m")
         missing = [name for name in fields if calibration.get(name) is None]
         if missing:
             raise ValueError("the halo lacks " + ", ".join(f"calibration.{name}" for name in missing))
         end = float(profile[-1][0]) if profile else 0.0
         envelope = tuple(sorted((end - float(z), float(r)) for z, r in profile))
-        halo = cls(*(float(calibration[name]) for name in fields), envelope, axial_tip,
+        halo = cls(*(float(calibration[name]) for name in fields), envelope,
                    calibration.get("accuracy_profile") != "needle-tube")
         ring = 0.0 <= halo.hole_radius_m < halo.rim_radius_m < halo.wall_radius_m
         if not (ring and halo.side_height_m > 0.0):

@@ -15,13 +15,35 @@ REPO = Path(__file__).resolve().parents[2]
 import ink_spec  # noqa: E402
 
 
+def _design() -> dict:
+    return json.loads((REPO / ink_spec.palette_geometry(REPO)['cad_design']).read_text())
+
+
+def _root_mm(design: dict) -> np.ndarray:
+    """The design frame's palette_root: on the probe axis, the design's runtime ball_above_root_mm under the ball."""
+    probe = design['probe']
+    return np.array([*probe['xy'], probe['ball_z'] - design['runtime']['ball_above_root_mm']])
+
+
 def test_runtime_tag_frame_matches_the_installed_cad_manifest():
-    design = json.loads((REPO / ink_spec.palette_geometry(REPO)['cad_design']).read_text())['installed_tag']
+    design = _design()
+    tag = design['runtime']['installed_tag']
     transform = ink_spec.palette_from_tag(REPO)
-    assert transform[:3, 3] == pytest.approx(np.array(design['xyz_mm']) / 1000)
-    yaw = np.deg2rad(design['yaw_deg'])
+    assert transform[:3, 3] == pytest.approx((np.array(tag['xyz_mm']) - _root_mm(design)) / 1000)
+    yaw = np.deg2rad(tag['yaw_deg'])
     assert transform[:3, 1] == pytest.approx([-np.sin(yaw), np.cos(yaw), 0])
     assert ink_spec.tag_in_palette_root(REPO) == pytest.approx(transform[:3, 3])
+
+
+def test_the_probe_and_camera_frames_are_v11s_so_their_calibration_carries_over():
+    """v9 keeps the probe and the Pi camera 122 mm apart at one height; its root keeps the ball 55.6 mm over it."""
+    import xml.etree.ElementTree as ET
+    joints = {j.find('child').get('link'): j.find('origin') for j in ET.parse(REPO / 'urdf/palette.urdf').getroot()
+              .iter('joint')}
+    xyz = {name: [float(v) for v in joints[name].get('xyz').split()] for name in ('palette_probe_ball', 'palette_camera')}
+    assert xyz['palette_probe_ball'] == pytest.approx([0, 0, 0.0556])
+    assert xyz['palette_camera'] == pytest.approx([0.122, 0, 0.0556])
+    assert [float(v) for v in joints['palette_camera'].get('rpy').split()] == pytest.approx([0, 0, np.pi])
 
 
 def test_base_from_root_is_the_inverse_of_the_urdf_mount():
@@ -41,14 +63,19 @@ import json  # noqa: E402
 
 def test_installed_geometry_matches_cad_and_robot_has_no_palette():
     import xml.etree.ElementTree as ET
-    design = json.loads((REPO / ink_spec.palette_geometry(REPO)['cad_design']).read_text())['caps']
+    design = _design()
+    root = _root_mm(design)
     layout = ink_spec.palette_layout_from_urdf(REPO)
-    # the crescent from +Y to -Y, every cap centre on the arc about the probe axis
-    assert list(layout) == ['inkcap_large_1', 'inkcap_medium_1', 'inkcap_small_1',
-                            'inkcap_small_2', 'inkcap_medium_2', 'inkcap_large_2']
-    assert [name.split('_')[1] for name in layout] == design['order_positive_y_to_negative_y']
-    assert all(np.hypot(x, y) == pytest.approx(design['arc_radius'] / 1000) for x, y, _ in layout.values())
-    assert [y for _, y, _ in layout.values()] == sorted((y for _, y, _ in layout.values()), reverse=True)
+    # four front-to-back groups, each cap at its group's column and row, on its pocket floor
+    expected = {}
+    for group in design['caps']['groups']:
+        for n, y in enumerate(group['row_y'], group['id_start']):
+            floor = design['caps']['top_z'] - group['depth']
+            expected[f"inkcap_{group['size']}_{n}"] = (np.array([group['x'], y, floor]) - root) / 1000
+    assert list(layout) == list(expected)
+    assert [n for n in layout if n.startswith('inkcap_small')] == [f'inkcap_small_{i}' for i in range(1, 11)]
+    for name, xyz in layout.items():
+        assert np.array(xyz) == pytest.approx(expected[name], abs=1e-9)
     robot = ET.parse(REPO / 'urdf/tatbot.urdf').getroot()
     assert not any(link.get('name', '').startswith(('palette_', 'inkcap_')) for link in robot.findall('link'))
     camera = next(j for j in robot.findall('joint') if j.get('name') == 'camera1_mount_joint')
@@ -71,17 +98,16 @@ def test_rim_heights_come_from_the_pocket_floor_and_the_cap_outside(tmp_path):
     floors = ink_spec.palette_layout_from_urdf(tmp_path)
     for slot in rims:
         assert rims[slot][2] == pytest.approx(floors[slot][2] + sizes[slot].size.height_m)
-    # v11 seats every cap flush with its holder: all six rims 32 mm above the rail tops
-    design = json.loads((REPO / ink_spec.palette_geometry(REPO)['cad_design']).read_text())
-    assert {round(z, 6) for _, _, z in rims.values()} == {design['caps']['rim_z'] / 1000}
+    # v9's pockets: the large caps' rims 7 mm over the root, the medium and small caps' 6 mm
+    assert {round(z, 6) for _, _, z in rims.values()} == {0.007, 0.006}
     # an explicit rim_z_m entry wins for that cap
     p = tmp_path / 'config/palette_geometry.json'
     geometry = json.loads(p.read_text())
     geometry['rim_z_m'] = {'inkcap_small_1': .033}
     p.write_text(json.dumps(geometry))
     assert ink_spec.palette_rim_layout(tmp_path)['inkcap_small_1'][2] == pytest.approx(.033)
-    # but one that puts the rim below its own pocket floor is a typo, not a cap
-    geometry['rim_z_m']['inkcap_small_1'] = .020
+    # but one that puts the rim below its own pocket floor (-4 mm on v9) is a typo, not a cap
+    geometry['rim_z_m']['inkcap_small_1'] = -.010
     p.write_text(json.dumps(geometry))
     with pytest.raises(ValueError, match='invalid rim height'):
         ink_spec.palette_rim_layout(tmp_path)

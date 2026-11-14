@@ -25,33 +25,7 @@
     "coordinates": {
       "type": "array",
       "items": {
-        "oneOf": [
-          {
-            "$ref": "common.schema.json#/$defs/surfaceCoordinate"
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "target_sha256",
-              "chart_uv_m"
-            ],
-            "properties": {
-              "target_sha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "chart_uv_m": {
-                "type": "array",
-                "items": {
-                  "type": "number"
-                },
-                "minItems": 2,
-                "maxItems": 2
-              }
-            }
-          }
-        ]
+        "$ref": "common.schema.json#/$defs/surfaceCoordinate"
       },
       "minItems": 2
     },
@@ -100,33 +74,7 @@
         "coordinates": {
           "type": "array",
           "items": {
-            "oneOf": [
-              {
-                "$ref": "common.schema.json#/$defs/surfaceCoordinate"
-              },
-              {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "target_sha256",
-                  "chart_uv_m"
-                ],
-                "properties": {
-                  "target_sha256": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{64}$"
-                  },
-                  "chart_uv_m": {
-                    "type": "array",
-                    "items": {
-                      "type": "number"
-                    },
-                    "minItems": 2,
-                    "maxItems": 2
-                  }
-                }
-              }
-            ]
+            "$ref": "common.schema.json#/$defs/surfaceCoordinate"
           },
           "minItems": 2
         },

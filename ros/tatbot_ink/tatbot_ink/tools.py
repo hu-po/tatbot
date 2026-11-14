@@ -35,7 +35,9 @@ def load_tool(repo, arm, tool_id, *, allow_dip=False):
             "substrates": sheet.get("substrates") or [sheet.get("substrate")],
             "stroke_mm": sheet.get("stroke_mm"), "tip_out_at_top_mm": sheet.get("tip_out_at_top_mm"),
             "contact_reference": (sheet.get("calibration") or {}).get("contact_reference"),
-            "cartridge_activation": sheet.get("cartridge_activation") or {"action": "exchange"}}
+            "cartridge_activation": sheet.get("cartridge_activation") or {"action": "exchange"},
+            # recorded only where measured, so a program without it keeps its digest
+            **({"fade_lift_mm": sheet["fade_lift_mm"]} if sheet.get("fade_lift_mm") is not None else {})}
     if allow_dip:
         result['dip_block'] = sheet.get('dip')
     return result

@@ -1,6 +1,6 @@
 """The ROS wrist D405's display tap: the frames tatbot_session's grab_both already took, republished for the demo
 viewer as tatbot-vision-frame-set v1 (frame_set_wire.pack) on tatbot/vision/d405/<camera name>, the vision.toml
-camera of the open device's serial (two D405s share the pink wrist since 2026-10-23).
+camera of the open device's serial (two D405s share the xArm's wrist since 2026-11-08).
 
 grab_both hands its last colour frame and raw z16 depth to `WristTap.put`: references into a one-slot queue, the
 newest replacing an unsent one, so the session pays a hand-off and nothing else. A daemon thread per open camera
@@ -21,7 +21,7 @@ pipe.poll_for_frames() under the camera's lock, which grab_both holds while it r
 pipeline at once, but they compete for frames. A polled frame is one grab_both does not get (it waits for the
 next) and grab_both waits while a poll copies its frames, which is why the poll is off by default.
 
-stack.yaml `wrist_tap.preview` names display-only D405s (vision.toml roles on the same arm, the lower wrist camera)
+stack.yaml `wrist_tap.preview` names display-only D405s (vision.toml roles on the same arm: D405-1, `wrist_1`)
 opened beside the session's own, small and slow, for as long as it is open (previews, Preview). Nothing grabs them, so
 each one's tap polls it at 2 Hz and the viewer shows it as it shows the session's camera. A reading may grab one
 (the tracker's further views); its poll then holds HOLD_S, so the cockpit shows the frame the reading read, with the
@@ -72,18 +72,37 @@ def factory(config, *, repo, arm: str, open_bus, frames, run_id: str = '', log=N
     return start
 
 
+# A size every D405 link carries, for a preview whose configured one its link does not: on USB 2.1 a D405 streams no
+# 640x360, and the xArm's two wrist D405s share one cable and hub, one of them on USB 2.1 (2026-11-08). There it
+# offers 480x270, 640x480 and 848x480 (5 and 10 fps only) and 1280x720 (5 fps): 480x270 keeps 640x360's 16:9 at
+# the preview's rate, so both wrist panes have one shape (640x480 left D405-2 a 4:3 image beside D405-1,
+# 2026-11-09), and it fills the station's 270 px wide upright pane.
+ANY_LINK_SIZE = (480, 270)
+
+
 def previews(config, *, repo, arm: str, open_camera, open_bus, run_id: str = '', log=None):
     """None unless stack.yaml `wrist_tap` is on and its `preview` names cameras; else start(), which returns the
-    Preview opening them: `preview.cameras` (vision.toml roles on `arm`) at its width, height and fps, each with a
-    tap that polls it. `open_camera(serial, *, width, height, fps, tap)` opens one (tatbot_session WristCamera)."""
+    Preview opening them: `preview.cameras` (vision.toml roles on `arm`) at its width, height and fps (at
+    ANY_LINK_SIZE when its link carries no such stream), each with a tap that polls it. `open_camera(serial, *, width,
+    height, fps, tap)` opens one (tatbot_session WristCamera)."""
     config, log = config or {}, log or _stderr
     preview = config.get('preview') or {}
     if not config.get('enabled') or not preview.get('cameras'):
         return None
     roles, profile = tuple(preview['cameras']), {key: int(preview[key]) for key in ('width', 'height', 'fps')}
 
+    def open_preview(serial, tap):
+        try:
+            return open_camera(serial, tap=tap, **profile)
+        except RuntimeError as error:   # "Couldn't resolve requests": no such stream on this camera's link
+            if (profile['width'], profile['height']) == ANY_LINK_SIZE:
+                raise
+            width, height = ANY_LINK_SIZE
+            log(f"preview D405 {serial}: {profile['width']}x{profile['height']} not opened ({error}); {width}x{height}")
+            return open_camera(serial, tap=tap, **{**profile, 'width': width, 'height': height})
+
     def start():
-        return Preview(Path(repo), arm, roles, lambda serial, tap: open_camera(serial, tap=tap, **profile),
+        return Preview(Path(repo), arm, roles, open_preview,
                        lambda frames: factory({'enabled': True, 'poll': True}, repo=repo, arm=arm, open_bus=open_bus,
                                               frames=frames, run_id=run_id, log=log), log)
     return start

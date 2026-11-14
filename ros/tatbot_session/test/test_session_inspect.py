@@ -1,8 +1,18 @@
 """The wrist-camera inspect geometry: aiming, projection and page rectification."""
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
+from tatbot_description import arm_model
 from tatbot_session import geometry as g
 from tatbot_session import inspect as ins
+
+WXAI = arm_model.load("trossen-wxai")
+REST = np.array(WXAI.rest)   # the landed sleep pose
+# a stand-in's model, and the WXAI wrist's frames its description lists (inspect.wrist_bodies, cube_frames)
+ON_WXAI = {"arm_model": WXAI, "n": WXAI.n, "revolute": WXAI.arm_index, "carriage": WXAI.carriage,
+           "model": SimpleNamespace(frames=[SimpleNamespace(name=f"right/{name}") for name in (
+               "wrist_tag2", "wrist_tag3", "wrist_tag4", "realsense_link", "realsense_lower_link", "tool_mount")])}
 
 K = np.array([[640.0, 0, 640.0], [0, 640.0, 360.0], [0, 0, 1]])
 PAGE = g.rpy_matrix([0.33, 0.06, 0.044], [0.02, -0.01, -1.5])
@@ -365,7 +375,7 @@ def test_ink_alignment_ignores_a_neighbouring_drawing():
 
 
 def test_aim_rejects_each_bad_posture_and_takes_the_next_clear_view():
-    """Joint margin, arm reach, pen tilt, wrist turn, cube height and side clearance each reject a cheaper view.
+    """Joint margin, arm reach, pen tilt, wrist turn and range, cube height and side clearance each reject a cheaper view.
     The same chooser returns None when that is the only view; removing the arm cap restores the cheaper choice."""
     from types import SimpleNamespace
 
@@ -373,14 +383,16 @@ def test_aim_rejects_each_bad_posture_and_takes_the_next_clear_view():
         out = ins.rpy_matrix([0.0, y, z], [np.pi + np.radians(deg), 0.0, 0.0])
         return out
 
-    clear = np.array([0.1, 0, 0, 0.6, 0, 0, 0.0])
+    clear = np.array([0.1, 0, 0, -0.6, 0, 0, 0.0])
     bad = np.array([0.7, 0, 0, 0, 0, 0, 0.0])
-    for reason in ("joint limit", "arm reach", "pen tilt", "wrist turn", "cube below mount", "cube near table", "side"):
+    # 3 mrad from a limit; past MAX_WRIST_RAD; near the reference but past the fixed range
+    moved = {"joint limit": (1, -8.997), "wrist turn": (3, -1.2), "wrist range": (5, -0.6)}
+    for reason in ("joint limit", "arm reach", "pen tilt", "wrist turn", "wrist range", "cube below mount",
+                   "cube near table", "side"):
         rejected = bad.copy()
-        if reason == "joint limit":
-            rejected[1] = -8.997   # only 3 mrad from its limit
-        if reason == "wrist turn":
-            rejected[3] = 1.2
+        if reason in moved:
+            joint, value = moved[reason]
+            rejected[joint] = value
 
         def frame(q, name, reason=reason, rejected=rejected):
             if "missing" in name:
@@ -392,7 +404,7 @@ def test_aim_rejects_each_bad_posture_and_takes_the_next_clear_view():
                             y=0.200 if reason == "side" else 0.0)
             return pose()
 
-        kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0), frame=frame,
+        kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0), frame=frame, **ON_WXAI,
                               fk=lambda q, reason=reason, rejected=rejected: pose(60.0 if reason == "pen tilt" and np.array_equal(q, rejected) else 0.0))
         options = {"frame": "cam", "clearance_m": 0.015, "reference": np.zeros(7), "max_y": 0.100,
                    "max_arm_rad": 0.6 if reason == "arm reach" else None, "max_pen_tilt_deg": 45.0,
@@ -412,8 +424,18 @@ def test_aim_rejects_each_bad_posture_and_takes_the_next_clear_view():
     assert ins.frames_of(kin, np.zeros(7), ("{arm}/wrist_tag4", "{arm}/missing_frame")) == ["right/wrist_tag4"]
 
 
+def test_the_wrist_range_holds_rest_and_the_weeks_motion_and_leaves_out_the_turn_into_the_cables():
+    def wrist(a, b, c):
+        return np.array([0.0, 0.0, 0.0, a, b, c, 0.0])
+
+    kin = SimpleNamespace(**ON_WXAI)
+    assert ins.wrist_in_range(kin, wrist(0.0, 0.0, 1.5708))    # rest
+    assert ins.wrist_in_range(kin, wrist(-1.534, -1.045, -0.172)) and ins.wrist_in_range(kin, wrist(0.007, 0.951, 3.031))
+    assert not ins.wrist_in_range(kin, wrist(-0.69, -0.64, -1.78))   # stopped by the e-stop on its way further
+
+
 def test_the_lower_wrist_camera_is_a_wrist_body_kept_on_the_arms_side_and_over_the_page():
-    """The lower wrist D405 (2026-10-23) is one of the wrist's bodies (WRIST_BODY): a view whose lower camera crosses
+    """The lower wrist D405 (2026-10-23) is one of the wrist's bodies (wrist_bodies): a view whose lower camera crosses
     the side line, or stands under BODY_CLEARANCE_M over the page, is refused as one of the upper's would be."""
     from tatbot_session import inspect as ins
 
@@ -421,6 +443,10 @@ def test_the_lower_wrist_camera_is_a_wrist_body_kept_on_the_arms_side_and_over_t
 
     class Kin:
         arm, lower, upper = "right", np.full(7, -3.0), np.full(7, 3.0)
+        arm_model, n, revolute, carriage = WXAI, WXAI.n, WXAI.arm_index, WXAI.carriage
+        model = SimpleNamespace(frames=[SimpleNamespace(name=f"right/{name}") for name in (
+            "link_6", "wrist_tag2", "wrist_tag3", "wrist_tag4", "realsense_link", "realsense_link_joint",
+            "realsense_lower_link", "tool_mount")])
 
         def frame(self, q, name):
             pose = np.eye(4)
@@ -431,7 +457,9 @@ def test_the_lower_wrist_camera_is_a_wrist_body_kept_on_the_arms_side_and_over_t
             return self.frame(q, "right/tcp")
 
     kin = Kin()
-    body = ins.frames_of(kin, np.zeros(7), ins.WRIST_BODY)
+    body = ins.wrist_bodies(kin)
+    assert body == ["right/wrist_tag2", "right/wrist_tag3", "right/wrist_tag4", "right/realsense_link",
+                    "right/realsense_lower_link", "right/tool_mount"]
     assert "right/realsense_lower_link" in body and "right/realsense_link" in body
 
     def clear():
@@ -445,7 +473,7 @@ def test_the_lower_wrist_camera_is_a_wrist_body_kept_on_the_arms_side_and_over_t
 
 
 def test_a_top_down_view_is_aimed_about_the_page_levelled_with_the_side_line_farther(monkeypatch):
-    """2026-10-21: views 35-40 deg off saw a forearm print's markers squashed; the owner wants them straight down.
+    """2026-10-21: views 35-40 deg off saw a forearm print's markers squashed; they are read straight down.
     top_down aims about the page levelled (its centre and turn kept) on TOP_DOWN's grid, the side line farther."""
     calls, tilted = [], ins.rpy_matrix([0.3, 0.0, 0.1], [0.2, 0.0, 0.5])
     monkeypatch.setattr(ins, "aim", lambda kin, solve, page, xy, q, **k: calls.append((page, k)))
@@ -471,7 +499,7 @@ def test_an_over_centre_view_is_the_ready_pose_raised_square_to_the_page():
         pose = np.eye(4)
         pose[:3, 3] = at.get(name, page[:3, 3] + 0.2 * page[:3, 2] + [0.0, 0.5, 0.0])
         return pose
-    kin = SimpleNamespace(arm="right", lower=np.full(7, -3.0), upper=np.full(7, 3.0), frame=frame,
+    kin = SimpleNamespace(arm="right", lower=np.full(7, -3.0), upper=np.full(7, 3.0), frame=frame, **ON_WXAI,
                           fk=lambda q: solved[-1][0])
 
     def solve(kin, target, seed):
@@ -479,10 +507,10 @@ def test_an_over_centre_view_is_the_ready_pose_raised_square_to_the_page():
         return np.full(7, 0.1)
     here = np.r_[np.full(6, 0.5), 0.02]
     q, view = ins.over_centre(kin, solve, page, (0.0, 0.0), here, heading, frame="cam", clearance_m=0.015,
-                              height_m=0.050, seed=ins.REST)
+                              height_m=0.050, seed=REST)
     target, seed = solved[-1]
     assert np.allclose(target[:3, 3], page[:3, 3] + 0.050 * page[:3, 2]) and np.allclose(target[:3, 2], -page[:3, 2])
-    assert target[:3, 0] @ heading[:3, 0] > 0.99 and np.allclose(seed, [*ins.REST[:6], 0.02])
+    assert target[:3, 0] @ heading[:3, 0] > 0.99 and np.allclose(seed, [*REST[:6], 0.02])
     assert np.allclose(q, 0.1) and view == {"over_m": 0.050, "seen": None}
     _, view = ins.over_centre(kin, solve, page, (0.0, 0.0), here, heading, frame="cam", clearance_m=0.015,
                               height_m=0.100, see=lambda base_from_camera: 4)
@@ -506,7 +534,7 @@ def test_a_view_is_chosen_by_the_markers_it_sees_before_its_joint_cost():
     from types import SimpleNamespace
 
     down = ins.rpy_matrix([0.0, 0.0, 0.15], [np.pi, 0.0, 0.0])
-    kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0), frame=lambda q, name: down,
+    kin = SimpleNamespace(arm="right", lower=np.full(7, -9.0), upper=np.full(7, 9.0), frame=lambda q, name: down, **ON_WXAI,
                           fk=lambda q: down)
     options = {"frame": "cam", "clearance_m": 0.015, "reference": np.zeros(7), "max_arm_rad": None,
                "tilts_deg": (20,), "distances_m": (0.18,), "rolls_deg": (0,), "azimuths": (0.0, np.pi / 2),

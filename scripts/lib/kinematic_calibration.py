@@ -12,24 +12,28 @@ from tool_spec import _rpy_matrix
 KEY = 'joint_offsets_rad'
 
 
-def validate_offsets(values=None):
-    values = [0.] * 7 if values is None else values
-    if (not isinstance(values, (list, tuple)) or len(values) != 7
+def validate_offsets(values, model):
+    """One finite offset per joint of the arm's model (scripts/lib/arm_model), zero except on the joints its
+    `calibrated_offsets` names; None is all zero."""
+    values = [0.] * model.n if values is None else values
+    if (not isinstance(values, (list, tuple)) or len(values) != model.n
             or any(type(v) not in (int, float) or not math.isfinite(v) for v in values)
-            or any(values[i] != 0 for i in (0, 5, 6))):
-        raise ValueError('joint offsets require seven finite values, with only joints 1-4 nonzero')
+            or any(v != 0 for i, v in enumerate(values) if i not in model.calibrated_offsets)):
+        raise ValueError(f'{model.id}: joint offsets require {model.n} finite values, nonzero only on joints '
+                         f'{", ".join(map(str, model.calibrated_offsets))}')
     return list(map(float, values))
 
 
-def apply_origins(joints, prefix, offsets):
+def apply_origins(joints, prefix, offsets, model):
     """R_origin *= R_axis(offset) makes FK(raw q) equal nominal FK(q+offset).
 
     prefix None names the joints unprefixed, as a single-arm URDF (the simulator's) does."""
     by_name = {joint.get('name'): joint for joint in joints}
-    for i, angle in enumerate(validate_offsets(offsets)):
+    names = model.joint_names(prefix)
+    for i, angle in enumerate(validate_offsets(offsets, model)):
         if angle == 0:
             continue
-        joint = by_name[f'{prefix}/joint_{i}' if prefix else f'joint_{i}']
+        joint = by_name[names[i]]
         if joint.get('type') not in ('revolute', 'continuous'):
             raise ValueError('encoder-zero calibration requires a revolute joint')
         origin = joint.find('origin')

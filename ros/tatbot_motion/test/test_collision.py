@@ -1,4 +1,4 @@
-"""The pink arm as the overhead camera placed it on the demo table (2026-09-29, evening): its bodies, its tool and its
+"""The WXAI as the overhead camera placed it on the demo table (2026-09-29, evening): its bodies, its tool and its
 wrist cameras in one scene, the ways that fold it onto itself refused, and its bodies measured to the station's parts.
 The blue arm is the teleop leader alone and is not modelled."""
 from __future__ import annotations
@@ -28,7 +28,7 @@ def _way(a, b, n=200):
 
 
 def test_without_a_registration_nothing_is_checked(tmp_path):
-    missing = {"registration": {"right": str(tmp_path / "none.json")}}
+    missing = {"arms": ["right"], "registration": {"right": str(tmp_path / "none.json")}}
     guard, text = Guard.from_stack(None, missing, load_motion())
     assert guard is None and "no arm registration" in text
 
@@ -36,11 +36,21 @@ def test_without_a_registration_nothing_is_checked(tmp_path):
 def test_the_registered_arm_its_tool_and_both_wrist_cameras_are_in_the_scene(tmp_path):
     path = tmp_path / "right.json"
     path.write_text(json.dumps({"world_from_arm_base": REGISTRATION}))
-    guard, text = Guard.from_stack(None, {"registration": {"right": str(path)}}, load_motion())
+    guard, text = Guard.from_stack(None, {"arms": ["right"], "registration": {"right": str(path)}}, load_motion())
     assert guard.scene.arms == ["right"] and "kept off itself" in text
     bodies = {body.name.split("/")[1] for body in guard.scene.geom.geometryObjects}
     assert {"tool_0", "realsense_link_0", "realsense_lower_link_0", "wrist_cube"} <= bodies
     assert not len(guard.scene.geom.collisionPairs)   # nothing across arms
+
+
+def test_another_arms_registration_is_not_this_stacks(tmp_path):
+    """The WXAI follower's adopted registration stays on the ros node while the stack drives the xArm: the guard is the
+    driven arms', and an unregistered one is not checked (2026-11-08: the guard built for the WXAI alone
+    refused the xArm's first move with a KeyError)."""
+    path = tmp_path / "right.json"
+    path.write_text(json.dumps({"world_from_arm_base": REGISTRATION}))
+    guard, text = Guard.from_stack(None, {"arms": ["xarm"], "registration": {"right": str(path)}}, load_motion())
+    assert guard is None and "no arm registration" in text
 
 
 def test_a_profile_becomes_capsules_as_wide_as_each_segments_wider_end():
@@ -49,7 +59,7 @@ def test_a_profile_becomes_capsules_as_wide_as_each_segments_wider_end():
     assert np.allclose(got, [(0.01, 0.01, 0.01), (0.035, 0.015, 0.005)])
 
 
-# 2026-09-30, a ros-draw run: at its third post-draw inspection view the pink arm folded its wrist
+# 2026-09-30, a ros-draw run: at its third post-draw inspection view the WXAI follower folded its wrist
 # tag cube into its own upper arm, from the flight recorder: the wrist commanded to -2.351 rad, stopped at -1.782.
 HIT = np.array([-0.06, 1.502, 1.211, -1.352, -0.342, -1.782, 0.002])
 HIT_TARGET = np.array([-0.06, 1.502, 1.211, -1.352, -0.285, -2.351, 0.002])
@@ -113,3 +123,51 @@ def test_an_arms_bodies_are_measured_to_fixed_parts_its_pads_counted_its_tool_le
     assert scene.parts_clearance("right", [LANDED], [("x", "sphere", at_tool, 0.001)]).body_a.split("/")[1][:4] != "tool"
     post = scene.parts_clearance("right", [LANDED], [("p", "post", at + [0, 0, 0.3], 0.01, 0.05, [0, 0, 1])])
     assert np.isfinite(post.distance_m)
+
+
+def test_the_xarm_keeps_off_itself_its_end_effector_core_included():
+    """The xArm (urdf/xarm7.urdf) in the same scene, its fitted pen hung on R7's nominal mount: clear of itself at
+    rest; R7's core, checked against the arm below its wrist, found inside the base when the wrist bends the pen back
+    over the folded arm."""
+    import tool_spec
+    from tatbot_description import arm_model, robot_description
+    from tatbot_motion.collision import Scene
+
+    scene = Scene(robot_description(arms=("xarm",)), {"xarm": tool_spec.load_tool("lutin-3rl-bugpin").profile})
+    names = {body.name for body in scene.geom.geometryObjects}
+    assert {"xarm/end_effector_0", "xarm/tool_0"} <= names and not any(n.startswith("right/") for n in names)
+    assert scene.self_clearance("xarm", np.array(arm_model.for_arm("xarm").rest)).distance_m > 0.1
+    folded = scene.self_clearance("xarm", np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.31, 0.0]))
+    assert folded.distance_m < -0.05 and "xarm/end_effector_0" in (folded.body_a, folded.body_b)
+
+
+def test_the_xarms_wrist_cameras_their_cables_and_bracket_are_kept_off_the_arm_below_the_wrist():
+    """urdf/xarm7.urdf gives the dual-D405 bracket, each camera's case and body and its cable a collision
+    (scripts/gen_arm_urdf.py): they ride link 7, so the guard pairs them with the base and links 1 to 4, not the wrist
+    they turn about. A pose that swings the outer camera and its cable into the base, the core 64 mm clear of everything, is found
+    and a way to it refused."""
+    import tool_spec
+    from tatbot_description import arm_model, robot_description
+    from tatbot_motion.collision import Scene
+
+    scene = Scene(robot_description(arms=("xarm",)), {"xarm": tool_spec.load_tool("lutin-3rl-bugpin").profile})
+    names = {body.name.split("/")[1] for body in scene.geom.geometryObjects}
+    carried = {f"realsense{n}_{part}" for n in (1, 2) for part in ("mount_d405_0", "link_0", "link_1")}
+    carried |= {f"end_effector_{k}" for k in range(1, 7)}
+    assert carried <= names
+    pairs = {tuple(sorted(scene.geom.geometryObjects[k].name.split("/")[1] for k in pair))
+             for pair in scene.self_pairs["xarm"]}
+    assert all(tuple(sorted((lower, body))) in pairs for body in carried for lower in ("base_link_0", "link4_0"))
+    assert not any(tuple(sorted((wrist, body))) in pairs for body in carried
+                   for wrist in ("link5_0", "link6_0", "link7_0"))
+    rest = np.array(arm_model.for_arm("xarm").rest)
+    assert scene.self_clearance("xarm", rest).distance_m > 0.1
+    swung = np.array([1.96, 0.22, -0.52, 0.37, 0.76, 1.63, 0.56])
+    gap = scene.self_clearance("xarm", swung)
+    assert gap.distance_m < -0.02 and gap.body_a == "xarm/base_link_0" and gap.body_b.startswith("xarm/realsense1_")
+    core = [k for k, (i, j) in enumerate(scene.self_pairs["xarm"])
+            if not {scene.geom.geometryObjects[i].name.split("/")[1], scene.geom.geometryObjects[j].name.split("/")[1]}
+            & carried]
+    assert scene.self_gaps("xarm", swung)[core].min() > 0.05
+    why = Guard(scene, {"xarm": rest}).refusal("xarm", _way(rest, swung))
+    assert why is not None and "realsense1_" in why and "base_link" in why, why

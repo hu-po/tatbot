@@ -62,6 +62,8 @@ except ImportError:  # pragma: no cover - local runs
     spaces = _Spaces()  # type: ignore[assignment]
 
 # Stdlib-only, model-free, so all of these are testable without a GPU or this module.
+import providers  # noqa: E402
+from configuration import default_provider, provider_key, server_environment  # noqa: E402
 from contracts import (  # noqa: E402
     PRODUCER_VERSION,
     GenerationRequest,
@@ -74,10 +76,13 @@ from contracts import (  # noqa: E402
 )
 from engine import Engine, EngineError  # noqa: E402
 from idle import IdleStop, idle_stop_seconds  # noqa: E402
+from provider_http import ProviderError  # noqa: E402
 from serving import AdmissionPolicy, InferenceGate, RefusalError  # noqa: E402
 
-SETTINGS = GenerationSettings.from_env()
-GPU_SECONDS_PER_CALL = int(os.environ.get("INKGEN_GPU_SECONDS", "12"))
+CONFIG = server_environment(__file__)
+DEFAULT_PROVIDER = default_provider(CONFIG)
+SETTINGS = GenerationSettings.from_env(CONFIG)
+GPU_SECONDS_PER_CALL = int(CONFIG.get("INKGEN_GPU_SECONDS", "12"))
 ZERO_GPU = bool(os.environ.get("SPACE_ID")) and "spaces" in globals() and not isinstance(spaces, type)
 # Visitor quotas exist to protect the owner's shared ZeroGPU allowance from
 # strangers. They are a property of *how this process is served*, not of the
@@ -86,7 +91,7 @@ ZERO_GPU = bool(os.environ.get("SPACE_ID")) and "spaces" in globals() and not is
 # image seven with HTTP 429. Off the Hub the caps default to off; any deploy
 # that wants them states the numbers explicitly.
 PUBLIC_SERVICE = bool(os.environ.get("SPACE_ID"))
-FAKE_ENGINE = bool(os.environ.get("INKGEN_FAKE_ENGINE"))
+FAKE_ENGINE = bool(CONFIG.get("INKGEN_FAKE_ENGINE"))
 TURNSTILE_SECRET = os.environ.get("TURNSTILE_SECRET", "")
 EXAMPLE_SUBJECTS = ["a swallow carrying a rose", "a dagger through a heart", "a lunar moth"]
 
@@ -109,16 +114,16 @@ def _build_id() -> str:
 BUILD = _build_id()
 BOOT = time.time()
 
-IDLE = IdleStop(idle_stop_seconds(os.environ, zero_gpu=ZERO_GPU))
-ADMISSION = AdmissionPolicy.from_env(public=PUBLIC_SERVICE)
-GATE = InferenceGate.from_env()
+IDLE = IdleStop(idle_stop_seconds(CONFIG, zero_gpu=ZERO_GPU))
+ADMISSION = AdmissionPolicy.from_env(public=PUBLIC_SERVICE, env=CONFIG)
+GATE = InferenceGate.from_env(CONFIG)
 
 
 def _engine():
     if FAKE_ENGINE:
         from fake_engine import FakeEngine
 
-        return FakeEngine(SETTINGS, delay_s=float(os.environ.get("INKGEN_FAKE_DELAY_S") or 0))
+        return FakeEngine(SETTINGS, delay_s=float(CONFIG.get("INKGEN_FAKE_DELAY_S") or 0))
     return Engine(SETTINGS, device="cuda" if ZERO_GPU else None)
 
 
@@ -126,7 +131,8 @@ ENGINE = _engine()
 # The revision is resolved before the weights are, so the reply can say which
 # commit drew the image even on the first request. A Hub outage leaves it null
 # rather than failing the service: the public page is not a reproducible batch.
-ENGINE.pin()
+if DEFAULT_PROVIDER == "inkgen" or ZERO_GPU:
+    ENGINE.pin()
 MODEL = ENGINE.settings.model
 DEVICE = ENGINE.device
 SIZE = ENGINE.settings.width
@@ -134,7 +140,8 @@ STEPS = ENGINE.settings.steps
 
 # ---- model (placed on cuda at import: ZeroGPU emulates CUDA here and optimises
 # the later transfer, so this stays an import-time load and not a lazy one).
-ENGINE.load()
+if DEFAULT_PROVIDER == "inkgen" or ZERO_GPU:
+    ENGINE.load()
 
 
 @spaces.GPU(duration=GPU_SECONDS_PER_CALL)
@@ -156,6 +163,9 @@ def serve(request: GenerationRequest, ip: str) -> tuple[bytes, dict]:
     ENGINE.check_request(request)
     t0 = time.time()
     with GATE.acquire():
+        if not ENGINE.loaded:
+            ENGINE.pin()
+            request = request.pinned(ENGINE.settings.model_revision)
         ADMISSION.admit(ip, _cost_s())
         with IDLE.hold():  # a render slower than the idle timeout is never cut in half
             image = render(request)
@@ -168,6 +178,30 @@ def serve(request: GenerationRequest, ip: str) -> tuple[bytes, dict]:
     meta = result_document(request, png_sha256=hashlib.sha256(png).hexdigest(),
                            seconds=time.time() - t0, device=DEVICE)
     return png, meta
+
+
+def prepare_request(payload: dict, supplied_key: str | None = None):
+    """Validate and resolve credentials before admitting or charging any work."""
+    provider = payload.get("provider", DEFAULT_PROVIDER)
+    if provider == "inkgen":
+        local = {name: value for name, value in payload.items() if name != "provider"}
+        request = normalize_request(local, defaults=ENGINE.settings)
+        ENGINE.check_request(request)
+        return request, ""
+    request = providers.normalize_remote({**payload, "provider": provider})
+    key = provider_key(provider, supplied_key, public=PUBLIC_SERVICE, env=CONFIG)
+    return request, key
+
+
+def serve_requested(request, key: str, ip: str):
+    if isinstance(request, GenerationRequest):
+        png, meta = serve(request, ip)
+        return png, meta, png
+    with GATE.acquire():
+        ADMISSION.admit(ip, 0)
+        with IDLE.hold():
+            result = providers.generate(request, key)
+    return result.png, result.metadata, result.original
 
 
 def _client_ip(req: Request) -> str:
@@ -192,7 +226,7 @@ async def _verify_turnstile(token: str | None, ip: str) -> None:
 # done by hand here rather than by middleware, and errors are returned, not raised.
 router = APIRouter()
 CORS = {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "86400"}
+        "Access-Control-Allow-Headers": "Content-Type, X-Provider-Key", "Access-Control-Max-Age": "86400"}
 
 
 def _json(data, status: int = 200, headers: dict[str, str] | None = None) -> JSONResponse:
@@ -217,7 +251,8 @@ def health_document() -> dict:
     # A health probe is not use: it reports the idle countdown, never extends it.
     # Build and model identity are here so a deployment can be verified against
     # the revision that was uploaded; no private topology or credential is.
-    return {"ok": True, "model": MODEL, "device": DEVICE, "zero_gpu": ZERO_GPU, "steps": STEPS, "size": SIZE,
+    return {"ok": True, "model": ENGINE.settings.model, "device": DEVICE, "zero_gpu": ZERO_GPU, "steps": STEPS, "size": SIZE,
+            "default_provider": DEFAULT_PROVIDER, "providers": ["inkgen", *providers.MODELS],
             "turnstile": bool(TURNSTILE_SECRET), "public_service": PUBLIC_SERVICE, "fake_engine": FAKE_ENGINE,
             **ADMISSION.describe(), **GATE.state(),
             "uptime_s": round(time.time() - BOOT), "build": BUILD, "api_version": PRODUCER_VERSION,
@@ -236,10 +271,7 @@ async def generate(req: Request):
         body = await req.json()
         if not isinstance(body, dict):
             raise RequestError("request must be a JSON object")
-        request = normalize_request(body, defaults=ENGINE.settings)
-        # A model or revision these weights are not is refused here, before
-        # the line and before any quota is charged.
-        ENGINE.check_request(request)
+        request, key = prepare_request(body, req.headers.get("x-provider-key"))
         ip = _client_ip(req)
         await _verify_turnstile(body.get("turnstile"), ip)
     except HTTPException as exc:
@@ -253,13 +285,16 @@ async def generate(req: Request):
         # A worker thread, with this task's context copied into it: the event
         # loop keeps answering health while the engine draws, and the ZeroGPU
         # wrapper still finds the Gradio request it schedules against.
-        png, meta = await asyncio.to_thread(serve, request, ip)
+        png, meta, original = await asyncio.to_thread(serve_requested, request, key, ip)
     except RefusalError as exc:
         return _refused(exc)
     except (EngineError, RequestError) as exc:
         return _json({"error": str(exc)}, 500 if isinstance(exc, EngineError) else 400)
+    except ProviderError as exc:
+        return _json({"error": str(exc)}, exc.status)
+    source = {"source_base64": base64.b64encode(original).decode("ascii")} if isinstance(request, providers.RemoteRequest) else {}
     return _json({"png_base64": base64.b64encode(png).decode("ascii"), **meta,
-                  "seconds": round(time.time() - t0, 1)})
+                  **source, "seconds": round(time.time() - t0, 1)})
 
 
 # ---- Gradio page: the standalone product, and a manual bench for the Space.
@@ -297,7 +332,7 @@ def _status_text(doc: dict | None = None) -> str:
     """One line a person can act on, from evidence the service actually has."""
     doc = doc or health_document()
     where = "a stand-in engine (no model)" if doc["fake_engine"] else f"{doc['model']} on {doc['device']}"
-    parts = [f"Ready — {where}" if doc["loaded"] else f"Loading {doc['model']}…"]
+    parts = [f"Ready — {where}" if doc["loaded"] else "Ready — cloud providers available; Inkgen loads when selected"]
     if doc["budget_s"]:
         parts.append(f"daily GPU budget {doc['budget_spent_s']:.0f}/{doc['budget_s']} s")
     if doc["inference_in_flight"]:
@@ -307,59 +342,99 @@ def _status_text(doc: dict | None = None) -> str:
     return " · ".join(parts)
 
 
-def page_generate(subject: str, random_seed: bool, seed: float | None, request: gr.Request | None = None):
+def page_generate(subject: str, random_seed: bool, seed: float | None, request: gr.Request | None = None,
+                  provider: str = "inkgen", model: str | None = None, api_key: str = ""):
     """The page's one action; the same admission and gate as the API."""
     # Same normalization as the API, so the page and the programmatic path
     # cannot disagree about what a subject, a style or seed zero mean. A
     # random seed is chosen once and reported; zero is a seed like any other.
     try:
-        normalized = normalize_request(
-            {"subject": subject or "", "seed": None if random_seed or seed is None else normalize_seed(seed)},
-            defaults=ENGINE.settings)
-        png, meta = serve(normalized, _page_ip(request))
+        payload = {"subject": subject or "", "provider": provider}
+        if model:
+            payload["model"] = model
+        if provider in ("inkgen", "fal"):
+            payload["seed"] = None if random_seed or seed is None else normalize_seed(seed)
+        normalized, key = prepare_request(payload, api_key)
+        png, meta, original = serve_requested(normalized, key, _page_ip(request))
     except RefusalError as exc:
         wait = f" Try again in about {exc.retry_after_s} s." if exc.retry_after_s else ""
         raise gr.Error(f"{exc.detail}.{wait}") from None
-    except (RequestError, EngineError) as exc:
+    except (RequestError, EngineError, ProviderError) as exc:
         raise gr.Error(str(exc)) from None
+    return page_result(png, meta, original)
+
+
+def page_result(png: bytes, meta: dict, original: bytes):
     stem = f"inkgen-{meta['seed']}-{meta['png_sha256'][:8]}"
     png_path = _keep_download(f"{stem}.png", png)
     meta_path = _keep_download(f"{stem}.json", json.dumps(meta, indent=2, sort_keys=True).encode())
     revision = f"@ {meta['model_revision'][:12]}" if meta["model_revision"] else "(revision unresolved)"
-    caption = (f"seed {meta['seed']} · {meta['seconds']:.1f} s · {meta['model']} {revision}"
-               + (" · stand-in engine" if FAKE_ENGINE else ""))
+    seed_text = f"seed {meta['seed']}" if meta["seed"] is not None else "seed unavailable"
+    caption = (f"{seed_text} · {meta['seconds']:.1f} s · {meta['model']} {revision}"
+               + (" · stand-in engine" if FAKE_ENGINE and not meta.get("provider") else ""))
+    extension = {"image/jpeg": "jpg", "image/webp": "webp"}.get(meta.get("source_media_type"), "png")
+    original_path = _keep_download(f"{stem}-original.{extension}", original)
     return (png_path, caption, meta, gr.DownloadButton(value=png_path, visible=True),
-            gr.DownloadButton(value=meta_path, visible=True), gr.Button(visible=True), _status_text())
+            gr.DownloadButton(value=meta_path, visible=True), gr.Button(visible=True), _status_text(),
+            gr.DownloadButton(value=original_path, visible=bool(meta.get("provider"))))
 
 
-def page_variation(subject: str, request: gr.Request | None = None):
+def page_variation(subject: str, request: gr.Request | None = None,
+                   provider: str = "inkgen", model: str | None = None, api_key: str = ""):
     """The same subject, a seed nobody chose: that is what makes it a variation."""
-    return page_generate(subject, True, None, request)
+    return page_generate(subject, True, None, request, provider, model, api_key)
+
+
+def provider_controls(provider: str):
+    models = [ENGINE.settings.model] if provider == "inkgen" else list(providers.MODELS[provider])
+    paid = provider != "inkgen"
+    return (gr.update(choices=models, value=models[0], interactive=paid),
+            gr.update(value="", visible=paid), gr.update(visible=paid),
+            gr.update(visible=provider in ("inkgen", "fal")))
 
 
 with gr.Blocks(title="Inkgen — tattoo artwork") as demo:
     gr.Markdown(
         "# Inkgen\n"
         "**Inkgen draws tattoo artwork from a few words.** Type a subject and get black tattoo-flash "
-        "linework on white. The look is fixed; the subject and the seed are yours.")
+        "linework on white. Inkgen is the default and needs no API key. Cloud providers use your own key and account.")
+    with gr.Row():
+        provider = gr.Dropdown(label="Provider", choices=[(label, name) for name, label in providers.LABELS.items()],
+                               value=DEFAULT_PROVIDER)
+        initial_models = [MODEL] if DEFAULT_PROVIDER == "inkgen" else list(providers.MODELS[DEFAULT_PROVIDER])
+        model = gr.Dropdown(label="Model", choices=initial_models, value=initial_models[0],
+                           interactive=DEFAULT_PROVIDER != "inkgen")
+    with gr.Row():
+        api_key = gr.Textbox(label="Your provider API key", type="password", value="", max_length=512,
+                            visible=DEFAULT_PROVIDER != "inkgen", html_attributes={"autocomplete": "off"},
+                            info="Sent to this generator backend and the selected provider. Never saved to projects or downloads. "
+                                 "Cleared when you switch provider, refresh, or every 15 minutes."
+                                 + ("" if PUBLIC_SERVICE else " Leave blank to use this provider's local environment key."))
+        clear_key = gr.Button("Clear key", visible=DEFAULT_PROVIDER != "inkgen", scale=0)
+    clear_key.click(lambda: "", outputs=[api_key], queue=False, api_visibility="private")
+    key_timer = gr.Timer(900)
+    key_timer.tick(lambda: "", outputs=[api_key], queue=False, api_visibility="private")
     with gr.Row():
         subject = gr.Textbox(label="Subject", placeholder=EXAMPLE_SUBJECTS[0], max_lines=1, scale=4,
                              value=EXAMPLE_SUBJECTS[0])
         generate_button = gr.Button("Generate artwork", variant="primary", scale=1)
     gr.Examples(examples=[[example] for example in EXAMPLE_SUBJECTS], inputs=[subject], label="Example subjects")
-    with gr.Row():
+    with gr.Row(visible=DEFAULT_PROVIDER in ("inkgen", "fal")) as seed_controls:
         random_seed = gr.Checkbox(label="Random seed (default)", value=True, scale=1)
         seed = gr.Number(label="Seed", value=0, precision=0, minimum=0, visible=False, scale=1,
                          info="Zero is a seed. The seed that was used is shown under the result.")
     random_seed.change(lambda random: gr.Number(visible=not random), inputs=[random_seed], outputs=[seed])
+    provider.change(provider_controls, inputs=[provider], outputs=[model, api_key, clear_key, seed_controls],
+                    queue=False, api_visibility="private")
     result = gr.Image(label="Artwork", type="filepath", height=512, interactive=False)
     caption = gr.Markdown("")
     with gr.Row():
         variation_button = gr.Button("New variation", visible=False)
         png_download = gr.DownloadButton("Download PNG", visible=False)
         meta_download = gr.DownloadButton("Download generation metadata", visible=False)
-    gr.Markdown("A variation is the same subject with a new seed. The same seed reproduces the same image on "
-                "this generator; a different GPU or runtime may not draw identical pixels.")
+        original_download = gr.DownloadButton("Download original source", visible=False)
+    gr.Markdown("New variation generates another image of the same subject. Inkgen supports repeatable seeds on "
+                "this runtime; cloud services may change their models. Paid requests are never retried automatically.")
     with gr.Row():
         status = gr.Markdown(_status_text())
         check_button = gr.Button("Check service", size="sm", scale=0)
@@ -372,25 +447,31 @@ with gr.Blocks(title="Inkgen — tattoo artwork") as demo:
                     "GET  /api/health\n```\n"
                     "Past the per-address and daily limits the service answers 429/503 with `retry_after_s` "
                     "rather than spending anything. A model or revision other than the loaded one is refused (400).")
-    outputs = [result, caption, details, png_download, meta_download, variation_button, status]
-    generate_button.click(page_generate, inputs=[subject, random_seed, seed], outputs=outputs)
-    subject.submit(page_generate, inputs=[subject, random_seed, seed], outputs=outputs)
-    variation_button.click(page_variation, inputs=[subject], outputs=outputs)
+        gr.Markdown("Cloud generation: add `provider` (`fal`, `gemini`, `openai`) and optionally `model`. "
+                    "Send your key in the `X-Provider-Key` header. Cloud results use `tatbot.inkgen-result/2` "
+                    "and include original source bytes as `source_base64`. Hosted requests always require your key.")
+    outputs = [result, caption, details, png_download, meta_download, variation_button, status, original_download]
+    inputs = [subject, random_seed, seed, provider, model, api_key]
+    generate_button.click(page_generate, inputs=inputs, outputs=outputs, api_visibility="private")
+    subject.submit(page_generate, inputs=inputs, outputs=outputs, api_visibility="private")
+    variation_button.click(page_variation, inputs=[subject, provider, model, api_key], outputs=outputs,
+                           api_visibility="private")
 
 
 if __name__ == "__main__":
     # One launch path everywhere. Gradio's launch() is what registers @spaces.GPU functions
     # with ZeroGPU on the Hub; locally it is just a server. Our API routes go in FRONT of
     # Gradio's routes so its catch-all does not swallow /api/*.
-    port = int(os.environ.get("INKGEN_PORT") or os.environ.get("GRADIO_SERVER_PORT") or "7860")
+    port = int(CONFIG.get("INKGEN_PORT") or os.environ.get("GRADIO_SERVER_PORT") or "7860")
     # Bind localhost by default (plan Phase 6: no unexpected network
     # listener); a Space must serve its container interface, and a deploy
     # that wants LAN exposure states INKGEN_HOST explicitly.
-    host = os.environ.get("INKGEN_HOST") or (
+    host = CONFIG.get("INKGEN_HOST") or (
         "0.0.0.0" if os.environ.get("SPACE_ID") else "127.0.0.1")
     # The page takes no file, so Gradio's generic upload route takes none either.
     gradio_app, _local, _share = demo.launch(server_name=host, server_port=port,
                                              prevent_thread_lock=True, ssr_mode=False,
+                                             run_history=False, enable_monitoring=False,
                                              allowed_paths=[str(DOWNLOADS)], max_file_size="1kb")
     for route in reversed(router.routes):
         gradio_app.router.routes.insert(0, route)

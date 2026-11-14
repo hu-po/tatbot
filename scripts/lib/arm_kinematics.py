@@ -1,4 +1,4 @@
-"""One configured arm's URDF names: its six revolute joints, the driven carriage, link 6, the tool mount.
+"""One configured WXAI arm's URDF names: its revolute chain and carriage (from its model), link 6, the tool mount.
 
 FK is `urdf_kinematics.UrdfChain` over the nominal urdf/tatbot.urdf. The drawing stack's model of
 the arm (tatbot_description, tatbot_motion, the simulator) also carries config/workspace.yaml
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import arm_model
 from tatbot_cli import arms as arm_registry
 
 REPO = Path(__file__).resolve().parents[2]
@@ -33,23 +34,26 @@ def urdf_chain(urdf_path: Path | str | None = None):
 ARM_IDS = tuple(arm_registry.load(REPO))
 
 
-class ArmModel:
+class ArmFrames:
     """One WXAI arm's frames under its configured URDF prefix.
 
-    Both arms carry the same joint chain; the driver's seventh axis is
-    `<arm>/left_carriage_joint`, which the tool mount rides.
+    The joints are its model's (config/arm-models/): the revolute chain, then the carriage the tool
+    mount rides, `<arm>/left_carriage_joint`. `chain` and `carriage` index a controller-order row.
     """
 
     def __init__(self, arm: str = "right", repo: Path = REPO):
         physical = arm_registry.load(repo).get(arm)
         if physical is None:
             raise ValueError(f"unknown arm {arm!r}; expected a configured arm ID")
-        if not physical.sdk_end_effector.startswith("wxai_v0_"):
+        if not (physical.sdk_end_effector or "").startswith("wxai_v0_"):
             raise ValueError(f"{arm}: the WXAI kinematics adapter does not support {physical.sdk_end_effector}")
+        model = arm_model.for_arm(arm, repo)
+        names = model.joint_names(physical.urdf_prefix)
         self.arm = arm
         self.prefix = physical.urdf_prefix
-        self.joint_names = tuple(f"{self.prefix}/joint_{i}" for i in range(6))
-        self.carriage_joint = f"{self.prefix}/left_carriage_joint"
+        self.chain, self.carriage = model.arm_index, model.carriage
+        self.joint_names = tuple(names[i] for i in model.arm)
+        self.carriage_joint = names[model.carriage]
         self.link6 = f"{self.prefix}/link_6"
         self.tool_mount = f"{self.prefix}/tool_mount"
         self.frame = f"{self.prefix}/base_link"
@@ -57,7 +61,7 @@ class ArmModel:
             physical.controller_config, Path(physical.controller_config).stem)
 
     def joint_map(self, joints, carriage_m: float = 0.0) -> dict[str, float]:
-        """{urdf joint name: value} for the six arm joints plus the carriage, as given (no offsets)."""
+        """{urdf joint name: value} for the revolute chain plus the carriage, as given (no offsets)."""
         values = {name: float(v) for name, v in zip(self.joint_names, joints, strict=True)}
         values[self.carriage_joint] = float(carriage_m)
         return values

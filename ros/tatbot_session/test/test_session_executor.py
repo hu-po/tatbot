@@ -15,15 +15,17 @@ from types import MethodType, SimpleNamespace
 import numpy as np
 import pytest
 import tatbot_motion
+from tatbot_description import arm_model
 from tatbot_session import executor as ex_mod
 from tatbot_session import geometry, rules
 from tatbot_session.ledger import Ledger
 
-MOTION = {"approach": {"standoff_m": 0.010, "withdraw_m": 0.030}, "joint_speed": {"pen_up_rad_s": 1.0}, "carriage": {"max_m_s": 0.001},
+MOTION = {"approach": {"standoff_m": 0.010, "withdraw_m": 0.030, "final_m": 0.005}, "joint_speed": {"pen_up_rad_s": 1.0}, "carriage": {"max_m_s": 0.001},
           "pen": {"mode": "press", "press": {"lift_m": -0.002, "settle_s": 1.0},
                   "ride": {"fraction": 0.5, "settle_s": 0.0},
                   "trim": {"step_m": 0.0001, "limit_m": 0.004, "speed_m_s": 0.002, "min_s": 0.2, "lead_s": 0.1}},
-          "touch": {"lift_m": 0.010, "max_travel_m": 0.040, "settle_s": 0.0}, "dispatch_drift": {"start_tolerance_m": 0.0005},
+          "touch": {"lift_m": 0.010, "max_travel_m": 0.040, "settle_s": 0.0},
+          "corners": {"pen_up_m_s2": 0.010}, "dispatch_drift": {"start_tolerance_m": 0.0005},
           "resume_reapproach_m": 0.0005, "clik": {"joint_limit_margin_rad": 0.0333},
           "probe": {"axial_cap_m": 0.001, "lateral_cap_m": 0.0025, "slow_m_s": 0.001, "back_off_m": 0.003,
                     "clearance_m": 0.030}}
@@ -35,7 +37,13 @@ LINE = {"op": "stroke", "id": "s0000", "closed": False, "points_m": [[0.0, 0.0],
 LINE2 = {"op": "stroke", "id": "s0001", "closed": False, "points_m": [[0.0, 0.01], [0.02, 0.01]]}
 
 
+WXAI = arm_model.load("trossen-wxai")
+REST = np.array(WXAI.rest)   # the landed sleep pose
+
+
 class FakeKin:
+    """A plant whose tip is q[:3], on the WXAI's model (its revolute chain and carriage)."""
+    arm, arm_model, n, revolute, carriage = "right", WXAI, WXAI.n, WXAI.arm_index, WXAI.carriage
     joint_names = tuple(f"right/j{i}" for i in range(7))
     lower, upper = np.full(7, -10.0), np.full(7, 10.0)
 
@@ -203,7 +211,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(tatbot_motion, "to_knots", lambda traj, rate: traj, raising=False)
     monkeypatch.setattr(tatbot_motion, "dispatch_drift", lambda traj, q, kin, motion, pen_down=None:
                         {"ok": True, "joint_rad": 0.0, "tip_m": 0.0}, raising=False)
-    monkeypatch.setattr(ex_mod.config, "fitted_tool", lambda repo, arm: "lutin-ballpoint-dot")
+    monkeypatch.setattr(ex_mod.config, "fitted_tool", lambda repo, arm: "pen")
     lifts = []
 
     def plan_lift(*, q_seed, direction, distance_m, kin, motion):
@@ -227,13 +235,13 @@ def setup(tmp_path, monkeypatch):
     io, node = FakeIO(), FakeNode(np.eye(4))
     ex = ex_mod.ArmExecutor(node, io, FakeKin(), MOTION, STACK, tmp_path)
     ex.go_ready = lambda ledger=None: None
-    ex.tool_id = "lutin-ballpoint-dot"
+    ex.tool_id = "pen"
     return SimpleNamespace(ex=ex, io=io, node=node, calls=calls, lifts=lifts, hovers=hovers,
                            ledger=Ledger(tmp_path / "ledger.jsonl"))
 
 
 def draw_strokes(ex, program, ledger, *, from_op='', touch=False):
-    """The stroke loop alone, for strokes of one ballpoint resource (no tool change, no page row)."""
+    """The stroke loop alone, for strokes of one resource (no tool change, no page row)."""
     import dataclasses
 
     ex.drawn = {}
@@ -382,10 +390,10 @@ def test_keys_trim_the_cartridge_on_the_arm_a_step_at_a_time_within_its_limit(se
     for key in ("up", "up", "up", "down"):
         ex.on_key(key)
     assert ex.trim_target() == pytest.approx(0.0002) and events[-1][:1] == ("pen_trim",)
-    assert events[-1][2] == "r1 +0.2 mm of ±4.0"
+    assert events[-1][2] == "r1 +0.20 mm of ±4.0"
     for _ in range(45):
         ex.on_key("down")
-    assert ex.trim_target() == pytest.approx(-0.004) and events[-1][2] == "r1 stays -4.0 mm: its limit of ±4.0"
+    assert ex.trim_target() == pytest.approx(-0.004) and events[-1][2] == "r1 stays -4.00 mm: its limit of ±4.0"
     ex.resource = {"id": "r2"}
     ex.on_key("up")
     ex.resource = {"id": "r1"}
@@ -419,8 +427,9 @@ def test_enter_continues_a_waiting_latch_and_says_when_nothing_waits(setup):
 
 
 RIDE = {**MOTION, "pen": {**MOTION["pen"], "mode": "ride"}}
-BALLPOINT = SimpleNamespace(tool_id="lutin-ballpoint-dot", stroke_m=0.0035, tip_out_at_top_m=0.002)
-PROGRAM_TOOL = {"id": "lutin-ballpoint-dot"}
+# A pen whose tip stands out of its tube at the top of its stroke and has no needles (no shipped datasheet does).
+PEN = SimpleNamespace(tool_id="pen", stroke_m=0.0035, tip_out_at_top_m=0.002)
+PROGRAM_TOOL = {"id": "pen"}
 
 
 class Switch:
@@ -444,7 +453,7 @@ class Switch:
 
 @pytest.fixture
 def riding(setup, monkeypatch):
-    monkeypatch.setattr(ex_mod.config, "tool_datasheet", lambda repo, tool_id: BALLPOINT)
+    monkeypatch.setattr(ex_mod.config, "tool_datasheet", lambda repo, tool_id: PEN)
     setup.ex.motion, setup.ex.machine = RIDE, Switch()
     return setup
 
@@ -540,7 +549,7 @@ def test_a_second_snag_on_a_stroke_sets_the_page_up_again_and_a_third_waits_with
     ex, io, node = riding.ex, riding.io, riding.node
     _pen_down(monkeypatch)
     pages = []
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
     trip = ("latched", 6, SNAG, IN_SKIN)
     io.script = [trip, ("ok", 1, {}, None)] * 3 + [("ok", 10, {}, None)]
     operator = Operator(ex, rules.CONTINUE)
@@ -583,7 +592,7 @@ def test_a_draw_refuses_before_any_motion_a_program_for_another_tool_and_a_ride_
         tool_id=tool_id, stroke_m=0.0035, tip_out_at_top_m=None))
     with pytest.raises(ValueError, match="tip_out_at_top_mm"):
         draw_strokes(ex, {"ops": [LINE], "tool": PROGRAM_TOOL}, riding.ledger, touch=False)
-    monkeypatch.setattr(ex_mod.config, "tool_datasheet", lambda repo, tool_id: BALLPOINT)
+    monkeypatch.setattr(ex_mod.config, "tool_datasheet", lambda repo, tool_id: PEN)
     ex.machine = None
     with pytest.raises(RuntimeError, match="switches none"):
         draw_strokes(ex, {"ops": [LINE], "tool": PROGRAM_TOOL}, riding.ledger, touch=False)
@@ -637,7 +646,8 @@ def test_a_page_that_moves_before_a_stroke_is_set_up_again_and_the_stroke_goes_d
     assert set(np.asarray(io.executed[0].phase).tolist()) == {6} and len(io.executed) == 2   # the lift, the stroke
 
 
-def test_three_touches_fit_the_page_plane(setup, monkeypatch):
+def _touching_a_tilted_page(setup, monkeypatch):
+    """Touches that trip on a page tilted from the camera's: (camera, the page's normal, the contacts as they come)."""
     ex, io = setup.ex, setup.io
     camera = geometry.rpy_matrix([0.37, -0.23, 0.045], [0, 0, 0])  # the camera reads the page 12 mm high
     setup.node.camera = camera
@@ -658,6 +668,12 @@ def test_three_touches_fit_the_page_plane(setup, monkeypatch):
     monkeypatch.setattr(tatbot_motion, "plan_touch", plan_touch, raising=False)
     monkeypatch.setattr(ex, "lift", lambda what, ledger=None: None)
     ex.stack = {**ex.stack, "touch": {"fit_tilt": True}}
+    return camera, tilt, seen
+
+
+def test_three_touches_fit_the_page_plane(setup, monkeypatch):
+    ex, io = setup.ex, setup.io
+    camera, tilt, seen = _touching_a_tilted_page(setup, monkeypatch)
     ex.setup_page({"ops": [LINE]}, True)
     assert len(ex.page_record["touches"]) == 3 and io.unlatches == 7   # three trips find the paper, two each after
     assert {"guard_mode": 1} in io.writes and io.writes[-1] == {"guard_mode": 0}
@@ -666,6 +682,20 @@ def test_three_touches_fit_the_page_plane(setup, monkeypatch):
     for contact in seen:
         assert abs(tilt @ (contact - used[:3, 3])) < 1e-9  # every touch lies on the used page plane
     assert np.allclose(used[:2, 3], camera[:2, 3], atol=5e-4)  # x, y still the camera's
+
+
+def test_a_set_up_the_surface_refuses_leaves_no_page_for_a_later_reader(setup, monkeypatch):
+    """2026-11-05: `tatbot ros inspect` took a refused set-up's page for the run's, and that page stood on its edge."""
+    ex = setup.ex
+    _touching_a_tilted_page(setup, monkeypatch)
+
+    def refuse(program, ledger=None):
+        raise RuntimeError("the drawing reaches past every gauge hold")
+
+    monkeypatch.setattr(ex, "_fit_surface", refuse)
+    with pytest.raises(RuntimeError, match="reaches past"):
+        ex.setup_page({"ops": [LINE]}, True)
+    assert "plane" in ex.page_record and "used" not in ex.page_record
 
 
 def test_a_touch_counts_the_trips_on_the_paper_and_the_next_run_starts_from_it(setup, monkeypatch):
@@ -915,6 +945,21 @@ def test_a_probe_still_triggered_after_the_back_off_is_an_error(setup, monkeypat
         ex.touch_single(np.eye(4), np.array([0.0, 0.0, -1.0]), 0.0, 0.0, guard=2, prior_distance_m=0.005)
 
 
+def test_a_probe_that_chatters_after_the_back_off_is_waited_out(setup, monkeypatch):
+    """The switch's own bounce as a 3RL's nozzle leaves the stylus (2026-11-02): released, triggered again, then
+    released for good passes; bouncing back after every try is still a stuck probe."""
+    ex, io = setup.ex, setup.io
+    monkeypatch.setattr(ex, "lift_plan", lambda *a, **k: None)
+    monkeypatch.setattr(io, "execute", lambda traj, **kw: ("ok", 0, "backed off"))
+    traj, down = SimpleNamespace(tip=np.zeros((2, 3))), np.array([0.0, 0.0, -1.0])
+    answers = iter([True, True, True, False])   # each wait: released, triggered again, released, stays released
+    monkeypatch.setattr(io, "wait", lambda predicate, timeout: next(answers))
+    assert ex.back_off(traj, 1, down)["distance_m"] == ex.motion["probe"]["back_off_m"]
+    answers = iter([True, True] * ex_mod.PROBE_SETTLE_TRIES)
+    with pytest.raises(RuntimeError, match="still reads triggered"):
+        ex.back_off(traj, 1, down)
+
+
 def _cancel_after(ex, seconds):
     t_end = time.monotonic() + seconds
     ex.cancelled = lambda: time.monotonic() > t_end
@@ -988,8 +1033,6 @@ def test_a_stack_started_under_a_pen_away_from_rest_withdraws_it_along_its_axis_
     """2026-10-06: the controller dropped 49 s into a stroke with the 3RL's needles in a half-skin; the restarted
     stack knows no page, so the pen comes out along its own axis before the driver's staged sweep, and farther than
     the standoff: the idled controller let the tip sag 9-13 mm into the skin before the restart (2026-10-08)."""
-    from tatbot_session import inspect as ins
-
     ex, io, node = setup.ex, setup.io, setup.node
     assert ex.camera is None
     assert ex.decide(rules.LAND) == (True, "landed and idle")
@@ -997,7 +1040,7 @@ def test_a_stack_started_under_a_pen_away_from_rest_withdraws_it_along_its_axis_
     lifted = io.executed[0].q[-1][:3] - io.executed[0].q[0][:3]
     assert np.allclose(lifted, -ex.tcp()[:3, 2] * 0.03)                  # out along the pen, not the page
     assert any("lifted 30.0 mm along the pen before landing" in text for _, _, text in node.events)
-    io.q, io.safety["landed"] = ins.REST.copy(), 0.0                     # at rest: nothing to withdraw
+    io.q, io.safety["landed"] = REST.copy(), 0.0                     # at rest: nothing to withdraw
     io.q[1] = 0.15                                                       # within AT_REST_RAD on every joint
     assert ex.decide(rules.LAND)[0] and setup.lifts == [0.03] and io.lands == 2
 
@@ -1020,10 +1063,9 @@ def test_a_landed_arm_refuses_every_goal_until_it_is_woken(setup):
     when it takes the arm, and each says how to wake it."""
     from rclpy.action import GoalResponse
     from tatbot_interfaces.action import Draw, Touch
-    from tatbot_session import inspect as ins
 
     ex, io = setup.ex, setup.io
-    io.q = ins.REST.copy()                                               # at rest: no pen to withdraw
+    io.q = REST.copy()                                               # at rest: no pen to withdraw
     gate = GoalGate(ex)
     assert gate._goal_ok(Touch.Goal(arm="right")) == GoalResponse.ACCEPT and ex.refusal() is None
     assert ex.decide(rules.LAND) == (True, "landed and idle") and io.flag("landed")
@@ -1076,18 +1118,16 @@ def test_a_draw_waits_for_the_cameras_to_measure_a_page_the_arm_uncovered(setup)
 
 def test_a_lost_page_is_waited_for_from_rest_so_the_arm_does_not_hide_it(setup):
     """After a cancel the arm held over the print and the anchoring camera never saw it again (2026-09-28)."""
-    from tatbot_session import inspect as ins
-
     setup.ex.stack = {**setup.ex.stack, "page": {**setup.ex.stack["page"], "wait_s": 240.0}}
     setup.node.page_info = {"source": "lost", "pattern_id": "stencil-x", "measured_age_s": 60.0}
     setup.node.later_info = {"source": "measured", "pattern_id": "stencil-x", "measured_age_s": 0.0}
     setup.io.q = np.array([0.02, 0.01, 0.0, 0.3, 0.1, 1.2, 0.004])      # stopped over the page
     setup.ex.setup_page({"ops": [LINE]}, False)
-    np.testing.assert_allclose(setup.io.q[:6], ins.REST[:6])            # moved to rest, holding
+    np.testing.assert_allclose(setup.io.q[:6], REST[:6])            # moved to rest, holding
     assert setup.io.q[6] == pytest.approx(0.004) and setup.io.lands == 0  # carriage kept; never landed
     moves = len(setup.io.writes)
     setup.ex.setup_page({"ops": [LINE]}, False)                         # already at rest: no motion
-    assert len(setup.io.writes) == moves and np.allclose(setup.io.q[:6], ins.REST[:6])
+    assert len(setup.io.writes) == moves and np.allclose(setup.io.q[:6], REST[:6])
 
 
 def test_the_pen_lifts_first_and_a_rest_path_that_dips_is_not_taken(setup):
@@ -1191,7 +1231,7 @@ def test_the_ready_move_refuses_a_path_that_dips_anyway(tmp_path, monkeypatch):
 
 # --- resources: a cartridge swap lands for the operator and the resume keeps the page; dips ----------------------
 def _resource(rid, ink, *, dip=False):
-    return {"id": rid, "ink_id": ink, "pen_mode": "press", "tool": {"id": "lutin-ballpoint-dot"},
+    return {"id": rid, "ink_id": ink, "pen_mode": "press", "tool": {"id": "pen"},
             "slot": "inkcap_medium_1" if dip else None, "dip": {"mm_per_dip": 30.0} if dip else None}
 
 
@@ -1203,7 +1243,7 @@ def _program(*ops, resources):
 def drawing(setup, monkeypatch, tmp_path):
     from tatbot_session import lease
 
-    monkeypatch.setattr(ex_mod.config, "workspace_arm", lambda repo, arm: {"tool_id": "lutin-ballpoint-dot"})
+    monkeypatch.setattr(ex_mod.config, "workspace_arm", lambda repo, arm: {"tool_id": "pen"})
     monkeypatch.setattr(lease, "IN_CAP_DIR", tmp_path / "state")
     setup.ex.run_dir = tmp_path / "run-0001"
     setup.dips = []
@@ -1259,7 +1299,8 @@ def test_a_cartridge_swap_lands_and_the_resumed_run_keeps_its_page(drawing):
 
 def test_a_trim_mid_stroke_replaces_the_goal_ahead_and_a_resume_keeps_each_cartridges(drawing):
     """Keys during a stroke replace the running goal from pen.trim.lead_s ahead (unchanged before that, one change
-    easing in at a time); the next stroke starts at the trim; after a swap the resume keeps each cartridge's."""
+    easing in at a time); the next stroke starts at the trim; a swap to another resource of the same tool keeps its
+    cartridge's trim, and so does the resume after it."""
     ex, io, events = drawing.ex, drawing.io, drawing.node.events
     program = _program({"op": "tool_change", "id": "t0", "resource_id": "blue", "initial": True},
                        _stroke("s0", "blue"), _stroke("s1", "blue"),
@@ -1272,31 +1313,32 @@ def test_a_trim_mid_stroke_replaces_the_goal_ahead_and_a_resume_keeps_each_cartr
     assert (at, later) == (pytest.approx(0.2), pytest.approx(0.5))   # the second waited for the first to ease in
     ahead = first.t < at + MOTION["pen"]["trim"]["lead_s"] - 1e-9
     np.testing.assert_array_equal(eased.q[ahead], first.q[ahead])
-    assert settled.q[-1, 2] - first.q[-1, 2] == pytest.approx(-0.0002) and ex.trims == {"blue": pytest.approx(-0.0002)}
+    assert settled.q[-1, 2] - first.q[-1, 2] == pytest.approx(-0.0002) and ex.trims == {"pen": pytest.approx(-0.0002)}
     assert io.executed[1].info["trim"] == tatbot_motion.Trim(pytest.approx(-0.0002))   # s1 starts there
     io.safety.update(landed=0.0)   # the cartridge is swapped and the arm woken
     io.at_tick = {1: lambda: ex.on_key("up")}
     assert ex.draw(program, drawing.ledger, touch=False) == "complete"
-    assert any(text == "trims kept from the run: blue -0.2 mm" for _, _, text in events)
-    assert io.executed[-1].info["trim"].start_m == 0.0 and ex.trims == {"blue": pytest.approx(-0.0002),
-                                                                       "purple": pytest.approx(0.0001)}
+    assert any(text == "trims kept from the run: pen -0.20 mm" for _, _, text in events)
+    assert io.executed[-1].info["trim"].end_m == pytest.approx(-0.0002)   # purple takes the cartridge's
+    assert ex.trims == {"pen": pytest.approx(-0.0001)}
 
 
 def test_a_resume_eases_each_needle_cartridges_trim_kept_past_skin_stop_m_back_to_it(drawing, monkeypatch):
     """A resume's page is a fresh field, no skin read sunk on it yet: each trim kept deeper than skin_stop_m goes back to
     it (a pen_trim row with eased_from_m, which the next resume starts from, and an event), and its strokes take it
-    there; one within it stays (2026-10-20's resume carried -2.0 mm)."""
+    there; one within it stays (2026-10-20's resume carried -2.0 mm). Rows written by resource, before trims were the
+    cartridge's, read back as their resource's tool."""
     _needles(drawing, monkeypatch)
     ex, ledger, events = drawing.ex, drawing.ledger, drawing.node.events
     program = _program(_stroke("s0", "black"), resources=[{**_resource("black", "black"), "pen_mode": "ride"}])
     ledger.append("pen_trim", "right", resource="black", trim_m=-0.004)
     ledger.append("pen_trim", "right", resource="red", trim_m=-0.002)
     assert ex.draw(program, ledger, touch=False) == "complete"
-    assert ex.trims == {"black": pytest.approx(-0.0025), "red": -0.002}
-    assert [(r["resource"], r["trim_m"], r.get("eased_from_m")) for r in ledger.rows() if r["event"] == "pen_trim"][-1] == (
-        "black", -0.0025, -0.004)
+    assert ex.trims == {"pen": pytest.approx(-0.0025), "red": -0.002}
+    assert [(r.get("cartridge"), r["trim_m"], r.get("eased_from_m")) for r in ledger.rows() if r["event"] == "pen_trim"][-1] == (
+        "pen", -0.0025, -0.004)
     texts = [text for kind, _, text in events if kind == "pen_trim"]
-    assert texts == ["trims kept from the run: black -4.0 mm, red -2.0 mm", "black -4.0 mm eased back to -2.5 mm: the run "
+    assert texts == ["trims kept from the run: pen -4.00 mm, red -2.00 mm", "pen -4.00 mm eased back to -2.50 mm: the run "
                      "resumed, and a deeper trim reaches only where the hovers read the skin sunk"]
     assert _trims_sent(ledger, drawing.io.executed) == {"s0": (pytest.approx(-0.0025), pytest.approx(-0.0025))}
 
@@ -1315,6 +1357,54 @@ def test_a_height_ladder_changes_resources_of_one_ink_without_landing(drawing):
     assert io.lands == 0 and fractions == [0.9, 1.1] and ex.resource["id"] == "h1"
     ex.prepare_resource(_resource("plain", "sky_blue"))
     assert fractions[-1] == MOTION["pen"]["ride"]["fraction"]
+
+
+def test_flying_ends_plan_inside_the_clear_area_under_the_arms_clearance_and_say_what_they_do(setup, monkeypatch):
+    """motion.yaml draw.ends: fly: every stroke is planned with the print's clear area and the driver port's
+    clearance (the collision guard), which plan_op asks about its flying plan; its op_sent line says what each end
+    does. With stopping ends plan_op is called as it always was (the fixture's plan_op takes neither keyword)."""
+    ex, io, asked = setup.ex, setup.io, []
+    assert ex._flying() == {}
+    assert draw_strokes(ex, {"ops": [LINE]}, setup.ledger, touch=False) == "complete"
+    assert [text for kind, _, text in setup.node.events if kind == ex_mod.Event.KIND_OP_SENT][-1].endswith("from arc 0.0 mm")
+
+    def plan_op(op, *, motion, clear_m, check, from_arc_m=0.0, **_):
+        assert motion["draw"]["ends"] == "fly"
+        asked.append(clear_m)
+        check(np.zeros((3, 7)))   # the flying way, let by
+        traj = line_traj(op, from_arc_m)
+        traj.info = {**traj.info, "ends": {"start": "fly", "end": "stop", "why": ["the end stops: no room"]}}
+        return traj
+
+    monkeypatch.setattr(tatbot_motion, "plan_op", plan_op, raising=False)
+    ex.motion = {**MOTION, "draw": {"ends": "fly"}}
+    io.clearance = lambda arm, rows: None
+    assert draw_strokes(ex, {"ops": [LINE2]}, setup.ledger, touch=False) == "complete"
+    assert asked and all(clear == STACK["page"]["clear_m"] for clear in asked)
+    assert [text for kind, _, text in setup.node.events if kind == ex_mod.Event.KIND_OP_SENT][-1].endswith(
+        "; ends fly/stop (the end stops: no room)")
+    io.clearance = lambda arm, rows: f"the {arm} arm's way brings its wrist onto its forearm; not sent"
+    with pytest.raises(tatbot_motion.PlanError, match="wrist onto its forearm"):
+        ex._flying()["check"](np.zeros((3, 7)))   # refused: plan_op plans that stroke with stopping ends
+    # a run's own ends (`tatbot ros draw --ends`, the program's draw_ends) stand over motion.yaml's, either way
+    assert ex._flying({"draw_ends": "stop"}) == {"motion": {**MOTION, "draw": {"ends": "stop"}}}
+    ex.motion, count, io.clearance = MOTION, len(asked), lambda arm, rows: None
+    assert ex._flying({}) == {} and ex._flying({"draw_ends": "stop"}) == {}
+    third = {**LINE, "id": "s0002"}   # the ledger has the first two done
+    assert draw_strokes(ex, {"ops": [third], "draw_ends": "fly"}, setup.ledger, touch=False) == "complete"
+    assert len(asked) > count
+
+
+def test_a_fading_stroke_rides_the_fade_lift_its_resource_was_compiled_with(drawing):
+    """A stroke's deposition rides (1 - deposition) of its tool's fade lift higher (tatbot_motion.deposition_lift): the
+    executor gives its pen the resource's fade_lift_mm, which the program's fading strokes were validated against."""
+    ex = drawing.ex
+    pen = {**_resource("pen", "sky_blue"), "tool": {"id": "pen", "fade_lift_mm": 0.8}}
+    whip = {**_stroke("s0", "pen"), "deposition": [1.0] * (len(LINE["points_m"]) - 1) + [0.0]}
+    program = _program({"op": "tool_change", "id": "t0", "resource_id": "pen", "initial": True}, whip, resources=[pen])
+    assert ex.draw(program, drawing.ledger, touch=False) == "complete" and ex.pen.fade_m == pytest.approx(0.0008)
+    ex.prepare_resource(_resource("plain", "sky_blue"))
+    assert ex.pen.fade_m is None
 
 
 def test_a_rinse_changes_ink_in_a_cap_of_water_without_landing_and_a_resume_rinses_again(drawing, monkeypatch):
@@ -1348,6 +1438,164 @@ def test_a_rinse_changes_ink_in_a_cap_of_water_without_landing_and_a_resume_rins
     assert ex._installed(program, cut, 0)["id"] == "white"
 
 
+def test_a_run_starts_its_cartridge_at_the_programs_trim_and_a_resume_keeps_the_operators(drawing):
+    """`tatbot ros draw --trim-mm`: the program's start_trim_m is the cartridge's trim from the first stroke, a pen_trim
+    row a resume reads like a key press's; a resume that finds the cartridge's trim in the ledger leaves it alone."""
+    ex, io, ledger, events = drawing.ex, drawing.io, drawing.ledger, drawing.node.events
+    program = {**_program(_stroke("s0", "blue"), resources=[_resource("blue", "sky_blue")]), "start_trim_m": -0.00175}
+    assert ex.draw(program, ledger, touch=False) == "complete"
+    assert ex.trims == {"pen": pytest.approx(-0.00175)}
+    assert io.executed[-1].info["trim"].end_m == pytest.approx(-0.00175)
+    assert [(r["cartridge"], r["trim_m"], r["start"]) for r in ledger.rows() if r["event"] == "pen_trim"] == [
+        ("pen", -0.00175, True)]
+    assert any(text == "pen starts at -1.75 mm: the run's --trim-mm" for _, _, text in events)
+    ledger.append("pen_trim", "right", cartridge="pen", trim_m=-0.001)   # the operator's keys moved it since
+    ex.draw(program, ledger, touch=False)
+    assert ex.trims == {"pen": pytest.approx(-0.001)}
+    assert sum(r["event"] == "pen_trim" and r.get("start", False) for r in ledger.rows()) == 1
+
+
+def test_a_start_trim_past_the_keys_limit_is_refused(drawing):
+    program = {**_program(_stroke("s0", "blue"), resources=[_resource("blue", "sky_blue")]), "start_trim_m": -0.05}
+    with pytest.raises(RuntimeError, match="past the trim's limit"):
+        drawing.ex.draw(program, drawing.ledger, touch=False)
+
+
+HOLD = {**RIDE, "pen": {**RIDE["pen"], "trim": {**RIDE["pen"]["trim"], "hold": {
+    "substrates": ["human_skin"], "start_m": 0.001, "window_s": 3.0}}}}
+
+
+def _held(drawing, monkeypatch):
+    """A needle cartridge that dips, on a person: (ex, the program: its initial dip, then two strokes)."""
+    _needles(drawing, monkeypatch)
+    drawing.ex.motion = HOLD
+    program = _program({"op": "tool_change", "id": "t0", "resource_id": "black", "initial": True},
+                       _dip("d1", "black", "initial"), _stroke("s2", "black"), _stroke("s3", "black"),
+                       resources=[{**_resource("black", "black", dip=True), "pen_mode": "ride"}])
+    return drawing.ex, {**program, "substrate": "human_skin"}
+
+
+def _hold_goals(executed):
+    return [goal for goal in executed if "trim" in (getattr(goal, "info", None) or {}) and len(goal.t) > 50]
+
+
+def test_a_person_s_run_holds_at_its_first_stroke_for_the_depth_before_it_dips(drawing, monkeypatch):
+    """The depth hold: before the cartridge's first dip the pen goes to the first stroke's start with the machine on, at
+    pen.trim.hold.start_m, and stays while the keys trim it; + takes the depth (no dip scale step), the machine stops,
+    the pen lifts, the cap is dipped and every stroke draws at that depth. A resume holds no more; a program for
+    silicone never does."""
+    ex, program = _held(drawing, monkeypatch)
+    io, events = drawing.io, drawing.node.events
+    order = []
+    from tatbot_session import cap
+
+    monkeypatch.setattr(cap, "dip", lambda ex_, res, op_id, index, ledger: order.append(("dip", len(io.executed))) or True)
+    io.at_tick = {100: lambda: ex.on_key("down"), 105: lambda: ex.on_key("down"), 200: lambda: ex.on_key("dip")}   # eased in by 0.94 s
+    assert ex.draw(program, drawing.ledger, touch=False) == "complete"
+    (hold,) = _hold_goals(io.executed)
+    assert np.all(hold.q[:, :2] == [0.0, 0.0]) and np.isclose(hold.t[-1], 3.0)   # the start of s2, one window
+    assert io.active is not hold and len(io.replaced) == 2                       # the keys replaced its goal twice
+    rows = drawing.ledger.rows()
+    assert [r["trim_m"] for r in rows if r["event"] == "pen_trim"] == [0.001, 0.0009, 0.0008]
+    assert [(r["op"], r["cartridge"], r["state"], r.get("trim_cap_m"), r.get("trim_m"), r.get("held_m"))
+            for r in rows if r["event"] == "depth_hold"] == [("s2", "pen", "holding", -0.0025, None, None),
+                                                             ("s2", "pen", "taken", None, 0.0008, 0.0008)]
+    assert not any(r["event"] == "dip_scale" for r in rows)
+    assert order == [("dip", io.executed.index(hold) + 2)]    # after the hold and its lift, before any stroke
+    assert ex.machine.log == [True, False, True, False]       # the hold's, then the strokes'
+    strokes = [goal for goal in io.executed if "trim" in (getattr(goal, "info", None) or {}) and goal is not hold]
+    assert [goal.info["trim"].end_m for goal in strokes] == [pytest.approx(0.0008)] * 2   # s2 and s3 draw at it
+    texts = [text for kind, _, text in events if kind == "pen_trim"]
+    assert texts[0].startswith("depth hold at the start of s2: the needle runs with no ink, pen at +1.00 mm")
+    assert "depth taken: pen draws at +0.80 mm; dipping" in texts
+    held = len(io.executed)
+    assert ex.draw(program, drawing.ledger, touch=False) == "complete" and len(io.executed) == held   # all done
+    again = {**program, "ops": [*program["ops"], _stroke("s4", "black")]}
+    assert ex.draw(again, drawing.ledger, touch=False) == "complete" and len(_hold_goals(io.executed)) == 1
+    silicone, other = {**program, "substrate": "silicon_skin"}, Ledger(drawing.ledger.path.with_name("other.jsonl"))
+    assert ex.draw(silicone, other, touch=False) == "complete" and len(_hold_goals(io.executed)) == 1
+
+
+def test_a_depth_hold_nobody_takes_goes_on_where_it_holds_and_a_land_ends_it_untaken(drawing, monkeypatch):
+    """A window that runs out with no + is followed by another from the held knot at the trim it held, the machine
+    still on; a land during the hold stops the machine, lifts the pen and lands with no depth taken, so the resumed
+    run holds again before it dips."""
+    ex, program = _held(drawing, monkeypatch)
+    io = drawing.io
+    io.at_tick = {100: lambda: ex.on_key("down")}
+
+    def second_window(traj, **kw):   # the fake's ticks count per goal: land in the second window
+        if len(_hold_goals(io.executed)) == 1 and len(traj.t) > 50:
+            io.at_tick = {30: lambda: setattr(ex, "land_requested", True)}
+        return execute(traj, **kw)
+
+    execute = io.execute
+    monkeypatch.setattr(io, "execute", second_window)
+    with pytest.raises(ex_mod.Landed):
+        ex.draw(program, drawing.ledger, touch=False)
+    first, second = _hold_goals(io.executed)
+    assert second.info["trim"].start_m == pytest.approx(0.0009) and np.all(second.q[:, :2] == first.q[-1, :2])
+    assert drawing.dips == [] and ex.machine.log == [True, False] and drawing.lifts
+    assert [r["state"] for r in drawing.ledger.rows() if r["event"] == "depth_hold"] == ["holding", "left"]
+    io.safety.update(landed=0.0)
+    io.at_tick = {150: lambda: ex.on_key("dip")}
+    assert ex.draw(program, drawing.ledger, touch=False) == "complete"
+    assert drawing.dips == ["d1"] and len(_hold_goals(io.executed)) == 3
+    assert [r.get("trim_m") for r in drawing.ledger.rows() if r["event"] == "depth_hold"][-1] == 0.0009
+
+
+def test_a_trim_carries_through_a_rinse_to_the_next_colour_on_the_cartridge(drawing, monkeypatch):
+    """The trim is the cartridge's (its tool's): keys pressed on one colour hold for the colour a rinse takes the same
+    cartridge to, and each press's row names the cartridge and the resource on it (2026-11-02)."""
+    from tatbot_session import cap
+
+    ex, io = drawing.ex, drawing.io
+    rinse = {"method": "rinse", "slot": "inkcap_large_1", "ink_id": "water", "dwell_s": 30.0, "above_ink_m": 0.0}
+    white = {**_resource("white", "snow_white", dip=True), "dip": {"mm_per_dip": 30.0, "dwell_s": 1.5}}
+    red = {**white, "id": "red", "ink_id": "bright_red", "slot": "inkcap_medium_2", "activation": rinse}
+    monkeypatch.setattr(cap, "dip", lambda *args: True)
+    program = _program({"op": "tool_change", "id": "t0", "resource_id": "white", "initial": True},
+                       {"op": "dip", "id": "d1", "resource_id": "white", "slot": "inkcap_medium_1"},
+                       _stroke("s2", "white"),
+                       {"op": "tool_change", "id": "t3", "resource_id": "red", "activation": rinse},
+                       {"op": "dip", "id": "d4", "resource_id": "red", "slot": "inkcap_medium_2"},
+                       _stroke("s5", "red"), resources=[white, red])
+    io.at_tick = {2: lambda: ex.on_key("down")}
+    assert ex.draw(program, drawing.ledger, touch=False) == "complete"
+    step = MOTION["pen"]["trim"]["step_m"]
+    assert ex.resource["id"] == "red" and ex.trims == {"pen": pytest.approx(-step)}
+    assert ex.trim_target() == pytest.approx(-step)   # red takes the trim pressed on white
+    assert io.executed[-1].info["trim"].end_m == pytest.approx(-step)   # from the dip, eased to it
+    assert [(r["cartridge"], r["resource"]) for r in drawing.ledger.rows() if r["event"] == "pen_trim"] == [("pen", "white")]
+
+
+def test_the_first_dip_after_a_rinse_holds_the_rinses_first_dip_dwell(drawing, monkeypatch):
+    """A rinse leaves water in the cartridge: the new ink's first dip holds the activation's first_dip_dwell_s so the
+    cartridge takes up its colour, and the dips after it hold the ink's own dwell again."""
+    from tatbot_session import cap
+
+    ex = drawing.ex
+    rinse = {"method": "rinse", "slot": "inkcap_large_1", "ink_id": "water", "dwell_s": 30.0, "above_ink_m": 0.0,
+             "first_dip_dwell_s": 3.0}
+    white = {**_resource("white", "snow_white", dip=True), "dip": {"mm_per_dip": 30.0, "dwell_s": 1.5}}
+    red = {**white, "id": "red", "ink_id": "bright_red", "slot": "inkcap_medium_2", "activation": rinse}
+    dips = []
+    monkeypatch.setattr(cap, "dip", lambda ex, resource, op_id, index, ledger: dips.append(
+        (op_id, resource["ink_id"], resource["dip"]["dwell_s"])) or True)
+    program = _program({"op": "tool_change", "id": "t0", "resource_id": "white", "initial": True},
+                       {"op": "dip", "id": "d1", "resource_id": "white", "slot": "inkcap_medium_1"},
+                       _stroke("s2", "white"),
+                       {"op": "tool_change", "id": "t3", "resource_id": "red", "activation": rinse},
+                       {"op": "dip", "id": "d4", "resource_id": "red", "slot": "inkcap_medium_2"},
+                       _stroke("s5", "red"),
+                       {"op": "dip", "id": "d6", "resource_id": "red", "slot": "inkcap_medium_2"},
+                       _stroke("s7", "red"), resources=[white, red])
+    assert ex.draw(program, drawing.ledger, touch=False) == "complete"
+    assert dips == [("d1", "snow_white", 1.5), ("t3", "water", 30.0), ("d4", "bright_red", 3.0),
+                    ("d6", "bright_red", 1.5)]
+    assert ex.resource["dip"]["dwell_s"] == 1.5   # the longer hold never sticks to the resource
+
+
 def test_a_new_tool_calibration_sets_the_page_up_again_on_resume(drawing, monkeypatch):
     ex = drawing.ex
     program = _program({"op": "tool_change", "id": "t0", "resource_id": "blue", "initial": True}, _stroke("s0", "blue"),
@@ -1357,7 +1605,7 @@ def test_a_new_tool_calibration_sets_the_page_up_again_on_resume(drawing, monkey
     with pytest.raises(ex_mod.Landed):
         ex.draw(program, drawing.ledger, touch=False)
     assert operator.replies() == [(True, "")]
-    monkeypatch.setattr(ex_mod.config, "workspace_arm", lambda repo, arm: {"tool_id": "lutin-ballpoint-dot", "tip": 2})
+    monkeypatch.setattr(ex_mod.config, "workspace_arm", lambda repo, arm: {"tool_id": "pen", "tip": 2})
     drawing.io.safety.update(landed=0.0)
     assert ex.draw(program, drawing.ledger, touch=False) == "complete"
     assert sum(r["event"] == "page" for r in drawing.ledger.rows()) == 2
@@ -1415,7 +1663,7 @@ def test_dip_keys_change_nothing_without_a_draw_for_a_cartridge_that_takes_none_
     assert events[-1][2] == "+: no draw is running, so no cartridge to dip; nothing changed"
     ex.ledger, ex.resource = drawing.ledger, _resource("blue", "sky_blue")
     ex.on_key("fewer_dips")
-    assert events[-1][2] == "-: blue (lutin-ballpoint-dot) takes no dips; nothing changed"
+    assert events[-1][2] == "-: blue (pen) takes no dips; nothing changed"
     ex.resource = _resource("red", "red", dip=True)
     ex.on_key("dip")
     ex.on_key("dip")
@@ -1431,12 +1679,12 @@ def test_dip_keys_change_nothing_without_a_draw_for_a_cartridge_that_takes_none_
 
 def test_compiled_dips_are_unchanged_when_a_kept_scale_returns_to_one(drawing):
     """Use the real compiler and executor over open/closed paths, timed continuations and replenishing dips."""
+    from tatbot_ink.place import Stroke
     from tatbot_ink.schedule import schedule_ops
 
     resource = {**_resource("red", "red", dip=True), "activation": None}
-    strokes = [SimpleNamespace(points_m=np.array([[0.0, y], [length, y]]), closed=(k == 2),
-                               generation_width_m=0.0003,
-                               src={"artwork_sha256": "a", "pen": "red", "path": f"p{k}"})
+    strokes = [Stroke(np.array([[0.0, y], [length, y]]), k == 2, 0.0003,
+                      {"artwork_sha256": "a", "pen": "red", "path": f"p{k}"})
                for k, (length, y) in enumerate(((0.020, 0.0), (0.045, 0.010), (0.010, 0.020)))]
     ops = schedule_ops(strokes, {("a", "red"): "red"}, [resource], speed=0.0035, max_seconds=2.0,
                        motion=tatbot_motion.load_motion())
@@ -1588,7 +1836,7 @@ def test_a_resumed_page_keeps_its_place_and_measures_its_height_again(setup, mon
     monkeypatch.setattr(ex, "_touch_layout", lambda program: np.zeros((5, 2)))
     risen = [np.array([0.30 + x, y, 0.0012]) for x, y in ((-0.01, -0.01), (0.01, -0.01), (0.01, 0.01), (-0.01, 0.01),
                                                          (0.0, 0.0))]
-    monkeypatch.setattr(ex, "page_touches", lambda points, ledger, known: risen)
+    monkeypatch.setattr(ex, "page_touches", lambda points, ledger, known, program=None: risen)
     before = ex.used()
     assert ex._regauge({}, None)
     assert np.allclose(ex.used()[:3, :3], before[:3, :3]) and np.allclose(ex.used()[:2, 3], before[:2, 3])
@@ -1596,7 +1844,7 @@ def test_a_resumed_page_keeps_its_place_and_measures_its_height_again(setup, mon
     assert "+1.20 mm from the retained height" in said[-1]
     assert ex.page_record["retained_height"] == {"method": "retained"}
     ex.page_record = {"touches": ["old"], "gauge": ["old"], "height": {"method": "retained"}}
-    monkeypatch.setattr(ex, "page_touches", lambda points, ledger, known: risen[:2])
+    monkeypatch.setattr(ex, "page_touches", lambda points, ledger, known, program=None: risen[:2])
     kept = ex.used()
     assert not ex._regauge({}, None)
     assert np.allclose(ex.used(), kept) and ex.page_record["touches"] == ["old"]
@@ -1674,7 +1922,7 @@ def test_a_curved_pages_holds_far_from_the_set_up_page_leave_it(setup, monkeypat
     """2026-10-17, a full skin over a holder: every set-up's holds matched the print's far band, 12-13 mm across the
     curve (and 6 mm along it) from the overhead and wrist locate's page, sure of it (margins 0.09-0.15), and moved
     the page onto it; the near band put the print within 1.5 mm of the set-up's page across the curve. On a curved
-    page a shift past HOLD_SHIFT_CURVED_M (12 mm since 2026-10-20: 9 before, the reviewers' 12 for the owner's 18)
+    page a shift past HOLD_SHIFT_CURVED_M (12 mm since 2026-10-20: 9 before, the reviewers' 12 against a proposed 18)
     leaves the set-up's page unless its holds agree; one within it (and any on a flat page under HOLD_SHIFT_MAX_M,
     30 mm) still moves the page."""
     ex = setup.ex
@@ -1700,7 +1948,7 @@ def test_a_curved_pages_holds_far_from_the_set_up_page_leave_it(setup, monkeypat
 
 
 def test_a_curved_pages_holds_past_the_limit_that_agree_move_it_and_its_check_holds_confirm_it(setup, monkeypatch):
-    """2026-10-20, the owner's forearm (its second set-up of the day's second run): four holds put the
+    """2026-10-20, a forearm (its second set-up of the day's second run): four holds put the
     tool +5.2 -11.7 mm off the print, 1.0 / 0.1 mm apart, three by 3-5 markers, and the check holds read the same
     within 1.8 mm; refused past 9 mm, the tracker moved strokes 12 mm on one marker and the page was set up again.
     Past the shipped limit (12 mm) they move it, the check holds to confirm it; under it with nothing to confirm. Past
@@ -1774,7 +2022,7 @@ def test_a_page_no_check_holds_confirmed_is_never_carried_past_its_set_up(setup,
     """2026-10-20 review: a page its holds moved past HOLD_SHIFT_CURVED_M was placed before its check holds ran, so a
     draw that inked was refused on it and the next draw, its holds reading under three prints, took it as the last
     page they placed (_placed_moved) with nothing to confirm. Unconfirmed, a draw's page (inking or a rehearsal: both
-    are set up again once, then go on, since the owner's 2026-10-20 rule: adapt, never refuse) is not placed, does not
+    are set up again once, then go on, since the 2026-10-20 rule: adapt, never refuse) is not placed, does not
     seed the next set-up's holds, is not kept by a mid-draw set-up nor retained by a resume; a confirmed one is placed
     as before."""
     ex, node = setup.ex, setup.node
@@ -1890,12 +2138,13 @@ def test_a_holds_print_is_read_behind_its_step_on_what_the_reading_held_and_in_p
 
     ex = setup.ex
     ex.stack = {**ex.stack, "page": {**ex.stack["page"], "locate": {"holds": True}}}   # not the shared STACK's
-    gate, seen = threading.Event(), []
+    gate, seen = threading.Event(), {}
 
     def hold_tip(colors, frames, meta, tip_cam, cam_from_page, page, tile, surface=None, markers=None, every=None):
         gate.wait(5.0)
-        seen.append((surface, cam_from_page, every))
-        return {"tip_m": [0.001 * len(seen), 0.0, 0.010], "margin": 1.0, "markers": 3, "accepted": True}
+        k = 0 if every else 1          # both reads run once the gate opens, in either order: each is named by its frames
+        seen[k] = (surface, cam_from_page, every)
+        return {"tip_m": [0.001 * (k + 1), 0.0, 0.010], "margin": 1.0, "markers": 3, "accepted": True}
     monkeypatch.setattr(ins, "print_artwork", lambda pattern_id: "tile")
     monkeypatch.setattr(ins, "hold_tip", hold_tip)
     monkeypatch.setattr(curved, "load_turn", lambda arm: np.array([0.0, 0.0, np.pi / 2]))
@@ -1945,7 +2194,7 @@ def test_a_holds_markers_go_to_the_wrist_pane_at_its_own_frames_stamp(setup, mon
     assert [(m["id"], m["fit"]) for m in hold["markers"]] == [(3, False), (8, True)] and read["print"]["ids"] == [8]
 
 
-LOWER = {"role": "wrist_lower", "frame": "right/realsense_lower_color_optical_frame", "serial": "222",
+LOWER = {"role": "wrist_1", "frame": "right/realsense_lower_color_optical_frame", "serial": "222",
          "cal": {"tip_cam_m": [0.0, -0.01, 0.15]}}
 
 
@@ -2035,17 +2284,17 @@ def test_the_further_cameras_frames_are_taken_through_the_preview_and_kept_apart
     ex.run_dir = tmp_path / "run"
     monkeypatch.setattr(gauge, "CALIB", tmp_path)
     (tmp_path / "wrist-gauge-right.json").write_text(json.dumps({"tip_cam_m": [0.0, 0.0, 0.15]}))
-    monkeypatch.setattr(track, "views", lambda ex_, roles, cal: [LOWER] if roles == ["wrist_lower"] else [])
+    monkeypatch.setattr(track, "views", lambda ex_, roles, cal: [LOWER] if roles == ["wrist_1"] else [])
     frame = np.zeros((4, 4, 3), np.uint8)
     lower = SimpleNamespace(serial="222", raw_depth=[np.zeros((4, 4), np.uint16)], depth_metadata={"m": 1},
                             grab_both=lambda n, fresh=False: ([frame] * n, []))
     ex._cam = SimpleNamespace(preview=SimpleNamespace(cameras=[lower]))
     assert ex._further_frames("gauge-2", np.zeros(7), 3) == []          # page.locate.cameras unset: none
-    ex.stack = {**ex.stack, "page": {**ex.stack["page"], "locate": {"cameras": ["wrist_lower"]}}}
+    ex.stack = {**ex.stack, "page": {**ex.stack["page"], "locate": {"cameras": ["wrist_1"]}}}
     ((view, cam, (colors, depths, meta)),) = ex._further_frames("gauge-2", np.zeros(7), 3)
     ex._settle()
     assert view is LOWER and cam is lower and len(colors) == 3 and meta == {"m": 1}
-    assert (ex.run_dir / "touches" / "wrist_lower" / "gauge-2.npz").exists()
+    assert (ex.run_dir / "touches" / "wrist_1" / "gauge-2.npz").exists()
     assert not list((ex.run_dir / "touches").glob("gauge-*.npz"))   # not where the seed reads the session camera's
     ex._cam.preview.cameras = []                                    # the preview not open yet
     assert ex._further_frames("gauge-3", np.zeros(7), 3) == []
@@ -2076,6 +2325,27 @@ def test_a_further_cameras_heights_join_a_holds_only_when_they_agree_with_the_se
         assert other["used"] is used and other["camera"] == "the lower camera" and len(other["heights_m"]) == 3
         assert len(read.heights_m) == (6 if used else 3)
         assert read.point_base[2] == pytest.approx(-np.median(read.heights_m))
+
+
+def test_a_hold_whose_frames_all_miss_the_pen_reads_at_its_fitted_place_once_the_setup_has_seen_it(monkeypatch):
+    """A clean cartridge's clear nozzle: every frame of a hold misses it. Once a hold of this setup saw the pen in its
+    place, such a hold is read at the pen's fitted place (measure fitted_pen) and says so (GaugeRead.pen_seen); a
+    setup's first hold, or one after only such holds, reads nothing, so a pen missing or moved off its axis does not."""
+    from tatbot_session import gauge
+
+    monkeypatch.setattr(gauge, "measure", lambda d, c, meta, cal, curved=False, fitted_pen=False:
+                        SimpleNamespace(h=float(d)) if fitted_pen else None)
+    monkeypatch.setattr(gauge, "height", lambda f, cal: f.h)
+    for reads, read_back in (([], False), ([{"touch": 0}], True), ([{"touch": 0, "pen_seen": False}], False)):
+        ex = SimpleNamespace(stack={"page": {}}, _wrist_frames=lambda *a, **k: ([None] * 3, [0.0100, 0.0101, 0.0102], {}),
+                             _gauge_limit=lambda: 0.0005, _further_frames=lambda *a, **k: [], wrist_on=lambda: False,
+                             page_record={"gauge": reads})
+        sensor = gauge.WristGauge(ex)
+        sensor.cal = {}
+        read = sensor.gauge(np.zeros(7), np.eye(4), np.eye(4), curved=False, count=3, name="gauge-1")
+        assert (read is not None) is read_back
+        if read is not None:
+            assert read.pen_seen is False and read.heights_m == pytest.approx([0.0100, 0.0101, 0.0102])
 
 
 def test_a_holds_cameras_are_grabbed_and_measured_at_once(monkeypatch):
@@ -2122,8 +2392,8 @@ def test_each_locate_view_is_read_by_the_further_cameras_too(setup, monkeypatch)
     monkeypatch.setattr(ex, "_further_frames", lambda name, q, count, every=False: asked.append(
         (name, count)) or [(LOWER, lower, ([np.zeros((4, 4, 3), np.uint8)], [], {}))])
     page, record = ex.wrist_locate(np.eye(4), cfg)
-    assert [(f["view"], f["camera"], f["fit"]) for f in record["further"]] == [(0, "wrist_lower", fit),
-                                                                              (1, "wrist_lower", fit)]
+    assert [(f["view"], f["camera"], f["fit"]) for f in record["further"]] == [(0, "wrist_1", fit),
+                                                                              (1, "wrist_1", fit)]
     assert record["wrist"]["poses"] == 2 and record["wrist"]["tx_m"] == pytest.approx(0.002)
     assert [v["fit"] for v in record["views"]] == [None, None] and asked[0] == (None, 5)   # none written: no name
 
@@ -2180,7 +2450,7 @@ def _locate_fakes(ex, monkeypatch, answer):
     monkeypatch.setattr(ins, "aim", aim)
     monkeypatch.setattr(ex, "wrist_camera", lambda serial: cam)
     monkeypatch.setitem(sys.modules, "tatbot_cli", SimpleNamespace(ros_depth=SimpleNamespace(
-        observe=lambda io: None, retain=lambda *a: (None, {"reason": "none"}, None))))
+        observe=lambda io: None, retain=lambda *a, **k: (None, {"reason": "none"}, None))))
     monkeypatch.setattr(ex, "lowest_over_page", lambda traj, page=None: 1.0)
     monkeypatch.setattr(ex, "move", lambda make, phase, what, ledger=None: None)
     monkeypatch.setattr(ex, "_view_read", lambda *a: (frames[0][0], None, "no marker of the print read"))
@@ -2280,7 +2550,7 @@ def test_the_over_centre_view_and_the_ready_move_share_a_heading_and_branch(tmp_
     searched, search = [], ex_mod.ready.pen_heading
     monkeypatch.setattr(ex_mod.ready, "pen_heading", lambda *a, **k: searched.append(1) or search(*a, **k))
     heading, seed = ex._ready_for(page, "p")
-    assert len(searched) == 1 and np.allclose(seed[:6], ins.REST[:6])
+    assert len(searched) == 1 and np.allclose(seed[:6], REST[:6])
     view = ins.over_centre(kin, functools.partial(ex_mod.ready.solve_ik, iterations=100), page, (0.0, 0.0),
                            ex.io.measured(), heading, frame=ins.camera_frame("right"), clearance_m=0.015,
                            height_m=0.050, seed=seed)
@@ -2294,7 +2564,7 @@ def test_the_over_centre_view_and_the_ready_move_share_a_heading_and_branch(tmp_
     ex._located_heading = None
     heading, seed = ex._ready_for(page, "p")
     assert len(searched) == 1 and np.allclose(heading, turned) and np.allclose(seed[:6], 0.1)
-    assert ex._located_heading is None and ex._ready_for(page, "another print")[1][0] == pytest.approx(ins.REST[0])
+    assert ex._located_heading is None and ex._ready_for(page, "another print")[1][0] == pytest.approx(REST[0])
 
 
 def _turned(deg: float) -> np.ndarray:
@@ -2356,7 +2626,7 @@ def test_the_locate_moves_to_its_views_at_the_pen_up_joint_speed_under_the_caps(
 @pytest.mark.parametrize("top_down", [True, False])
 def test_the_locate_looks_down_on_the_page_near_the_pen_down_pose_before_any_oblique_view(setup, monkeypatch, top_down):
     """2026-10-21: views 35-40 deg off from 0.18-0.22 m saw a forearm print's 12 mm markers 20-35 px and squashed and
-    read none (the owner keeps the print facing up). Each view is sought first straight down (inspect.top_down: the
+    read none (the print is kept facing up). Each view is sought first straight down (inspect.top_down: the
     page levelled, within 10 deg of the base's z from 0.19 m), and only when none is reached obliquely as before."""
     from tatbot_session import inspect as ins
 
@@ -2575,7 +2845,6 @@ def test_a_page_takes_one_ready_branch_whatever_the_arm_held_before(tmp_path):
     pytest.importorskip("pinocchio")
     from tatbot_description import robot_description
     from tatbot_motion.clik import Kinematics
-    from tatbot_session import inspect as ins
 
     kin = Kinematics(robot_description(arms=("right",)), "right")
     page = np.eye(4)
@@ -2596,7 +2865,7 @@ def test_a_page_takes_one_ready_branch_whatever_the_arm_held_before(tmp_path):
         return {"q": ex_mod.ready.solve_ik_seeded(kin, target, ex._ready_seed()).tolist(), "heading": heading.tolist()}
 
     first = ready_pose(locate, 0.0)
-    again = [ready_pose(ins.REST.copy(), 0.0)] + [ready_pose(s, dz, first) for s in (locate, ins.REST.copy())
+    again = [ready_pose(REST.copy(), 0.0)] + [ready_pose(s, dz, first) for s in (locate, REST.copy())
                                                   for dz in (-0.004, 0.004)]
     for pose in again:
         np.testing.assert_allclose(pose["heading"], first["heading"], atol=1e-9)
@@ -2650,9 +2919,8 @@ def test_a_resumed_page_goes_back_to_its_recorded_ready_pose(tmp_path, monkeypat
     ex.go_ready()
     recorded = ex.page_record["ready"]
     assert np.allclose(recorded["q"], ex.io.q) and np.allclose(recorded["heading"], np.eye(4))
-    from tatbot_session import inspect as ins
-    assert np.allclose(seeds[0][:6], ins.REST[:6])          # the first ready move solves from rest, not the view
-    ex.io.q = ins.REST.copy()                                 # landed for a cartridge swap
+    assert np.allclose(seeds[0][:6], REST[:6])          # the first ready move solves from rest, not the view
+    ex.io.q = REST.copy()                                 # landed for a cartridge swap
     seeds.clear()
     ex.go_ready()
     assert np.allclose(seeds[0][:6], recorded["q"][:6])      # the resume solves from the page's recorded pose
@@ -2663,10 +2931,17 @@ def test_a_resumed_page_goes_back_to_its_recorded_ready_pose(tmp_path, monkeypat
 
 class ConstantField:
     """A known residual, the same over the page: the newest of `samples` (t, u, r); what the tracker's filter
-    (page_filter.PageFilter) gives the executor: predict, snapshot, corrected, samples."""
+    (page_filter.PageFilter) gives the executor: predict, snapshot, corrected, samples, jump and sheet (`held_m`
+    and `moved`: a jump one reading shows and no second has agreed with, and the sheet's move since setup)."""
 
-    def __init__(self, samples=()):
-        self.samples = list(samples)
+    def __init__(self, samples=(), held=(0.0, -np.inf), moved=None):
+        self.samples, self.held, self.moved = list(samples), held, np.eye(3) if moved is None else moved
+
+    def jump(self, after=-np.inf):
+        return self.held[0] if self.held[1] > after else 0.0
+
+    def sheet(self):
+        return self.moved
 
     def predict(self, points, follow=None):
         p = np.atleast_2d(np.asarray(points, float))
@@ -2674,7 +2949,7 @@ class ConstantField:
         return np.tile(r, (len(p), 1)), np.ones(len(p))
 
     def snapshot(self, follow=None):
-        return ConstantField(self.samples)
+        return ConstantField(self.samples, self.held, self.moved)
 
     def corrected(self, op):
         pts = np.asarray(op["points_m"], float)
@@ -2723,14 +2998,28 @@ class StubTracker:
 
     def at_hover(self, name, op_id, plan_xy):
         """The hover's verdict from `verdicts` (default 'added'), its residual (if any in `residuals`) set as the
-        field's."""
+        field's; a reading taken leaves no jump held, as the filter's does."""
         self.hovers.append((name, op_id, np.asarray(plan_xy, float)))
         if self.residuals:
             self.field.samples = [(time.monotonic(), np.zeros(2), np.asarray(self.residuals.pop(0), float))]
-        return self.verdicts.pop(0) if self.verdicts else "added"
+        verdict = self.verdicts.pop(0) if self.verdicts else "added"
+        if verdict in ("added", "moved"):
+            self.field.held = (0.0, -np.inf)
+        return verdict
 
     def close(self):
         pass
+
+    def drain(self, wait=False):
+        """The readings in flight (none here)."""
+
+    def followed(self):
+        """track.Tracker.followed: the readings in the arm base before the page followed the filter's sheet dropped."""
+        self.follows = getattr(self, "follows", 0) + 1
+
+    def retracked(self, sheet_m, sheet_rad):
+        """track.Tracker.retracked: the filter's sheet started again within the carry's error."""
+        self.retracks = [*getattr(self, "retracks", []), (sheet_m, sheet_rad)]
 
 
 def test_stencil_tracking_moves_each_stroke_by_the_field_and_a_chain_keeps_one_snapshot(setup):
@@ -2773,6 +3062,70 @@ def test_a_sheet_that_moves_under_a_stroke_stops_it_and_it_goes_on_from_its_arc(
     assert np.allclose(moved, [-0.009, 0.0])                             # the rest drawn on the moved sheet
     ex.stack["page"]["track"]["stop_m"] = 0.0
     assert ex._moved_under(LINE, 0.005) is None                         # 0: never
+
+
+def test_a_reading_far_off_the_print_stops_the_stroke_before_a_second_agrees_and_an_old_one_does_not(setup):
+    """A fixture shoved 30 mm while a stroke drew (sim2 xarm-mount-shove, 2026-11-12): the first reading of it was held
+    for a second to agree, which came when the stroke had ended, 4 s and a whole stroke later on the old place. A
+    held reading that puts the print past page.track.stop_m stops the stroke at once; the same held reading, still
+    unconfirmed, does not stop the goal that goes on from its arc."""
+    import copy
+
+    ex, io = setup.ex, setup.io
+    ex.stack = copy.deepcopy(ex.stack)
+    ex.stack["page"].setdefault("track", {})["stop_m"] = 0.005
+    ex.tracker = stub = StubTracker([0.001, 0.0])
+
+    def far():
+        stub.field.held = (0.030, time.monotonic())
+    io.at_tick[3] = far
+    assert draw_strokes(ex, {"ops": [LINE]}, setup.ledger, touch=False) == "complete"
+    rows = setup.ledger.rows()
+    assert [r["event"] for r in rows] == ["sent", "aborted", "sent", "done"]
+    assert rows[1]["reason"].startswith("the sheet moved: a reading puts the print 30.0 mm from where s0000 draws")
+    assert setup.lifts == [MOTION["touch"]["lift_m"]]
+    assert np.allclose(setup.calls[1]["points"], setup.calls[0]["points"])   # no second agreed: the correction stands
+
+
+def test_a_move_two_wrist_readings_agree_on_moves_the_page_and_the_hover_is_measured_again(setup, monkeypatch):
+    """The same shove, confirmed at the hover's second view: the page in use follows the filter's sheet at once, its
+    skin with it, with no overhead reading, and the hover is measured again over the stroke's start on it."""
+    ex, io = setup.ex, setup.io
+    monkeypatch.setattr(ex, "workspace", lambda: {"tool": "x"})
+    ex.tracker = StubTracker([0.0, 0.0])
+    _hovering(ex)
+    ex.stack["page"]["track"]["stop_m"] = 0.005
+    ex.tracker.verdicts = ["held", "moved"]
+    ex.tracker.field.moved = np.array([[1.0, 0.0, 0.020], [0.0, 1.0, -0.004], [0.0, 0.0, 1.0]])
+    io.script = [("ok", 1, {}, None)] * 3 + [("ok", 10, {}, UP)]
+    assert draw_strokes(ex, {"ops": [LINE]}, setup.ledger, touch=False) == "complete"
+    assert [h[0] for h in ex.tracker.hovers] == ["s0000-hover", "s0000-hover2", "s0000-rehover"]
+    pages = [row for row in setup.ledger.rows() if row.get("event") == "page"]
+    assert len(pages) == 1 and len(pages[0]["page"]["followed"]) == 1
+    used = ex.used()   # the slide the page followed, seen in its own frame
+    assert np.allclose((np.linalg.inv(used) @ ex.slid @ used)[:3, 3], [0.020, -0.004, 0.0])
+    assert any("the wrist's readings agree the sheet move +20.0 -4.0 mm" in text for _, _, text in setup.node.events)
+    assert ex.tracker.follows == 1
+
+
+def test_a_held_reading_is_looked_at_again_from_the_second_view_first(setup, monkeypatch):
+    """A stroke stopped on a held reading lifts to a hover that has a jump to confirm: it looks from the second view at
+    once (a hover over the stroke's start would read the same place again), and a move confirmed there moves the page
+    before the start is measured, on the page where it now stands."""
+    ex, io = setup.ex, setup.io
+    monkeypatch.setattr(ex, "workspace", lambda: {"tool": "x"})
+    ex.tracker = StubTracker([0.0, 0.0])
+    _hovering(ex)
+    ex.stack["page"]["track"]["stop_m"] = 0.005
+    ex.tracker.field.held = (0.030, time.monotonic())
+    ex.tracker.verdicts = ["moved"]
+    ex.tracker.field.moved = np.array([[1.0, 0.0, 0.030], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    far = {**LINE, "points_m": [[0.01, 0.0], [0.03, 0.0]]}
+    io.script = [("ok", 1, {}, None)] * 2 + [("ok", 10, {}, UP)]
+    assert draw_strokes(ex, {"ops": [far]}, setup.ledger, touch=False) == "complete"
+    assert [h[0] for h in ex.tracker.hovers] == ["s0000-hover2", "s0000-rehover"]
+    assert np.allclose(ex.tracker.hovers[0][2], [0.005, 0.0]) and np.allclose(ex.tracker.hovers[1][2], [0.01, 0.0])
+    assert sum(row.get("event") == "page" for row in setup.ledger.rows()) == 1
 
 
 def test_a_preplan_whose_field_moved_is_planned_again(setup):
@@ -2974,7 +3327,7 @@ def test_a_stop_in_a_strokes_last_half_millimetre_lifts_and_measures_its_continu
         riding, monkeypatch, stop):
     """A stroke stopped within resume_reapproach_m of its end is drawn (done), and with a continuation next it neither
     lifted nor was the continuation measured: after an e-stop continue joined it pen-down where the needle stood, and
-    after a snag trip's withdraw it went straight back down from 10 mm (the 2026-10-20 review; the self-portrait has six
+    after a snag trip's withdraw it went straight back down from 10 mm (the 2026-10-20 review; that design has six
     continuations, a quarter of its length). Now it lifts, and the continuation's hover measures the skin first; it is
     planned with the newest field, that hover's reading in it, not its chain's."""
     ex, io = riding.ex, riding.io
@@ -3017,7 +3370,7 @@ def _ended_off(ex, monkeypatch):
 def test_strokes_that_ended_off_the_plan_never_pause_and_only_far_ends_set_the_page_up_again(setup, monkeypatch):
     """2026-10-20: a forearm drifting 0.5 mm/min ended two strokes 2.1 and 1.6 mm off one way, the run paused for a
     decision and the person held still 13 min. Ends past off_plan_m are said and the field follows them, no pause;
-    three past OFF_SETUP's 6 mm one way (3 mm until the owner doubled every stop, 2026-10-20) set the page up again,
+    three past OFF_SETUP's 6 mm one way (3 mm until every stop was doubled, 2026-10-20) set the page up again,
     the pen lifted, and the stroke is measured on it."""
     ex, io, node = setup.ex, setup.io, setup.node
     first, again, pages = _ended_off(ex, monkeypatch)
@@ -3048,7 +3401,7 @@ def test_strokes_that_ended_off_the_plan_move_nothing_without_correction(setup, 
 def test_a_stroke_the_offset_carries_past_the_clear_area_sets_the_page_up_again_never_pausing(setup, monkeypatch):
     """2026-10-16: a misplaced page drew 10 mm left on a faint print. A stroke that the strokes' consistent offset
     would carry onto the stencil's border past OFF_CLEAR_M sets the page up again, whatever the tracking corrects, a
-    second time too: no pause (owner, 2026-10-20: no keys for decisions)."""
+    second time too: no pause (2026-10-20: no keys for decisions)."""
     ex, node = setup.ex, setup.node
     first, _, pages = _ended_off(ex, monkeypatch)
     first.correcting = False
@@ -3125,7 +3478,7 @@ def test_a_hover_that_finds_no_print_with_the_markers_hidden_clears_the_view_fir
     monkeypatch.setattr(ex, "clear_view", lambda ledger=None: (done.append("clear view"),
                                                                move is not None and _read(node, 101, 104, **move)))
     monkeypatch.setattr(ex, "go_ready", lambda ledger=None: done.append("ready"))
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": done.append("set up"))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: done.append("set up"))
     first.verdicts = [None, "added"]                                     # the second view, then the hover again
     assert ex._unread_hover({"ops": [LINE]}, LINE, np.zeros(2), 0.0, setup.ledger) == ("added", True)
     assert done == order and [h[0] for h in first.hovers] == ["s0000-hover2", "s0000-rehover"]
@@ -3329,6 +3682,38 @@ def test_a_resume_keeps_its_page_only_where_the_overhead_still_sees_the_sheet(se
     assert "the overhead sees the sheet 20.0 mm, 0.0 deg from where it was set up" in node.events[-1][2]
 
 
+def test_a_static_sheet_keeps_the_named_runs_page_without_the_overhead(setup, tmp_path):
+    """page.static_run (2026-11-10): the chicano TATBOT's black inked the bef888 print past the overhead's
+    reading (1 marker of 17) and a fresh set-up through the ink stood 2.8 mm, 0.6 deg off the black's page. A fixed
+    sheet keeps the page the named run measured, whatever cartridge did, with no overhead confirming it; another
+    print's page, or a run that placed none, is refused."""
+    import copy
+
+    ex, node = setup.ex, setup.node
+    ex.stack = copy.deepcopy(STACK)
+    ex.stack["page"].update(source="stencil", pattern_id="stencil-a", static_run="black")
+    black = tmp_path / "ros-draw" / "black"
+    black.mkdir(parents=True)
+    located = np.eye(4)
+    located[0, 3] = 0.0068
+    page = {"pattern_id": "stencil-a", "camera_at_setup": located.tolist(), "correction": np.eye(4).tolist(),
+            "locate": {"overhead": np.eye(4).tolist()}, "holds": {"used": True}}
+    (black / "ledger.jsonl").write_text(json.dumps({"arm": ex.arm, "event": "page", "workspace": {"tool": "3rl"},
+                                                    "page": page}) + "\n")
+    ex.run_dir = tmp_path / "ros-draw" / "red"
+    ex.run_dir.mkdir()
+    kept = ex._static_page()
+    assert kept["camera_at_setup"] == page["camera_at_setup"]
+    node.camera = None                                                    # the overhead reads no print
+    assert ex.restore_page(kept) and np.allclose(ex.camera, located)
+    ex.stack["page"]["pattern_id"] = "stencil-b"
+    with pytest.raises(RuntimeError, match="placed no page of stencil-b"):
+        ex._static_page()
+    ex.stack["page"]["static_run"] = "missing"
+    with pytest.raises(RuntimeError, match="no ledger"):
+        ex._static_page()
+
+
 def test_a_resume_clears_the_view_for_a_sheet_the_arm_hides_and_keeps_the_holds_placed_page(setup, monkeypatch):
     """2026-10-06: the arm stopped over the print, the overhead saw no fresh pose, and the page set up again without
     readable holds landed 7.7 mm from the first half on an unmoved sheet."""
@@ -3416,6 +3801,43 @@ def _curved_executor(setup, monkeypatch, check=False):
     return ex, program, skin
 
 
+def _raster(side_m):
+    """A drawing that fills a side_m square: rows 5 mm apart, a point every millimetre (coverage weighs points)."""
+    xs = np.arange(-side_m / 2, side_m / 2 + 1e-9, 0.001)
+    return {"ops": [{"op": "stroke", "id": f"s{k}", "points_m": np.c_[xs, np.full(len(xs), y)].tolist()}
+                    for k, y in enumerate(np.arange(-side_m / 2, side_m / 2 + 1e-9, 0.005))]}
+
+
+def test_a_curved_pages_holds_that_read_nothing_get_replacement_holds_after_the_last(setup, monkeypatch):
+    """A hold that reads nothing at its three places leaves the drawing past page.surface.reach_m: after the last
+    hold, replacements (curved.refill) are held until the holds that read cover it, the arm lifting only after the
+    last of them; without a program, or with every hold read, none are."""
+    from tatbot_session import curved
+
+    ex, _, _ = _curved_executor(setup, monkeypatch)
+    program = _raster(0.075)
+    ex.stack["page"]["clear_m"] = [0.090, 0.134]
+    layout = curved.layout(program, [0.090, 0.134], reach_m=0.020)
+    lost = layout[int(np.argmin(np.linalg.norm(layout - [0.0125, 0.0125], axis=1)))]
+    asked, lifted = [], []
+
+    def gauge_point(i, xy, paper, above, heading, ledger=None):
+        asked.append(np.asarray(xy, float))
+        if np.allclose(xy, lost):
+            return []
+        ex.page_record["touches"].append({"xy": list(xy)})
+        return [np.r_[xy, 0.0]]
+    monkeypatch.setattr(ex, "_gauge_point", gauge_point)
+    monkeypatch.setattr(ex, "lift", lambda name, ledger=None: lifted.append(len(asked)))
+    for given, more in ((None, 0), (program, 1)):
+        asked.clear(), lifted.clear()
+        ex.page_record["touches"] = []
+        contacts = ex.page_touches(layout, program=given)
+        assert len(asked) - len(layout) >= more and lifted == [len(asked)] and len(contacts) == len(asked) - 1
+    assert curved.coverage(program, [t["xy"] for t in ex.page_record["touches"]], 0.020) <= 0.020
+    assert any("replacement hold" in text for _, _, text in setup.node.events)
+
+
 def test_a_curved_page_fits_the_holds_skin_and_plans_on_it(setup, monkeypatch):
     ex, program, skin = _curved_executor(setup, monkeypatch)
     assert ex._on_surface() == {}                                        # nothing fitted yet: the plane's calls
@@ -3426,7 +3848,7 @@ def test_a_curved_page_fits_the_holds_skin_and_plans_on_it(setup, monkeypatch):
     assert not surface.flat and np.allclose(surface.base, ex.used())
     assert ex.page_record["surface"]["report"]["holds"] == 5
     assert ex.run_dir is None or (ex.run_dir / "surface.npz").exists()
-    assert any(text.startswith("surface: a degree-4 field") for _, _, text in setup.node.events)
+    assert any(text.startswith("surface: a field (stiffness") for _, _, text in setup.node.events)
     ex.io.q = np.array([0.0, 0.0, 0.005, 0, 0, 0, 0])                     # FakeKin: the tip at q[:3], over the crest
     assert ex._height() == pytest.approx(0.005, abs=1e-4)
     page = {"camera_at_setup": np.eye(4).tolist(), "correction": np.eye(4).tolist(),
@@ -3525,6 +3947,7 @@ def test_a_curved_pages_holds_stand_at_the_gauges_own_height(setup, monkeypatch)
     ex, program, skin = _curved_executor(setup, monkeypatch)
     ex.stack["page"]["height"] = {"gauge": "use"}
     ex.prior_correction, ex.page_record["touches"], ex._patches = np.eye(4), [], {}   # no skin: square to the page
+    monkeypatch.setattr(ex, "HOLD_NEAR_M", 0.0)                                      # nor a reading (_skin_near)
     cal = Path(setup.ex.repo) / "cal.json"
     cal.write_text(json.dumps({"measured_with": "x"}))
     monkeypatch.setattr(gauge, "calibration_path", lambda arm: cal)
@@ -3793,7 +4216,7 @@ def test_a_check_off_the_field_measures_again_and_raises_the_pen_inking_or_rehea
         rises[mode] = surface["rise_m"]
     assert rises["ride"] == pytest.approx(rises["hover"])                # a rehearsal rises as the ink does
     said = [text for _, _, text in setup.node.events if text.startswith("surface check: the skin between the holds read")]
-    assert "the pen goes on 1.2" in said[-1]
+    assert f"the pen goes on {rises['hover'] * 1e3:.2f} mm higher" in said[-1]
     surface = run("ride", dict.fromkeys((102, 103, 104, 105), 0.0025))   # the skin rose 2.5 mm after two checks
     assert surface["rise_m"] >= 0.0024 and max(surface["fresh_m"]) > 0.0009 and "still past" in setup.node.events[-1][2]
     assert ex.pen.height_m == pytest.approx(0.006 + surface["rise_m"])
@@ -3893,15 +4316,19 @@ def test_a_first_curved_hold_stands_over_the_skin_the_over_centre_views_depth_pu
     assert first_hold(0.004, count=40) == pytest.approx(0.010)  # too few points: the markers' (none here)
 
 
-def _gauged(setup, monkeypatch, heights, check=False, fresh=False, patches=True):
+def _gauged(setup, monkeypatch, heights, check=False, fresh=False, patches=True, near=False, skin_at=None):
     """A curved executor (_curved_executor) whose wrist gauge reads `heights(i, xy, hover, frame)`: a hold's pooled
     group heights (m), or None for nothing read; every hold it makes is kept as (i, xy, hover, frame) in the list it
     returns, and every lift as ("lift", what). `fresh`: no hold read yet, the next is the setup's first. `patches`
-    False: the holds see no skin about them, so no first hold's skin places the holds after it (_hold_start)."""
+    False: the holds see no skin about them, so no first hold's skin places the holds after it (_hold_start). `near`
+    False: no reading places the holds after it either (_skin_near), the seeds after it alone. `skin_at(xy)`: the
+    skin's height a reading puts its point at (m over the page), else the forearm's."""
     from tatbot_session import config, gauge
 
     ex, program, skin = _curved_executor(setup, monkeypatch, check=check)
     ex.stack["page"]["height"] = {"gauge": "use"}
+    if not near:
+        monkeypatch.setattr(ex, "HOLD_NEAR_M", 0.0)
     if not patches:
         ex._patches.clear()
     ex.prior_correction, ex.page_record["touches"], ex._hold_low = np.eye(4), [], 0.0
@@ -3918,7 +4345,8 @@ def _gauged(setup, monkeypatch, heights, check=False, fresh=False, patches=True)
         g = heights(i, xy, hover, frame)
         if g is None:
             return None
-        read = {"touch": i, "xy": list(xy), "point": [*xy, float(skin(np.asarray(xy))[0])], "tcp": np.eye(4).tolist(),
+        z = float(skin(np.asarray(xy))[0]) if skin_at is None else skin_at(xy)
+        read = {"touch": i, "xy": list(xy), "point": [*xy, z], "tcp": np.eye(4).tolist(),
                 "q": [0.0] * 7, "height_m": float(np.median(g)), "heights_m": list(g), "spread_m": float(np.ptp(g))}
         ex.page_record["gauge"].append(read)
         return read
@@ -4106,6 +4534,47 @@ def test_the_holds_after_a_firm_first_start_over_its_skin_where_its_patch_surrou
                       "tip": np.array([0.0, 0.0, 0.0485])}]
     ex._gauge_point(3, far, {"known": False, "level": 0.0}, 0.010, np.eye(4))
     assert [m[2] for m in made if m[0] == 3][0] == pytest.approx(0.010 + 0.003 + 0.0015 + ex.HOLD_SKIN_M)
+
+
+def test_a_later_curved_hold_starts_over_the_skin_the_nearest_firm_reading_put_a_grid_step_from_it(setup,
+                                                                                                    monkeypatch):
+    """bef888 (2026-10-25): the far column 9 mm under the rest stood ~20 mm by the stand every row. Over the nearest
+    firm reading's skin within HOLD_NEAR_M the next row reads at once; past it, or by two groups, the stand as before."""
+    skin, groups = {0.0: 0.0, 0.025: -0.009}, {5: 2}                              # m over the prior page, by x
+
+    def heights(i, xy, hover, frame):
+        return [hover - skin[round(float(xy[0]), 3)]] * groups.get(i, 5)
+    ex, _, made = _gauged(setup, monkeypatch, heights, fresh=True, patches=False, near=True,
+                          skin_at=lambda xy: skin[round(float(xy[0]), 3)])
+    for i, xy in enumerate(([0.0, 0.0], [0.025, 0.0], [0.0, 0.022], [0.025, 0.022])):
+        assert ex._gauge_point(i, xy, {"known": False, "level": 0.0}, 0.010, np.eye(4))
+    over = [(m[0], round(m[2] - skin[round(m[1][0], 3)], 6)) for m in made if isinstance(m[0], int)]
+    assert over == [(0, 0.010), (1, 0.0195), (1, 0.0145), (1, 0.010), (2, 0.0105), (3, 0.0105)]   # the stand: 0.024
+    assert any("touch 3: starts over the skin touch 1 read 22.0 mm from it, -9.0 mm over the page" in text
+               for _, _, text in setup.node.events)
+    for i, xy in ((4, [0.025, 0.06]), (5, [0.0, 0.06]), (6, [0.0, 0.08])):   # 38 mm from all; two groups; 20 mm from 5
+        made.clear()
+        low = ex._hold_low
+        ex._gauge_point(i, xy, {"known": False, "level": 0.0}, 0.010, np.eye(4))
+        assert i == 5 or made[0][2] == pytest.approx(0.010 - low + ex.HOLD_STEP_M)
+
+
+def test_a_later_curved_hold_starts_over_a_reading_before_the_hold_the_pen_stands_at_when_one_is_near(setup,
+                                                                                                      monkeypatch):
+    """The hop to a hold is planned ahead as the hold before it arrives, before it reads: a later hold starts over the
+    nearest firm reading taken before that hold when one lies within HOLD_NEAR_M, so the planned hop holds; that
+    hold's own reading only when none does (each hold after the first, here)."""
+    ex, _, made = _gauged(setup, monkeypatch, lambda i, xy, hover, frame: [hover] * 5, fresh=True, patches=False,
+                          near=True, skin_at=lambda xy: 0.0)
+    for i, xy in enumerate(([0.0, 0.0], [0.025, 0.0], [0.025, 0.022], [0.004, 0.022])):
+        ex._hop_from = (i - 1, np.zeros(3)) if i else None                    # the pen at the hold before (_hold_travel)
+        assert ex._gauge_point(i, xy, {"known": False, "level": 0.0}, 0.010, np.eye(4))
+    texts = [text for _, _, text in setup.node.events]
+    assert any("touch 1: starts over the skin touch 0 read 25.0 mm" in t for t in texts)        # none older: its own
+    assert any("touch 2: starts over the skin touch 1 read 22.0 mm" in t for t in texts)
+    assert any("touch 3: starts over the skin touch 0 read 22.4 mm" in t for t in texts)        # not touch 2's, 21.0
+    ex._hop_from = None                                                                       # lifted off: any reading
+    assert ex._skin_near(np.eye(4), [0.004, 0.03])[2] == 3
 
 
 def curved_layout(program):
@@ -4437,7 +4906,7 @@ def test_a_curved_pages_hover_stop_follows_a_moved_stencil_with_the_whole_surfac
 
 def test_a_move_across_a_curved_arm_sets_the_page_up_again_rather_than_follow_on_a_guess(setup, monkeypatch):
     """3 mm across a 40 mm forearm: a slid arm and a print rolled round it read alike, and would put a stroke on its
-    flank past ambiguity_m (1 mm since the owner doubled every stop) apart; the holds measure it again."""
+    flank past ambiguity_m (1 mm since every stop was doubled) apart; the holds measure it again."""
     line = {"op": "stroke", "id": "s0000", "closed": False, "points_m": [[0.0, 0.0], [0.015, 0.0]]}
     ex, stroke, _, pages = _curved_hovering(setup, monkeypatch, [((0.003, 0.0), 0.0), ((0.003, 0.0), 0.0)], line)
     old = ex.used()
@@ -4510,7 +4979,7 @@ def _watching(setup, monkeypatch, skin_m, quick=False):
     monkeypatch.setattr(ex, "trim_target", lambda: trim[0])
     if quick:
         monkeypatch.setattr(ex_mod.curved, "skin_gap", lambda surface, skin: skin_m)
-        monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(False))
+        monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(False))
 
     def watch(steps, before=0.0):
         trim[0], ex.tracker, ex._fresh, ex._skin_off = steps * MOTION["pen"]["trim"]["step_m"], tracker, False, before
@@ -4561,8 +5030,8 @@ def test_the_skin_watch_says_what_the_ride_lifts_and_what_the_depth_keys_press(s
 def test_the_skin_under_a_curved_hover_is_read_with_the_strokes_corrected_too(setup, monkeypatch):
     """page.surface.track_correct on (no rigid watch): the hover's skin is still read against the field. On
     2026-10-18 a forearm read 4.4 mm under its field from its first hover, and its strokes went down 2-6 mm off before
-    the off-plan pause five strokes later: two hovers that read it past skin_stop_under_m (5 mm since the owner
-    doubled every stop), one way, set the page up again."""
+    the off-plan pause five strokes later: two hovers that read it past skin_stop_under_m (5 mm since every stop
+    was doubled), one way, set the page up again."""
     ex, stroke, _, pages = _curved_hovering(setup, monkeypatch, [((0.0, 0.0), -0.0055), ((0.0, 0.0), -0.0055)])
     rigid = ex.tracker
 
@@ -4801,7 +5270,7 @@ def test_a_preplan_at_another_ride_is_sent_by_the_difference_when_it_eases_in_be
     from concurrent.futures import Future
 
     ex = riding.ex
-    ex.pen, ex.resource = tatbot_motion.pen_down(RIDE, BALLPOINT), {"id": "fitted", "dip": None, "tool": {}}
+    ex.pen, ex.resource = tatbot_motion.pen_down(RIDE, PEN), {"id": "fitted", "dip": None, "tool": {}}
     ex.trims["fitted"], ex._ride = trim_mm * 1e-3, ("s0000", 0.0005 + ride_mm * 1e-3)
     pre, done = _approach_plan(LINE), Future()
     done.set_result((None, pre))
@@ -4822,7 +5291,7 @@ def test_a_preplan_made_during_a_folded_stroke_is_planned_at_that_strokes_own_pl
     """The next pre-plan starts at the running plan's end, which is at the ride that plan was made at: it is planned
     there and folded on, so a continuation joined pen-down keeps its chain's depth instead of easing back under it."""
     ex = riding.ex
-    ex.pen, ex._ride, ex._fold = tatbot_motion.pen_down(RIDE, BALLPOINT), ("s0000", 0.0016), -0.0006
+    ex.pen, ex._ride, ex._fold = tatbot_motion.pen_down(RIDE, PEN), ("s0000", 0.0016), -0.0006
     pens = []
     monkeypatch.setattr(ex, "_preplanned", lambda program, op, seed, lift, snap, hover, pen: pens.append(pen))
     monkeypatch.setattr(ex, "lift_at_end", lambda *a, **k: True)
@@ -4852,17 +5321,29 @@ def test_a_needle_strokes_trim_goes_past_skin_stop_m_only_as_far_as_the_skin_rea
     cap = -0.0025 + min(0.0, skin_mm or 0.0) * 1e-3
     assert _trims_sent(setup.ledger, setup.io.executed) == {"s0000": (pytest.approx(cap), pytest.approx(used_mm * 1e-3))}
     held = [text for kind, _, text in setup.node.events if kind == "pen_trim" and " held at " in text]
-    assert held == ([f"fitted {keys_mm:+.1f} mm held at {used_mm:+.2f} mm on s0000: the needles go no deeper than "
-                     "page.surface.rigid.skin_stop_m past its plan, " +
+    assert held == ([f"fitted {keys_mm:+.2f} mm held at {used_mm:+.2f} mm on s0000: the needles go no deeper than "
+                     "page.surface.rigid.trim_stop_m past its plan, " +
                      (f"the skin read along it {skin_mm:+.2f} mm over it at most" if skin_mm is not None
                       else "no skin read at its own hover")] if used_mm > keys_mm else [])
     assert ex.trims == {"fitted": pytest.approx(keys_mm * 1e-3)}   # the keys' own trim stays theirs
 
 
-def test_a_needle_strokes_trim_is_held_by_the_highest_skin_read_along_its_path_and_a_ballpoints_never(setup, monkeypatch):
+def test_the_trims_cap_is_trim_stop_m_where_the_stack_names_one_and_the_skin_watch_keeps_skin_stop_m(setup, monkeypatch):
+    """stack.yaml's page.surface.rigid.trim_stop_m (3 mm) is the depth keys' cap alone: keys at -4.0 over skin read on
+    the field hold at -3.0, where a stack that names none holds them at its skin_stop_m."""
+    ex, program, _, _ = _riding_hovers(setup, monkeypatch, [((0.0, 0.0), 0.0)], mode="ride")
+    _needles(setup, monkeypatch)
+    ex.stack["page"]["surface"]["rigid"] = {**ex.stack["page"]["surface"].get("rigid", {}), "trim_stop_m": 0.003}
+    ex.trims["fitted"] = -0.004
+    assert draw_strokes(ex, program, setup.ledger, touch=False) == "complete"
+    assert _trims_sent(setup.ledger, setup.io.executed) == {"s0000": (pytest.approx(-0.003), pytest.approx(-0.003))}
+    assert ex_mod.curved.config(ex.stack)["rigid"]["skin_stop_m"] == 0.0025
+
+
+def test_a_needle_strokes_trim_is_held_by_the_highest_skin_read_along_its_path_and_a_needleless_pens_never(setup, monkeypatch):
     """The cap takes the readings the stroke's ride lifts it by: a stroke whose own hover read the skin 4 mm under the
     field, but whose path passes a hover that read it on the field, goes no deeper than skin_stop_m past its plan there.
-    A pen with no needles (the ballpoint riding) takes the keys as they are."""
+    A pen with no needles (its tip out of its tube, riding) takes the keys as they are."""
     line = [{"op": "stroke", "id": "s0000", "closed": False, "points_m": [[0.0, 0.0], [0.0, 0.012]]},
             {"op": "stroke", "id": "s0001", "closed": False, "points_m": [[0.004, -0.030], [0.004, 0.005]]},
             {"op": "stroke", "id": "s0002", "closed": False, "points_m": [[0.030, 0.0], [0.030, 0.012]]}]
@@ -4874,7 +5355,7 @@ def test_a_needle_strokes_trim_is_held_by_the_highest_skin_read_along_its_path_a
     sent = _trims_sent(setup.ledger, setup.io.executed)
     assert sent["s0001"] == (pytest.approx(-0.0025), pytest.approx(-0.0025))   # 30 mm on, 4 mm from s0000's hover
     assert sent["s0002"] == (pytest.approx(-0.0065), pytest.approx(-0.004))    # its own hover only: 4 mm sunk
-    monkeypatch.setattr(ex_mod.config, "tool_datasheet", lambda repo, tool_id: BALLPOINT)
+    monkeypatch.setattr(ex_mod.config, "tool_datasheet", lambda repo, tool_id: PEN)
     ex.prepare_pen({})
     assert ex.pen.machine and ex._cap_for([0.0]) is None and ex._capped(ex._cap_for([0.0])) == pytest.approx(-0.004)
 
@@ -4895,8 +5376,8 @@ def test_a_needle_stroke_whose_own_hover_read_no_skin_takes_skin_stop_m_whatever
     assert _trims_sent(setup.ledger, setup.io.executed) == {"s0000": (pytest.approx(-0.0065), pytest.approx(-0.004)),
                                                             "s0001": (pytest.approx(-0.0025), pytest.approx(-0.0025))}
     held = [(op, text) for kind, op, text in setup.node.events if kind == "pen_trim" and " held at " in text]
-    assert held == [("s0001", "fitted -4.0 mm held at -2.50 mm on s0001: the needles go no deeper than "
-                              "page.surface.rigid.skin_stop_m past its plan, no skin read at its own hover")]
+    assert held == [("s0001", "fitted -4.00 mm held at -2.50 mm on s0001: the needles go no deeper than "
+                              "page.surface.rigid.trim_stop_m past its plan, no skin read at its own hover")]
     assert ex.trims == {"fitted": pytest.approx(-0.004)}
 
 
@@ -4909,8 +5390,8 @@ def test_keys_pressed_past_a_strokes_cap_change_nothing_on_the_arm_and_say_where
     setup.io.at_tick = {2: lambda: ex.on_key("down"), 4: lambda: ex.on_key("up")}
     assert draw_strokes(ex, program, setup.ledger, touch=False) == "complete"
     said = [text for kind, _, text in setup.node.events if kind == "pen_trim"]
-    assert said[0].startswith("fitted -2.6 mm of ±4.0, held at -2.50 mm by the skin read along the stroke: the path ")
-    assert said[1].startswith("fitted -2.5 mm of ±4.0: the path ") and setup.io.replaced == []
+    assert said[0].startswith("fitted -2.60 mm of ±4.0, held at -2.50 mm by the skin read along the stroke: the path ")
+    assert said[1].startswith("fitted -2.50 mm of ±4.0: the path ") and setup.io.replaced == []
     assert [(r["trim_m"]) for r in setup.ledger.rows() if r["event"] == "pen_trim"] == [-0.0026, -0.0025]
     ex.on_key("up")
     assert ex.trim_in_use() == pytest.approx(-0.0024)
@@ -4924,9 +5405,9 @@ def test_a_mid_draw_set_up_eases_a_trim_kept_past_skin_stop_m_back_to_it(setup, 
     ex.trims.update(fitted=-0.0038, other=-0.002)
     assert draw_strokes(ex, program, setup.ledger, touch=False) == "complete"
     assert pages == [False] and ex.trims == {"fitted": pytest.approx(-0.0025), "other": -0.002}
-    assert [(r["resource"], r["trim_m"], r["eased_from_m"]) for r in setup.ledger.rows() if r["event"] == "pen_trim"] == [
+    assert [(r["cartridge"], r["trim_m"], r["eased_from_m"]) for r in setup.ledger.rows() if r["event"] == "pen_trim"] == [
         ("fitted", -0.0025, -0.0038)]
-    assert ("pen_trim", "fitted -3.8 mm eased back to -2.5 mm: the page was set up again, and a deeper trim reaches "
+    assert ("pen_trim", "fitted -3.80 mm eased back to -2.50 mm: the page was set up again, and a deeper trim reaches "
             "only where the hovers read the skin sunk") in [(kind, text) for kind, _, text in setup.node.events]
     assert _trims_sent(setup.ledger, setup.io.executed) == {"s0000": (pytest.approx(-0.0065), pytest.approx(-0.0025))}
 
@@ -4982,7 +5463,7 @@ def test_a_rehearsal_resource_hovers_at_its_own_height_clear_of_the_needles(setu
     ex = setup.ex
     ex.motion = {**MOTION, "pen": {**MOTION["pen"], "hover": {"height_m": 0.008, "settle_s": 0.0}}}
     monkeypatch.setattr(ex_mod.config, "tool_datasheet", lambda repo, tool: SimpleNamespace(raw={"needle_reach_mm": 4.0}))
-    resource = {"id": "fitted", "tool": {"id": "lutin-ballpoint-dot"}, "pen_mode": "hover", "hover_height_m": 0.006,
+    resource = {"id": "fitted", "tool": {"id": "pen"}, "pen_mode": "hover", "hover_height_m": 0.006,
                 "dip": None, "slot": None}
     ex.prepare_resource(resource)
     assert ex.pen.mode == "hover" and ex.pen.height_m == pytest.approx(0.006) and not ex.pen.machine
@@ -5041,7 +5522,7 @@ def test_refresh_page_judges_the_sheet_by_its_markers_never_the_overhead_pose(se
     still, ex._printed = _tile_seen()
     ex.marks, ex.overhead_at, ex.clock = still, 0.0, Ticking(100.0)
     pages = []
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
     node.camera = geometry.rpy_matrix([0, 0, 0.0054], [np.radians(13.7), 0, 0])   # the plane's tilt, not a move
 
     def at_once(**move):
@@ -5062,8 +5543,30 @@ def test_refresh_page_judges_the_sheet_by_its_markers_never_the_overhead_pose(se
     assert "20.4 mm, -0.2 deg from its setup" in pages[3] and len(pages) == 4 and ex.clock.t == 100.0
 
 
+def test_a_page_the_wrist_led_is_watched_by_the_overheads_readings_since_not_the_ones_before(setup, monkeypatch):
+    """The rig, 2026-11-12: a holder pushed 19 mm under the pen, the page following the wrist's readings to 0.5 mm
+    within 15 s. The overhead's readings from before the push then stood a stroke's stop off the followed page, "held
+    122 s", and the page was re-tracked for 26 s more. After a wrist-led follow the watch judges the overhead's
+    readings since: these read the sheet a millimetre from the page, and nothing is set up."""
+    ex, node = setup.ex, setup.node
+    ex.stack = dict(STACK, page=dict(STACK["page"], source="stencil"))
+    ex.camera = ex.overhead = np.eye(4)
+    still, ex._printed = _tile_seen()
+    ex.marks, ex.overhead_at, ex.clock = still, 0.0, Ticking(100.0)
+    pages = []
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
+    _read(node, 40, 94)                       # the sheet still
+    _read(node, 95, 100, dx=0.019)            # then where the push left it
+    ex.slid = geometry.translation([0.018, 0.0, 0.0])   # the page followed the wrist's readings there
+    ex.refresh_page({"ops": [LINE]}, setup.ledger)
+    assert len(pages) == 1 and "mm off the page, held" in pages[0]   # judged by all of them: the old ones' place
+    ex._wrist_led = 94.5
+    ex.refresh_page({"ops": [LINE]}, setup.ledger)
+    assert len(pages) == 1
+
+
 def test_a_move_the_markers_read_is_waited_for_lifted_and_set_up_again_only_if_it_lasts(setup, monkeypatch):
-    """2026-10-20, the owner: breathing in must not set the page up again for the arm to move back. An 8 mm step read
+    """2026-10-20: breathing in must not set the page up again for the arm to move back. An 8 mm step read
     for 6 s waits at the stroke's top, the pen lifted and the machine off: one that stays is set up again once held
     10 s; one the person moves back is not, and the stroke goes on. Nothing waits for an operator."""
     ex, node = setup.ex, setup.node
@@ -5072,7 +5575,7 @@ def test_a_move_the_markers_read_is_waited_for_lifted_and_set_up_again_only_if_i
     still, ex._printed = _tile_seen()
     ex.marks, ex.overhead_at = still, 0.0
     pages = []
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
     for back, ended in ((None, 109.0), (103, 108.0)):           # the person moves back at 103 s, or does not
         node.marks = []
         _read(node, 40, 94)
@@ -5096,7 +5599,7 @@ def test_a_move_waited_for_with_the_print_hidden_clears_the_overheads_view_and_c
     still, ex._printed = _tile_seen()
     ex.marks, ex.overhead_at = still, 0.0
     pages, views = [], []
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
     monkeypatch.setattr(ex, "clear_view", lambda ledger=None: views.append("clear"))
     monkeypatch.setattr(ex, "go_ready", lambda ledger=None: views.append("ready"))
     for stays in (False, True):
@@ -5206,12 +5709,12 @@ def test_a_curved_follow_that_a_turned_print_would_put_under_the_skin_sets_up_wh
     """2026-10-20 review: the overhead reads a forearm slid across itself and one turned about its own axis (the print
     going round a skin whose shape stays) alike, and a follow carries the skin's shape with the page; were it a turn,
     the strokes on one flank would go under the skin. A 4.5 mm follow across a 40 mm radius would put a turned print's
-    skin 1.1 mm over strokes 12 mm out, past page.track.watch roll_m (1 mm since the owner doubled every stop): an
+    skin 1.1 mm over strokes 12 mm out, past page.track.watch roll_m (1 mm since every stop was doubled): an
     inking pen has the page set up again instead (the holds measure which); a rehearsal follows and says so; along
     the arm the two agree and it follows."""
     import copy
 
-    from tatbot_motion.surface import HeightField
+    from tatbot_motion.surface import fit_height
 
     ex, node = setup.ex, setup.node
     ex.stack = copy.deepcopy(STACK)
@@ -5220,10 +5723,11 @@ def test_a_curved_follow_that_a_turned_print_would_put_under_the_skin_sets_up_wh
     monkeypatch.setattr(ex, "workspace", lambda: {"tool": "x"})
     monkeypatch.setattr(ex, "_curved", lambda: True)
     pages = []
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
     program = {"ops": [{**LINE, "points_m": [[-0.012, 0.0], [0.012, 0.0]]}]}   # flank to flank across x
-    across = HeightField(2, (0.0, 0.0, 0.0, -0.03125, 0.0, 0.0), 0.05, (-0.03, -0.04, 0.03, 0.04))   # h = -x^2 / 2R
-    along = HeightField(2, (0.0, 0.0, 0.0, 0.0, 0.0, -0.03125), 0.05, (-0.03, -0.04, 0.03, 0.04))    # its axis along x
+    grid = np.stack(np.meshgrid(np.linspace(-0.03, 0.03, 31), np.linspace(-0.04, 0.04, 41)), -1).reshape(-1, 2)
+    across = fit_height(np.c_[grid, -12.5 * grid[:, 0] ** 2])   # h = -x^2 / 2R, R = 40 mm
+    along = fit_height(np.c_[grid, -12.5 * grid[:, 1] ** 2])    # its axis along x
     for field, mode in ((across, "press"), (across, "hover"), (along, "press")):
         ex.camera = ex.overhead = np.eye(4)
         ex.correction, ex.slid, ex.surface_field, ex._surface_chart = np.eye(4), np.eye(4), field, None
@@ -5333,7 +5837,7 @@ def test_a_risen_limb_set_up_mid_draw_starts_from_the_overheads_risen_page_never
     seen = {}
     monkeypatch.setattr(ex, "go_ready", lambda ledger=None: seen.update(ready=float(ex.used()[2, 3])))
 
-    def touches(points_xy, ledger=None, known=False):
+    def touches(points_xy, ledger=None, known=False, program=None):
         seen.update(prior=float((ex.camera @ ex.prior_correction)[2, 3]), known=known)
         return []
 
@@ -5408,7 +5912,7 @@ def test_a_curved_page_set_up_afresh_starts_on_the_overheads_page_never_the_last
         seen.update(view=ex.used(), clear=ex.surface())
         return prior, {}
 
-    def touches(points_xy, ledger=None, known=False):
+    def touches(points_xy, ledger=None, known=False, program=None):
         seen.update(prior=ex.camera @ ex.prior_correction, known=known)
         raise _LocatedError
 
@@ -5470,6 +5974,22 @@ def test_a_big_move_mid_draw_sets_the_page_up_again_where_the_overhead_places_it
     assert any(text.startswith("track: the print's markers read the sheet") and "setting the page up again" in text
                for text in texts)
     assert any("the overhead places the page, as at a first setup" in text for text in texts)
+
+
+def test_opening_a_run_never_prunes_a_person_may_be_waiting_on_it():
+    pytest.importorskip("rclpy")
+    from tatbot_session.node import SessionNode
+
+    opened = {}
+
+    def init(workflow, **kwargs):
+        opened.update(kwargs, workflow=workflow)
+        return "the run"
+
+    node = SimpleNamespace(_reload_trim=lambda: None, _run_meta=lambda arms, program: {},
+                           runlog=SimpleNamespace(init=init), runs={})
+    assert MethodType(SessionNode._open_run, node)("ros-draw", ["right"], None) == "the run"
+    assert opened["workflow"] == "ros-draw" and opened["prune_first"] is False
 
 
 def test_the_nodes_page_wait_since_a_time_takes_only_a_pose_measured_after_it():
@@ -5568,7 +6088,7 @@ def _blind(setup, monkeypatch, reads=True):
     node.page_info, node.marks = {"source": "lost", "pattern_id": "stencil-x", "measured_age_s": 300.0}, []
     seen = {}
 
-    def touches(points_xy, ledger=None, known=False):
+    def touches(points_xy, ledger=None, known=False, program=None):
         seen["prior"] = prior = ex.camera @ ex.prior_correction
         points = [(in_use @ [*xy, 0.0, 1.0])[:3] for xy in points_xy]
         for i, (xy, point) in enumerate(zip(points_xy, points, strict=True)):
@@ -5672,7 +6192,7 @@ def test_a_curved_page_placed_blind_rises_with_the_skin_its_views_read_and_its_h
         record = {"views": [{"depth": None if d is None else {"offset_m": d}} for d in depths]}
         return (prior @ np.linalg.inv(now), {**record, "wrist": wrist, "fused": wrist}) if reads else (prior, record)
 
-    def touches(points_xy, ledger=None, known=False):
+    def touches(points_xy, ledger=None, known=False, program=None):
         seen["prior"] = ex.camera @ ex.prior_correction
         raise _LocatedError
 
@@ -5703,7 +6223,7 @@ def test_on_a_page_the_wrist_placed_blind_an_unread_hover_goes_on_and_three_in_a
     monkeypatch.setattr(ex, "setup_page", lambda program, touch, ledger=None: (
         setattr(ex, "camera", np.eye(4)), setattr(ex, "correction", np.eye(4)), setattr(ex, "marks", {})))
     monkeypatch.setattr(ex, "clear_view", lambda ledger=None: node.events.append(("clear", "", "")))
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append((op_id, why)))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append((op_id, why)))
     ops = [{**LINE, "id": f"s000{k}", "points_m": [[0.0, 0.004 * k], [0.02, 0.004 * k]]} for k in range(3)]
     assert draw_strokes(ex, {"ops": ops}, setup.ledger, touch=False) == "complete"
     assert [h[0] for h in ex.tracker.hovers] == ["s0000-hover", "s0000-hover2", "s0001-hover", "s0001-hover2",
@@ -5756,7 +6276,7 @@ def test_the_holds_offset_a_set_up_carries_turns_with_the_pens_heading(setup, mo
     def go_ready(ledger=None):   # the new page's heading, 60 deg on from the last's
         ex.page_record["ready"] = {"q": [0.0] * 7, "heading": _heading(ex.camera, np.radians(-45.0)).tolist()}
 
-    def touches(points_xy, ledger=None, known=False):
+    def touches(points_xy, ledger=None, known=False, program=None):
         seen["prior"] = ex.camera @ ex.prior_correction
         raise _LocatedError
 
@@ -5781,7 +6301,7 @@ def test_a_page_the_wrist_placed_takes_its_markers_once_the_overhead_reads_them_
     ex._again, ex.workspace = True, dict
     ex.setup_page({"ops": [LINE]}, True, setup.ledger)
     pages = []
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
     ex.clock = Ticking(ex.marked_at + 40.0)
     _read(node, int(ex.marked_at) + 30, int(ex.marked_at) + 32, dx=0.009)    # two: no reference yet
     ex.refresh_page({"ops": [LINE]}, setup.ledger)
@@ -5813,7 +6333,7 @@ def test_the_overheads_readings_off_the_page_neither_enter_its_reference_nor_mov
     for read_all in (False, True):
         if read_all:                                                              # as before the filter
             monkeypatch.setattr(ex, "_marks", node.measured_marks)
-        monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+        monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
         node.marks = [(1.0, still), (2.0, other), (3.0, still)]
         ex._mark_reference(0.0)
         assert sorted(ex.marks) == sorted((7, 8, 22, 12, 15, 23) if read_all else (7, 8, 22))
@@ -5828,7 +6348,7 @@ def test_the_overheads_readings_off_the_page_neither_enter_its_reference_nor_mov
         assert len(pages) == 2 * read_all and (not read_all or "mm, " in pages[-1])
     assert "along its normal, past 4 mm" in pages[0]                      # WATCH_RISE_M
     monkeypatch.undo()
-    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="": pages.append(why))
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
     ex._mark_reference(0.0)
     for dx, n, said in ((0.055, 3, "54.8 mm"), (0.15, 4, "149.5 mm")):   # a limb's slide reads, past 50 mm too
         ex.marked_at, node.marks = 4.0, [(float(t), _tile_seen(dx=dx)[0]) for t in range(95, 100)]
@@ -5838,17 +6358,40 @@ def test_the_overheads_readings_off_the_page_neither_enter_its_reference_nor_mov
     assert len(ex._marks(0.0)) == 5
 
 
-def test_the_marker_reference_is_the_sheet_after_the_setups_last_holds(setup, monkeypatch):
-    """The overhead's markers are kept once every hold has run (a curved page's check holds in _fit_surface last): the
-    sheet as the holds placed the page on it, not as the setup began."""
+def test_the_marker_reference_is_the_sheet_the_holds_placed_the_page_on(setup, monkeypatch):
+    """The overhead's markers are kept as the holds placed the page on the sheet, not as the setup began; a sheet
+    that moves after, under a curved page's check holds (_fit_surface), reads as a move from them (2026-10-24: a mount
+    slid 65 mm there was the reference taken at the set-up's end, and its first stroke went down 65 mm off)."""
     ex, node = setup.ex, setup.node
     ex.stack = dict(STACK, page=dict(STACK["page"], source="stencil"))
     still, ex._printed = _tile_seen()
-    node.marks = [(time.monotonic() + 1.0, _tile_seen(dx=0.004)[0])]  # as the setup began
+    began = time.monotonic()
+    node.marks = [(began - 30.0, _tile_seen(dx=0.004)[0])]             # before the setup began
+    monkeypatch.setattr(ex, "_hold_page", lambda touched, prior, keep_prior=False: node.marks.extend(
+        [(time.monotonic(), still)] * 3) or touched)                    # read through the holds that place the page
     monkeypatch.setattr(ex, "_fit_surface", lambda program, ledger=None: node.marks.extend(
-        [(time.monotonic() + 2.0, still)] * 3))                          # read through the last holds
+        [(time.monotonic() + 1.0 + k, _tile_seen(dx=0.03)[0]) for k in range(3)]))   # slid under the check holds
     ex.setup_page({"ops": [LINE]}, False, setup.ledger)
     assert np.allclose(ex.marks[22], still[22]) and ex.page_record["overhead_marks"]["22"] == still[22].tolist()
+    assert began < ex.marked_at < time.monotonic()
+    assert [round(m[0], 3) for _, m in ex._timed_moves(ex.marked_at)] == [0.03] * 3   # the watch reads the slide
+
+
+def test_a_reference_up_to_the_holds_reads_a_move_after_them_that_one_at_the_end_hides(setup):
+    ex, node = setup.ex, setup.node
+    ex.stack = dict(STACK, page=dict(STACK["page"], source="stencil"))
+    ex.camera = ex.overhead = np.eye(4)
+    still, ex._printed = _tile_seen()
+    node.marks = [(float(t), still) for t in range(10, 20)] + [(float(t), _tile_seen(dx=0.03)[0]) for t in range(25, 40)]
+    ex.clock = Ticking(40.0)
+    ex._mark_reference(5.0)                                        # at the end: the moved sheet
+    assert ex._sheet_watch({"ops": [LINE]}) == (None, "") and ex.marked_at == 40.0
+    ex._mark_reference(5.0, until=20.0)
+    assert np.allclose(ex.marks[22], still[22]) and ex.marked_at == 20.0
+    verdict, why = ex._sheet_watch({"ops": [LINE]})
+    assert verdict == "fire" and why.startswith("29.") and "mm off the page, held 1" in why
+    ex._mark_reference(30.0, until=20.0)                           # no reading by then: as at the end
+    assert ex.marked_at == 40.0 and abs(ex.sheet_moved(since=30.0)[0]) < 1e-6
 
 
 def test_the_marker_reference_takes_the_markers_the_arm_hid_from_the_setups_still_readings(setup):
@@ -5899,6 +6442,114 @@ def test_a_stroke_whose_hover_saw_the_sheet_move_goes_round_its_checks_again_onc
     assert draw_strokes(ex, {"ops": [LINE]}, setup.ledger, touch=False) == "complete"
     assert calls == ["refresh", "hover", "judged", "refresh", "hover"]
     assert [r["event"] for r in setup.ledger.rows()] == ["sent", "done"]
+
+
+def _retracking(setup, monkeypatch, retrack_m=0.05):
+    """An executor tracking a stencil by its markers, kept at setup still, with page.track.retrack_m."""
+    import copy
+
+    ex = setup.ex
+    ex.tracker = StubTracker([0.0, 0.0])
+    _hovering(ex)
+    ex.stack["page"].update(source="stencil")
+    ex.stack["page"]["track"].update(mode="correct", retrack_m=retrack_m)
+    ex.camera = ex.overhead = np.eye(4)
+    still, ex._printed = _tile_seen()
+    ex.marks, ex.overhead_at, ex.marked_at, ex.page_record = still, 0.0, 0.0, copy.deepcopy(ex.page_record or {})
+    monkeypatch.setattr(ex, "lift_off", lambda what, ledger=None: None)
+    monkeypatch.setattr(ex, "clear_view", lambda ledger=None: setup.node.events.append(("test", "", "cleared")))
+    monkeypatch.setattr(ex, "workspace", lambda: {})
+    return ex
+
+
+def test_a_moved_limb_is_re_tracked_by_its_markers_with_its_skin_not_set_up_afresh(setup, monkeypatch):
+    """A forearm moved 45 mm and sank 8 mm between strokes (2026-10-24), and the set-up afresh took 2 min 27 s. Once
+    the overhead's readings of its markers agree, the page in use (its skin's field riding on it) is carried by their
+    move in its plane and along its normal; the watch starts again from them, the filter's sheet within the carry's
+    error, and a hover's reading is to confirm it."""
+    ex, node = _retracking(setup, monkeypatch), setup.node
+    old = ex.used()
+    node.marks = [(float(t), _tile_seen(dx=0.03, lift=0.006)[0]) for t in range(95, 100)]
+    ex.clock = Ticking(100.0)
+    assert ex._retrack({"ops": [LINE]}, setup.ledger, "the print's markers read the sheet moved", LINE["id"])
+    d = np.linalg.inv(old) @ ex.used()   # the rise reads ~0.7 of itself across the overhead's rays, left in
+    assert np.allclose(d[[0, 2], 3], [0.03, 0.006], atol=0.001) and abs(d[1, 3]) < 0.006
+    assert np.allclose(ex.slid, np.eye(4))
+    assert abs(ex.sheet_moved(since=95.0)[0]) < 1e-6 and ex.marked_at == ex.overhead_at == 100.0   # read from here
+    assert ex._retracked == LINE["id"] and ex.tracker.retracks == [(ex.RETRACK_SHEET_M, ex.RETRACK_SHEET_RAD)]
+    row = setup.ledger.rows()[-1]
+    assert row["event"] == "page" and row["page"]["retracked"][0]["readings"] == 5
+    assert "the page re-tracked, its skin with it: carried 30." in node.events[-1][2]
+
+
+def test_a_move_unsettled_too_far_or_off_is_set_up_afresh(setup, monkeypatch):
+    """Replayed (2026-10-24), the first five readings after a set-up's call read a limb still moving 46 mm off that
+    settled 19 mm off, and one that moved 76 mm carried 10 mm off the holds' page: an unsettled move (the view cleared
+    for it first), one past retrack_m, or retrack_m 0 sets the page up afresh."""
+    ex, node = _retracking(setup, monkeypatch), setup.node
+    node.marks = [(float(t), _tile_seen(dx=0.03 + 0.006 * (t % 2))[0]) for t in range(95, 100)]
+    ex.clock = Ticking(100.0)
+    assert not ex._retrack({"ops": [LINE]}, setup.ledger, "moved", LINE["id"])
+    assert ("test", "", "cleared") in node.events and ex.clock.t == 115.0       # WAIT_S, the view cleared at 103
+    assert node.events[-1][2] == "track: moved; the overhead reads the sheet nowhere still"
+    node.marks = [(float(t), _tile_seen(dx=0.08)[0]) for t in range(110, 115)]
+    assert not ex._retrack({"ops": [LINE]}, setup.ledger, "moved", LINE["id"])
+    assert "not re-tracked: the sheet 79." in node.events[-1][2] and "past page.track.retrack_m" in node.events[-1][2]
+    ex.stack["page"]["track"]["retrack_m"] = 0.0
+    node.marks = [(float(t), _tile_seen(dx=0.03)[0]) for t in range(110, 115)]
+    assert not ex._retrack({"ops": [LINE]}, setup.ledger, "moved", LINE["id"]) and ex._retracked is None
+
+
+def test_a_limb_the_watch_reads_sunk_is_re_tracked_between_strokes(setup, monkeypatch):
+    """The watch's rise past WATCH_RISE_M (the forearm's -8.2 mm, 2026-10-24) goes to the re-track, not the set-up."""
+    ex, node = _retracking(setup, monkeypatch), setup.node
+    monkeypatch.setattr(ex, "_new_page", lambda program, touch, ledger: pytest.fail("set up afresh"))
+    old = ex.used()
+    node.marks = [(float(t), _tile_seen(dx=0.02, lift=-0.008)[0]) for t in range(95, 100)]
+    ex.clock = Ticking(100.0)
+    ex.refresh_page({"ops": [LINE]}, setup.ledger, LINE["id"])
+    assert (np.linalg.inv(old) @ ex.used())[2, 3] == pytest.approx(-0.008, abs=0.0005)
+    assert ex._retracked == LINE["id"]
+    assert "-8.0 mm along its normal, past 4 mm; the page re-tracked" in node.events[-1][2]
+
+
+@pytest.mark.parametrize("turn_deg, carried", [(15.0, True), (25.0, False)])
+def test_a_turned_limb_is_re_tracked_up_to_its_limit(setup, monkeypatch, turn_deg, carried):
+    """A mount slid 30 mm and turned 15 deg (2026-10-24) was set up afresh at the 10 deg first set; replayed, its carry
+    stood 1.4 mm from the holds' page, as a 19.6 deg forearm's did 0.8 mm. Up to RETRACK_RAD (20 deg) it is carried."""
+    ex, node = _retracking(setup, monkeypatch), setup.node
+    node.marks = [(float(t), _tile_seen(dx=0.02, turn_deg=turn_deg)[0]) for t in range(95, 100)]
+    ex.clock = Ticking(100.0)
+    assert ex._retrack({"ops": [LINE]}, setup.ledger, "moved", LINE["id"]) == carried
+    said = node.events[-1][2]
+    assert ("the page re-tracked" in said) if carried else ("not re-tracked: the sheet turned +2" in said)
+
+
+def test_set_up_again_for_a_markers_move_re_tracks_first(setup, monkeypatch):
+    ex, made = setup.ex, []
+    monkeypatch.setattr(ex, "_new_page", lambda program, touch, ledger: made.append("afresh"))
+    monkeypatch.setattr(ex, "lift_off", lambda what, ledger=None: None)
+    monkeypatch.setattr(ex, "_retrack", lambda program, ledger, why, op_id="": True)
+    ex._reacquire({"ops": [LINE]}, setup.ledger, "moved", LINE["id"], retrack=True)
+    assert made == [] and not any("setting the page up again" in e[2] for e in setup.node.events)
+    ex._retracked = LINE["id"]
+    ex._reacquire({"ops": [LINE]}, setup.ledger, "the skin reads deeper", LINE["id"])   # not a markers' move
+    assert made == ["afresh"] and ex._retracked is None
+
+
+@pytest.mark.parametrize("verdicts, afresh", [(["added"], False), (["held", "held"], True)])
+def test_a_re_tracked_page_stands_once_a_hovers_reading_is_taken_on_it(setup, monkeypatch, verdicts, afresh):
+    ex, io, pages = setup.ex, setup.io, []
+    ex.tracker = StubTracker([0.0, 0.0])
+    _hovering(ex)
+    ex.tracker.verdicts = list(verdicts)
+    ex._retracked = LINE["id"]
+    monkeypatch.setattr(ex, "_reacquire", lambda program, ledger, why, op_id="", retrack=False: pages.append(why))
+    io.script = [("ok", 1, {}, None), ("ok", 10, {}, UP)] + ([("ok", 1, {}, None)] * afresh)
+    assert draw_strokes(ex, {"ops": [LINE]}, setup.ledger, touch=False) == "complete"
+    assert pages == (["no wrist reading of the print confirmed the re-tracked page"] if afresh else [])
+    said = any("the wrist reads the print on the re-tracked page: it stands" in e[2] for e in setup.node.events)
+    assert said != afresh and (ex._retracked is None) != afresh
 
 
 def test_a_resume_sets_a_curved_page_kept_without_markers_up_again(setup, monkeypatch):
@@ -6074,7 +6725,7 @@ def test_a_snag_held_needle_s_landing_lift_goes_on_at_half_and_in_steps_under_th
     under the guard throughout: on 538ada44c the sweep began from the standoff, where it nearly scraped (2026-10-13)."""
     ex, io = riding.ex, riding.io
     _pen_down(monkeypatch)
-    ex.camera, ex.pen = np.eye(4), tatbot_motion.pen_down(RIDE, BALLPOINT)
+    ex.camera, ex.pen = np.eye(4), tatbot_motion.pen_down(RIDE, PEN)
     io.safety.update(SNAG)
     asked = _lifts_planned_up_to(ex, monkeypatch, 0.005)
     assert ex._land_now() == (True, "landed and idle") and io.unlatches == 1
@@ -6089,7 +6740,7 @@ def test_the_land_after_a_snag_hold_withdraws_along_the_pen_under_the_guard_agai
     skin's normal unguarded."""
     ex, io = riding.ex, riding.io
     _pen_down(monkeypatch)
-    ex.camera, ex.pen, io.q = np.eye(4), tatbot_motion.pen_down(RIDE, BALLPOINT), np.array(IN_SKIN, float)
+    ex.camera, ex.pen, io.q = np.eye(4), tatbot_motion.pen_down(RIDE, PEN), np.array(IN_SKIN, float)
     io.safety.update(SNAG)
     _lifts_planned_up_to(ex, monkeypatch, 0.0)
     assert not ex._land_now()[0] and io.writes == [{"guard_mode": 3}]
@@ -6122,7 +6773,7 @@ def test_a_latch_the_driver_keeps_holds_a_landing_that_would_sweep_from_near_the
     when no lift plans; a tip LAND_HOLD_M over the skin lands, as any landing does."""
     ex, io = riding.ex, riding.io
     _pen_down(monkeypatch)
-    ex.camera, ex.pen = np.eye(4), tatbot_motion.pen_down(RIDE, BALLPOINT)
+    ex.camera, ex.pen = np.eye(4), tatbot_motion.pen_down(RIDE, PEN)
     io.q = np.array(IN_SKIN, float) if case == "snag" else np.array([0.0121, 0.0, 0.002, 0, 0, 0, 0], float)
     io.q[2] += 0.028 if case == "high" else 0.0
     io.safety.update(SNAG if case == "snag" else {"latched": 1.0, "latch_reason": 1.0})
@@ -6202,8 +6853,9 @@ def test_a_landing_beside_the_print_neither_lifts_along_its_normal_nor_holds(set
 
 def test_a_fresh_run_seeds_its_blind_search_from_the_newest_earlier_run_of_its_print(setup, monkeypatch, tmp_path):
     """2026-10-21: after a stack restart a fresh run on a 2x2 forearm piece the overhead cannot read had no page to aim
-    the wrist at and waited page.wait_s to refuse. The newest earlier run's retained page of the same print, under
-    SEED_MAX_AGE_S, seeds it; another print's, an older one, or this run's own does not."""
+    the wrist at and waited page.wait_s to refuse. The newest earlier run's placed page of the same print, under
+    SEED_MAX_AGE_S, seeds it, whatever cartridge placed it (2026-11-10: the red's 7RL after the black's 3RL, on a
+    print the black inked past the overhead's reading); another print's, an older one, or this run's own does not."""
     import copy
     import os
 
@@ -6213,12 +6865,12 @@ def test_a_fresh_run_seeds_its_blind_search_from_the_newest_earlier_run_of_its_p
     workspace = {"tool": "lutin-3rl-bugpin"}
     monkeypatch.setattr(ex, "workspace", lambda: workspace)
 
-    def run(name, pattern, age_s):
+    def run(name, pattern, age_s, placed_with=workspace):
         d = tmp_path / "ros-draw" / name
         d.mkdir(parents=True)
         page = {"id": name, "pattern_id": pattern, "camera_at_setup": np.eye(4).tolist(),
                 "correction": np.eye(4).tolist(), "holds": {"used": True}}
-        (d / "ledger.jsonl").write_text(json.dumps({"arm": "right", "event": "page", "workspace": workspace,
+        (d / "ledger.jsonl").write_text(json.dumps({"arm": "right", "event": "page", "workspace": placed_with,
                                                     "page": page}) + "\n")
         t = os.path.getmtime(d / "ledger.jsonl") - age_s
         os.utime(d / "ledger.jsonl", (t, t))
@@ -6229,7 +6881,89 @@ def test_a_fresh_run_seeds_its_blind_search_from_the_newest_earlier_run_of_its_p
     ex.run_dir = tmp_path / "ros-draw" / "this"
     ex.run_dir.mkdir()
     assert ex._seed_page()["id"] == "mid-same"
+    run("newer-other-cartridge", "stencil-a", 300, placed_with={"tool": "lutin-7rl"})
+    assert ex._seed_page()["id"] == "newer-other-cartridge"
     ex.stack["page"]["pattern_id"] = "stencil-c"
     assert ex._seed_page() is None
     ex.run_dir = None
     assert ex._seed_page() is None
+
+
+# --- a surface source's freshness (ports.SurfaceSource): the skin's rise since a plan's surface ---------------
+
+class _Skin:
+    """A surface source's surface: the page's plane, risen by `rise(point)` metres along its normal."""
+
+    def __init__(self, rise=lambda p: 0.0):
+        self.rise = rise
+
+    def lift(self, uv, offset_m=0.0):
+        uv = np.atleast_2d(np.asarray(uv, float))
+        z = np.array([self.rise(p) for p in uv]) + offset_m
+        return np.column_stack([uv, z]), np.tile([0.0, 0.0, 1.0], (len(uv), 1))
+
+
+def _on_a_source(riding, monkeypatch, fresh):
+    """The executor with a pre-plan of LINE made on a level skin, and a surface source that now reads `fresh`."""
+    import dataclasses
+    from concurrent.futures import Future
+
+    ex = riding.ex
+    ex.pen, ex.resource = tatbot_motion.pen_down(RIDE, PEN), {"id": "fitted", "dip": None, "tool": {}}
+    ex.trims["fitted"], ex._ride = 0.0, ("s0000", 0.0005)
+    pre, done = _approach_plan(LINE), Future()
+    done.set_result((None, pre))
+    ex._preplan = ("s0000", done, True, None, dataclasses.replace(ex.pen, height_m=ex.pen.height_m + 0.0005))
+    ex.surface_source, ex._planned_on = SimpleNamespace(snapshot=lambda op=None: fresh), {LINE["id"]: _Skin()}
+    monkeypatch.setattr(ex, "lift_at_end", lambda *a, **k: True)
+    planned_again = []
+    monkeypatch.setattr(ex, "plan", lambda *a, **k: planned_again.append(a) or line_traj(LINE))
+    return ex, pre, planned_again
+
+
+@pytest.mark.parametrize("rise_mm, bend_mm, sent_as_planned", [(0.0, 0.0, True), (0.4, 0.0, True), (-0.4, 0.0, True),
+                                                               (0.4, 0.2, True), (0.4, 0.8, False), (4.5, 0.0, False)])
+def test_a_preplan_on_a_surface_source_is_sent_by_its_skins_rise_since_and_planned_again_when_the_skin_changed_shape(
+        riding, monkeypatch, rise_mm, bend_mm, sent_as_planned):
+    """The simulator's tracked runs (2026-11-12): a pre-plan takes its surface while the stroke before it draws, and
+    its stroke missed a moving skin by the skin's move since. At dispatch the source's newest skin is read over the
+    stroke's points: its mean rise goes out with the pre-plan as the ride's fold does, and a skin whose shape changed
+    past page.surface.source_replan_m (0.3 mm), or risen past the trim's limit, is planned again."""
+    end = np.asarray(LINE["points_m"], float)[-1, :2]
+    fresh = _Skin(lambda p: (rise_mm + bend_mm * (float(np.linalg.norm(p - end)) < 1e-9)) * 1e-3)
+    ex, pre, planned_again = _on_a_source(riding, monkeypatch, fresh)
+    mean = (rise_mm + bend_mm / len(LINE["points_m"])) * 1e-3
+    traj, sent = ex.dispatch_plan({"ops": [LINE]}, LINE, 0.0)
+    assert (traj is pre and not planned_again) == sent_as_planned
+    if sent_as_planned:
+        k = int(np.flatnonzero(pre.phase == 5)[0])
+        assert ex._rise == pytest.approx(mean) and ex._fold == 0.0
+        assert sent.tip[k, 2] - pre.tip[k, 2] == pytest.approx(mean)       # the needles go down on the risen skin
+        assert sent.info["trim"].settled_s() <= float(pre.t[k])
+    else:
+        assert any("since the pre-plan" in t for _, _, t in riding.node.events)
+
+
+def test_a_stroke_goal_follows_its_surface_sources_skin_and_a_plan_keeps_its_surface_when_told_to(riding, monkeypatch):
+    fresh = _Skin()
+    ex, pre, _ = _on_a_source(riding, monkeypatch, fresh)
+    _, sent = ex.dispatch_plan({"ops": [LINE]}, LINE, 0.0)
+    fresh.rise = lambda p: 0.0004
+    ex._follow_surface(LINE, 0.0)
+    assert ex._rise == pytest.approx(0.0004)
+    target = ex._retarget(pre)(1.0, sent)                       # the trim's retarget eases the running goal to it
+    assert target is not None and target.info["trim"].end_m == pytest.approx(0.0004)
+    fresh.rise = lambda p: 0.00043
+    ex._follow_surface(LINE, 0.0)
+    assert ex._rise == pytest.approx(0.0004)                    # under FOLLOW_STEP_M: the estimate's own scatter
+    fresh.rise = lambda p: 0.0100
+    ex._follow_surface(LINE, 0.0)
+    assert ex._rise == pytest.approx(float(RIDE["pen"]["trim"]["limit_m"]))   # never past the trim's limit
+    for mode, rise in (("dispatch", 0.0005), ("off", None)):
+        monkeypatch.setitem(ex.stack["page"], "surface", {**(ex.stack["page"].get("surface") or {}),
+                                                          "source_follow": mode})
+        ex._rise, fresh.rise = 0.0, lambda p: 0.0005
+        ex._follow_surface(LINE, 0.0)
+        assert ex._rise == 0.0                                  # dispatch and off: a running goal is left as sent
+        got = ex._risen(LINE)
+        assert (got is None) if rise is None else np.allclose(got, rise)

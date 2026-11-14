@@ -1,13 +1,13 @@
 {
   "compiler_sha256": "d22cb7b3c94214261230f0b94b286d4bcfcb0bca3079807af89981b9bfeff912",
-  "content_sha256": "e5b402eb0cbd7d1a40ef064d50407c637b5aef4261621ea8118c718ec373943f",
+  "content_sha256": "232fd62e3d35d0a94b9792467f0effc7c89914e3602c55052cb6e461c417d06c",
   "events": [
     {
       "kind": "pen_transition",
       "state": "approach"
     },
     {
-      "allowed_tool_class": "ballpoint",
+      "allowed_tool_class": "tattoo-needle",
       "contact_envelope_m": [
         -0.0002,
         0.0002
@@ -64,7 +64,7 @@
     },
   {
     "kind": "tool_change",
-    "required_tool_class": "ballpoint",
+    "required_tool_class": "tattoo-needle",
     "transition_intent": "fixture-only explicit transition"
     },
     {

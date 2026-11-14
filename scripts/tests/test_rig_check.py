@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -55,14 +56,34 @@ transport = "dds"
 ''')
     cams = rig_check.realsense_cameras(vision.read_text())
     assert {c["name"] for c in cams} == {"test-left", "test-right"}
+    stack = tmp_path / "ros/tatbot_bringup/config/stack.yaml"
+    stack.parent.mkdir(parents=True)
+    stack.write_text("arms: [right]\n")
     exps = rig_check.expectations(tmp_path, NMAP)
-    for owner, arm in (("station", "left"), ("ros", "right")):
+    for owner, arm, part in (("station", "left", "station"), ("ros", "right", "pink drawing")):
         wrists = [u for u in exps[owner]["usb"] if u["id"] == rig_check.D405_USB_ID]
-        assert len(wrists) == 1 and wrists[0]["name"] == f"{arm} wrist D405"
+        assert len(wrists) == 1 and wrists[0]["name"] == f"{arm} wrist D405" and wrists[0]["part"] == part
     deployed = REPO / "rust/visiond/config/vision.toml"
     if deployed.is_file():
         configured = rig_check.realsense_cameras(deployed.read_text())
         assert configured and all(c["owner_role"] and c["arm"] for c in configured)
+
+
+def test_the_ros_node_must_reach_the_controller_of_the_arm_stack_yaml_draws_with(tmp_path):
+    """The drawing arm is stack.yaml's, its controller's address the profile field config/arms.json names for it."""
+    profile = json.loads((REPO / "config/profiles/tatbot.json").read_text())["driver"]
+    arms = json.loads((REPO / "config/arms.json").read_text())["arms"]
+    for arm in ("xarm", "right"):
+        for path in ("config/arms.json", "config/profiles/tatbot.json", "config/nodes.json"):
+            (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / path).write_text((REPO / path).read_text())
+        stack = tmp_path / "ros/tatbot_bringup/config/stack.yaml"
+        stack.parent.mkdir(parents=True, exist_ok=True)
+        stack.write_text(f"arms: [{arm}]\n")
+        peers = {p["name"]: p for p in rig_check.expectations(tmp_path, NMAP)["ros"]["peers"]}
+        peer = peers[f"{arm} arm controller"]
+        assert peer["address"] == profile[arms[arm]["profile_ip_field"]] and peer["part"] == "pink drawing"
+    assert rig_check._drawing_arm(REPO)["id"] == "xarm"
 
 
 def _facts(**over):
@@ -85,6 +106,18 @@ def test_a_healthy_probe_passes_and_a_restart_is_noted_not_failed():
     results = rig_check.judge("ros", exp, _facts(pings=pings, usb=usb), local_unix=1000.5)
     assert {r["status"] for r in results} == {"ok"}
     assert any("restarted 1x" in r["what"] for r in results)
+
+
+def test_host_settings_are_reported_as_found_and_never_warn():
+    exp = {"part": "pink drawing", "usb": [{"name": "xarm wrist D405", "id": "8086:0b5b", "part": "pink drawing"}] * 2,
+           "devs": [], "units": [], "user_units": [], "peers": [], "lan": None, "jumbo": False}
+    usb = [{"id": "8086:0b5b", "mbps": 5000, "power": "auto"}, {"id": "8086:0b5b", "mbps": 5000, "power": "on"}]
+    results = rig_check.judge("ros-node", exp, _facts(usb=usb, governors=["schedutil"]))
+    said = [r["what"] for r in results]
+    assert {r["status"] for r in results} == {"ok"}
+    assert any(w.endswith("cpu governor schedutil") for w in said)
+    assert "xarm wrist D405 on ros-node, USB autosuspend allowed" in said
+    assert "xarm wrist D405 on ros-node, kept awake" in said
 
 
 def test_slow_link_unsynced_clock_and_dead_peer_link_warn():

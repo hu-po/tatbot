@@ -29,6 +29,7 @@ dependencies = ["numpy", "tatbot-contracts==0.1.0"]
 
 [tool.setuptools]
 py-modules = [
+  "cartridge_fit",
   "gpu_lease",
   "ink_spec",
   "tatbot_paths",

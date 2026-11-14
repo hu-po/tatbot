@@ -8,6 +8,11 @@ import pytest
 from tatbot_session import geometry as g
 
 
+def test_other_copies_are_read_from_a_pages_support():
+    assert g.other_copies_m(json.dumps({"other_copies_m": [0.626, 0.7]})) == [0.626, 0.7]
+    assert g.other_copies_m("") == [] and g.other_copies_m("{}") == [] and g.other_copies_m("not json") == []
+
+
 def test_fit_plane_exact_and_oriented():
     pts = [[0.3, -0.2, 0.03], [0.34, -0.2, 0.031], [0.32, -0.16, 0.029]]
     n, d = g.fit_plane(pts, [0, 0, 1])
@@ -18,6 +23,23 @@ def test_fit_plane_exact_and_oriented():
     assert np.allclose(n2, -n) and math.isclose(d2, -d)
     with pytest.raises(ValueError):
         g.fit_plane(pts[:2], [0, 0, 1])
+
+
+def test_points_in_a_line_keep_the_hints_turn_about_it():
+    """2026-11-05: the holds under one stroke, 0.09 mm wide: their least-squares plane stood on its edge."""
+    held = [[0.3411, 0.0657, 0.0462], [0.3418, 0.0585, 0.0474], [0.3403, 0.0736, 0.0445], [0.3404, 0.0735, 0.0445],
+            [0.3418, 0.0583, 0.0473]]
+    hint = np.array([-0.032, -0.030, 0.999])
+    n, d = g.fit_plane(held, hint)
+    assert np.degrees(np.arccos(n @ hint / np.linalg.norm(hint))) < 15.0    # the line's own slope, no more
+    assert np.max(np.abs(np.array(held) @ n + d)) < 2e-4                    # through the points
+    along = np.array(held[2]) - np.array(held[1])
+    assert abs(n @ along) / np.linalg.norm(along) < 0.02                    # and along their line
+
+
+def test_points_at_one_place_keep_the_hint():
+    n, d = g.fit_plane([[0.3, 0.1, 0.05], [0.3001, 0.1, 0.05], [0.3, 0.1001, 0.05]], [0, 0, 1])
+    assert np.allclose(n, [0, 0, 1]) and math.isclose(d, -0.05, abs_tol=1e-9)
 
 
 def test_touched_page_takes_xy_yaw_from_camera_and_height_tilt_from_touches():
@@ -304,7 +326,7 @@ def test_the_watch_never_sets_a_persons_sway_breath_and_drift_up_again():
 
 
 def test_a_step_that_stays_fires_once_held_and_one_that_comes_back_does_not():
-    """An 8 mm step (past off_m, 7 mm since the owner doubled every stop) that stays fires once the 10 s median has
+    """An 8 mm step (past off_m, 7 mm since every stop was doubled) that stays fires once the 10 s median has
     held it 10 s (16-18 s replayed on the rig's readings); one that comes back within 8 s is pending at most; a 5 mm
     one is followed."""
     still = [(float(t), _move(0.0)) for t in range(120)]

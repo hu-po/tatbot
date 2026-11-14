@@ -6,6 +6,7 @@
 // during lifecycle transitions, serialized by the adapter. connect() may follow disconnect().
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -93,10 +94,28 @@ struct SimOptions
 // process already owns the clock.
 std::unique_ptr<Backend> make_sim_backend(const SimOptions & options);
 
+// sdk=real on a UFACTORY xArm (src/xarm_backend.cpp): the controller's address, the load on its flange (the end
+// effector and tool; a NaN mass keeps the controller's), its collision sensitivity (0-5; -1 keeps the controller's)
+// and the rate the sender thread resends the latest command at.
+struct XArmOptions
+{
+  std::string ip;
+  double payload_mass_kg = std::numeric_limits<double>::quiet_NaN();
+  std::array<double, 3> payload_com_m{};
+  int collision_sensitivity = -1;
+  double send_rate_hz = 250.0;
+};
+
+// nullptr when built without UFACTORY's SDK (TATBOT_XARM_SDK off or no fetch possible).
+std::unique_ptr<Backend> make_xarm_backend(const XArmOptions & options);
+
 struct FakeOptions
 {
   double dt = 0.0025;           // one command() advances the model by dt (the 400 Hz tick)
   double tau = 0.02;            // first-order tracking time constant
+  // A pure delay before that lag (the arm model's fake_plant: the xArm answers its command ~83 ms late); 0, the WXAI's
+  // fake, tracks each command as it comes.
+  double delay_s = 0.0;
   Vec7 start{0, 0, 0, 0, 0, 1.5707963267948966, 0};
   int zero_reads = 0;           // report an all-zero pose for this many reads (SDK start-up)
   TipFk fk;                     // with page_z: the tip may not go below page_z (base frame)
@@ -104,6 +123,7 @@ struct FakeOptions
   // > 0: the page gives like the arm and EE mount under load (~1500 N/m) instead of stopping the tip: the tip passes
   // below page_z and the joints report the external torques J^T f of f = k * depth along tcp +z.
   double page_stiffness_n_m = 0;
+  std::optional<size_t> carriage = 6;   // the arm model's carriage (Config::carriage), which J^T f leaves out
 };
 
 // First-order tracking of the position target plus the velocity feed-forward; a page plane that
@@ -138,6 +158,7 @@ private:
   FakeOptions o_;
   Feedback state_;
   Vec7 last_q_{}, last_qd_{}, velocity_offset_{};
+  std::deque<std::pair<Vec7, Vec7>> delayed_;   // the commands still in flight, oldest first
   std::string error_;
   bool idle_ = true, frozen_ = false, connected_ = false, refuse_connect_ = false;
   int reads_ = 0, commands_ = 0, connects_ = 0;

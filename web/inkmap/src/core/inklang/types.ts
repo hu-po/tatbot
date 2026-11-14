@@ -3,7 +3,7 @@ import type { Anchor } from "../anchor.ts";
 export const INTENT_SCHEMA_VERSION = 1;
 export const ATLAS_SCHEMA_VERSION = 2;
 export const RESOLUTION_SCHEMA_VERSION = 2;
-export const RESOLVER_VERSION = 1;
+export const RESOLVER_VERSION = 2;
 
 export type Laterality = "left" | "right" | "center";
 export type Level = "upper" | "lower" | "mid";

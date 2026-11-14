@@ -17,7 +17,7 @@ else that role. Two more kinds of source ride along:
   (the controller's rotor temperatures in the newest flight-log record), read from
   the newest ros-stack run's files, never from the stack's graph or its control loop.
   TEMP only: the controller process's CPU is % of one core, and on the hosts' CPU
-  axis (% of all cores) it read as more load than it is (owner, 2026-10-20).
+  axis (% of all cores) it read as more load than it is (2026-10-20).
 
 Display only: it reads /proc, the kernel's thermal zones, the GPU's NVML counters and
 those files, and touches nothing else.

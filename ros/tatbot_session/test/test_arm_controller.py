@@ -69,6 +69,30 @@ def test_stop_before_acceptance_cancels_the_late_accepted_goal(controller):
     assert accepted(r).cancels == 1
 
 
+@pytest.mark.parametrize("callback", ["on_tick", "should_stop"])
+def test_a_callback_that_raises_cancels_its_goal_before_the_error_leaves(controller, callback):
+    """A stroke's tick reads the tracker and its stop asks the charge: one that raised left the goal drawing the rest
+    of the stroke while the draw's finally switched the machine off."""
+    r, errors = controller, []
+
+    def died(*args):
+        if r.sent and r.sent[-1].done():   # once the goal runs
+            raise RuntimeError("the reader died")
+
+    def draw():
+        try:
+            r.io.execute(r.traj, **{callback: died})
+        except RuntimeError as error:
+            errors.append(str(error))
+
+    thread = Thread(target=draw)
+    thread.start()
+    handle = accepted(r)
+    thread.join(5.)
+    assert not thread.is_alive() and errors == ["the reader died"]
+    assert handle.cancels == 1
+
+
 def test_no_acceptance_fails_after_five_seconds_and_cancels_a_later_one(controller, monkeypatch):
     from test_ports import StepClock
 

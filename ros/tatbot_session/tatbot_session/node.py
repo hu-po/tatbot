@@ -112,7 +112,9 @@ class SessionNode(Node):
             self.io[arm] = io
             self.executors[arm] = drawrun.build_executor(
                 self.stack, arm, io=io, node=self, clock=self.clock, sensing=None, repo=self.repo, motion=motion,
-                machine=machine.from_stack(self.stack, arm, clock=self.clock))
+                machine=machine.from_stack(self.stack, clock=self.clock))
+        # the wrist D405s on the demo viewer between readings; any reading's camera takes them back (wrist_claim)
+        self.idle_feeds = [feed for ex in self.executors.values() if (feed := ex.idle_feed()) is not None]
         self.guard, text = drawrun.wire_guard(self.repo, self.stack, motion, self.io)
         self.get_logger().info(text)
         self.create_subscription(JointState, names.JOINT_STATES_TOPIC, self._on_joints, 20,
@@ -132,7 +134,7 @@ class SessionNode(Node):
                                f"{self.stack['page']['source']} ({self.stack['page'].get('geometry', 'stack.yaml')}) "
                                f"touch {self.stack['touch']['enabled']} "
                                f"estop {self.stack['estop']['source']} machine switch "
-                               f"{' '.join(f'{arm}={self._machine_switch(arm)}' for arm in self.stack['arms'])} "
+                               f"{(self.stack.get('machine') or {}).get('switch', 'none')} "
                                f"repo {self.repo} "
                                f"runtime record {record or 'none'}")
 
@@ -163,6 +165,7 @@ class SessionNode(Node):
         return parent_from_page, {"source": {1: "measured", 2: "lost", 3: "fixed"}.get(msg.source, str(msg.source)),
                                   "pattern_id": msg.pattern_id, "print_id": msg.print_id,
                                   "identity_verified": msg.identity_verified,
+                                  "other_copies_m": geometry.other_copies_m(msg.support_json),
                                   "stamp": msg.pose.header.stamp.sec + msg.pose.header.stamp.nanosec * 1e-9,
                                   "measured_age_s": geometry.measured_age(self.page_measured_at.get(msg.pattern_id),
                                                                  self.clock.now())}
@@ -289,16 +292,11 @@ class SessionNode(Node):
                 "tool": ws.get("tool_id"), "tcp": {"frame": ws.get("tip_frame"),
                                                    "xyz": [ws.get(f"pen_tip_offset_{a}") for a in "xyz"]},
                 "trim": self.stack["page"].get("trim", {}).get(arm, [0.0, 0.0]),
-                "machine_switch": self._machine_switch(arm),
+                "machine_switch": (self.stack.get("machine") or {}).get("switch", "none"),
                 "pattern_id": (names.fixed_pattern_id(arm) if self.stack["page"]["source"] == "fixed"
                                else self.stack["page"]["pattern_id"]),
                 "registration": registration, "registration_sha256": config.file_sha256(registration)}
         return meta
-
-    def _machine_switch(self, arm: str) -> str:
-        """The tattoo machine switch stack.yaml `machine` gives this arm: none, pi or sim."""
-        cfg = self.stack.get("machine") or {}
-        return cfg.get("switch", "none") if cfg.get("arm") == arm else "none"
 
     def _reload_trim(self) -> None:
         """Adopt page.trim from the stack.yaml the launch read (deployed since, perhaps) for this goal."""
@@ -318,7 +316,8 @@ class SessionNode(Node):
             run.update(status="running", resumed_at=self.clock.utc())
             run.event("run.resume", argv=[workflow, run_id])
         else:
-            run = rl.init(workflow, meta=self._run_meta(arms, program), attach_logging=False,
+            # stack.launch.py prunes these workflows: a person may be waiting on this start.
+            run = rl.init(workflow, meta=self._run_meta(arms, program), attach_logging=False, prune_first=False,
                           argv=["tatbot_session", workflow, *arms])
         for arm in arms:
             self.runs[arm] = run
@@ -402,11 +401,14 @@ class SessionNode(Node):
         finally:
             for ex in execs:
                 ex.end_goal()
+                ex.pipeline_trace = ex.io.pipeline_trace = None
         complete = bool(outcomes) and all(v == "complete" for v in outcomes.values())
         cancelled = goal_handle.is_cancel_requested
         result.message = "; ".join(f"{k}: {v}" for k, v in outcomes.items())
         self.event(Event.KIND_RUN_END, text=result.message)
         if "run" in opened:
+            pipeline = timing.finish_pipeline(opened.get('pipeline'), opened['run'].dir)
+            opened['run'].update(pipeline_timing=pipeline)
             timing.finish(opened['run'], opened['timing'])
             opened['run'].update(draw_timing=timing.summarize(opened['run'].dir/'run.jsonl'))
             self._close_run(opened["run"], arms, "ok" if complete else ("interrupted" if cancelled else "fail"),
@@ -432,11 +434,15 @@ class SessionNode(Node):
         else:
             program = parse_json(req.program_json)
 
-        drawrun.check_program(program, self.stack, arms)
+        if lost := drawrun.check_program(program, self.stack, arms):
+            self.get_logger().warning(lost)
         if req.run_id and req.program_json and program_sha256(program) != program_sha256(parse_json(req.program_json)):
             raise ValueError(f'run {req.run_id} drew another program: resume it with the program it started with')
         run = opened["run"] = self._open_run("ros-draw", arms, program, req.run_id)
         opened['timing'] = timing.begin(run)
+        opened['pipeline'] = (timing.start(run.dir, self.clock, attempt=opened['timing'][0],
+                                           simulated=self.stack['hardware'] == 'sim', hardware=self.stack['hardware'])
+                              if self.stack['session'].get('pipeline_timing', True) else None)
         self._log_stack_run(run)
         if not (run.dir / "program.json").exists():
             (run.dir / "program.json").write_text(json.dumps(program, indent=1) + "\n")
@@ -444,17 +450,11 @@ class SessionNode(Node):
         # (which costs the page tracker a minute or two); the run records the file it drew with.
         motion_path, motion_text = self._reload_motion(execs)
         (run.dir / "motion.yaml").write_text(motion_text)
-        from tatbot_session.research import claim_slot, validate_motion
-        from tatbot_session.runtime import current, validate_research
-
-        validate_motion(program, motion_text)
-        if program.get('research'):
-            validate_research(program, current(self.runtime_identity), json.loads((run.dir / 'meta.json').read_text()).get('runtime'))
-        claim_slot(self.runlog.log_root(self.runlog.load_config()), program, run.run_id, resume=bool(req.run_id))
         ledger = Ledger(run.dir / "ledger.jsonl", self.clock)
         log = GoalLog(run.dir / "goals.jsonl") if self.stack["session"].get("goal_log") else None
         for ex in execs:
             ex.io.goal_log = log
+            ex.pipeline_trace = ex.io.pipeline_trace = opened['pipeline']
         bag = self._start_bag(run, arms)
         try:
             total = len(program["ops"])
@@ -657,6 +657,8 @@ def main(argv=None) -> int:
         for ex in node.executors.values():
             if ex.machine is not None:
                 ex.machine.close()
+        for feed in node.idle_feeds:
+            feed.close()
         node.destroy_node()
         with contextlib.suppress(Exception):  # the SIGINT handler may have shut the context down already
             rclpy.try_shutdown()

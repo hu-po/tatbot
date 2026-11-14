@@ -153,11 +153,34 @@ def read_checkpoint_config(policy: str, config: Path | None = None) -> tuple[Pat
     return path.resolve(), json.loads(path.read_text())
 
 
+def arm_urdf(repo: Path, arm: str) -> Path:
+    """The URDF that carries the arm's chain and its cameras: its model's (config/arm-models)."""
+    import arm_model
+
+    return Path(repo) / arm_model.for_arm(arm, repo).urdf
+
+
+def wrist_joint(repo: Path, arm: str) -> str:
+    """The joint a wrist camera rides behind, on fixed joints alone: the arm's last revolute (the WXAI's joint_5,
+    before link_6; the xArm's joint7, before link7)."""
+    import arm_model
+
+    model = arm_model.for_arm(arm, repo)
+    return f'{arm_registry.load(repo)[arm].urdf_prefix}/{model.joints[model.arm[-1]].name}'
+
+
 def fixed_chain(repo: Path, parent: str, child: str, *, urdf: Path | None = None) -> tuple:
-    """Parent-to-child fixed joint origins, in order, without a physics engine."""
+    """Parent-to-child fixed joint origins, in order, without a physics engine; in the URDF of the arm whose prefix
+    `parent` carries, unless `urdf` names one."""
     import xml.etree.ElementTree as ET
 
-    tree = ET.parse(urdf or repo / 'urdf/tatbot.urdf').getroot()
+    if urdf is None:
+        prefix = parent.split('/', 1)[0]
+        arm = next((a for a, physical in arm_registry.load(repo).items() if physical.urdf_prefix == prefix), None)
+        if arm is None:
+            raise ValueError(f'{parent}: no configured arm has the prefix {prefix!r}')
+        urdf = arm_urdf(repo, arm)
+    tree = ET.parse(urdf).getroot()
     parents = {joint.find('child').get('link'): joint for joint in tree.findall('joint')}
     result, seen = [], set()
     cursor = child
@@ -178,7 +201,7 @@ def registry_path(repo: Path) -> Path:
     """The deployment's vision registry, or the checked-in example when the
     checkout has none: vision.toml is the rig's profile and stays out of the
     public export, whose copy of this module must still resolve the stock
-    right-arm camera.
+    wrist cameras.
     The example names no real device (serial 000000000000), so nothing that
     opens a camera can mistake it for the rig."""
     path = repo / "rust/visiond/config/vision.toml"
@@ -265,19 +288,20 @@ def optical_frames(repo: Path, *, arm: str, stream: str, config: Path | None = N
     key = 'optical_frame' if stream == 'color' else 'depth_optical_frame'
     if len(selected) > 1 and any(key not in c for c in selected):
         raise ValueError(f'{arm}: multiple cameras require explicit optical frames')
-    tree = ET.parse(urdf or repo / 'urdf/tatbot.urdf').getroot()
+    tree = ET.parse(urdf or arm_urdf(repo, arm)).getroot()
     parents = {j.find('child').get('link'): j for j in tree.findall('joint')}
+    wrist = wrist_joint(repo, arm)
     result = {}
     for camera in selected:
         frame = camera.get(key, f'{prefix}/realsense_{stream}_optical_frame')
         if not isinstance(frame, str) or not frame.startswith(f'{prefix}/'):
             raise ValueError(f'{camera["role"]}: optical frame belongs to another arm')
         cursor, seen = frame, set()
-        while cursor != f'{prefix}/link_6':
-            if cursor in seen or cursor not in parents or parents[cursor].get('type') != 'fixed':
-                raise ValueError(f'{frame}: stock camera must have a fixed chain to its own arm link_6')
+        while cursor in parents and parents[cursor].get('type') == 'fixed' and cursor not in seen:
             seen.add(cursor)
             cursor = parents[cursor].find('parent').get('link')
+        if cursor not in parents or parents[cursor].get('name') != wrist:
+            raise ValueError(f'{frame}: a wrist camera must ride its own arm behind {wrist}, on fixed joints alone')
         result[camera['role']] = frame
     if len(set(result.values())) != len(result):
         raise ValueError(f'{arm}: wrist cameras require distinct optical frames')

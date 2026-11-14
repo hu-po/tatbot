@@ -1,6 +1,10 @@
 """Acquired DBV3 pens bound to physical resources (tatbot-inks/3): which tool and ink draws each pen, and for a
-dipping tool its palette cap, the dip settings coming from the tool's datasheet. A one-pen drawing needs no file: the
-arm's fitted tool draws it (ros_fitted)."""
+dipping tool its palette cap, the dip settings coming from the tool's datasheet. A resource may set its own
+`dip: {mm_per_dip, dwell_s, above_ink_m, drain_s, drain_above_rim_m}` (any of them) over the datasheet's, so a trial
+can draw at another dip cadence, dwell, depth in the cap or drain (tatbot lab); the rest of the dip stays the
+datasheet's. A one-pen drawing needs
+no file: the arm's fitted tool draws it (ros_fitted). `wipe_before: true` on a resource has the operator wipe the print
+while the arm is landed for its exchange, which lets a lighter ink follow a darker one (tatbot_ink.order)."""
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +13,7 @@ import re
 from pathlib import Path
 
 import yaml
-from tatbot_contracts.dip import resolve_dip, resolve_rinse
+from tatbot_contracts.dip import DRAIN, resolve_dip, resolve_rinse, validate_dip
 from tatbot_contracts.ros_fitted import fitted_resource
 from tatbot_contracts.ros_program import riding_keys
 
@@ -90,9 +94,50 @@ def _ink(tool, ink_id, catalog):
     return rgb
 
 
+DIP_OVERRIDES = ('mm_per_dip', 'dwell_s', 'above_ink_m', *DRAIN)
+
+
+def _dip(block, ink_id, override):
+    """The datasheet's dip for the ink, with the resource's own values over it. A drain is resolved with the
+    datasheet's: a resource that sets drain_s alone drains at the datasheet's height, and drain_s 0 does not drain."""
+    if override is None:
+        return resolve_dip(block, ink_id)
+    if not isinstance(override, dict) or not override or set(override) - set(DIP_OVERRIDES):
+        raise ValueError(f'a resource dip sets any of {", ".join(DIP_OVERRIDES)} over the datasheet')
+    if not isinstance(block, dict):
+        return resolve_dip(block, ink_id)   # its refusal: the tool declares no dip
+    drain = {key: value for key, value in override.items() if key in DRAIN}
+    settings = {**resolve_dip({**block, **drain}, ink_id), **{k: v for k, v in override.items() if k not in DRAIN}}
+    if 'drain_above_rim_m' in drain and 'drain_s' not in settings:
+        raise ValueError('a resource dip sets drain_above_rim_m for a dip that drains: give it a drain_s')
+    validate_dip(settings)
+    return settings
+
+
+def _card(block) -> dict:
+    """{'dip_card': 'borrowed'} for a cartridge whose datasheet says its dip values are another's (`dip.card.status:
+    borrowed`), until its characterization card is read (docs/lab.md); nothing for one that says `read` or nothing."""
+    card = block.get('card')
+    if card is None:
+        return {}
+    if not isinstance(card, dict) or card.get('status') not in ('borrowed', 'read'):
+        raise ValueError('the datasheet dip: card.status is borrowed or read')
+    return {'dip_card': 'borrowed'} if card['status'] == 'borrowed' else {}
+
+
+def borrowed_dips(resources, *, allowed: bool = False) -> None:
+    """CompileError when a resource dips on values its cartridge borrowed from another, unless `allowed`."""
+    borrowed = sorted({row['tool']['id'] for row in resources if row.get('dip_card') == 'borrowed'})
+    if borrowed and not allowed:
+        raise CompileError(
+            f"{', '.join(borrowed)}: the dip values (depth in the cap, dwell, mm_per_dip) are another cartridge's, not "
+            "measured on this one. Read its dip card first (tatbot lab propose STUDY --dip-card CARTRIDGE, docs/lab.md) "
+            "and record it in the datasheet's dip.card, or draw on the borrowed values with --allow-borrowed-dip")
+
+
 def _resource(value, repo, arm, substrate, catalog, palette):
     base = {'id', 'tool_id', 'ink_id', 'pen_mode', 'activation'}
-    if not isinstance(value, dict) or not base <= value.keys() or value.keys() - base - {'slot'}:
+    if not isinstance(value, dict) or not base <= value.keys() or value.keys() - base - {'slot', 'dip', 'wipe_before'}:
         raise CompileError('resource requires id, tool_id, ink_id, pen_mode and activation')
     identity = _id(value['id'], 'resource id')
     tool = load_tool(repo, arm, _id(value['tool_id'], 'tool id'), allow_dip=True)
@@ -111,32 +156,45 @@ def _resource(value, repo, arm, substrate, catalog, palette):
               'activation': None, 'slot': None, 'dip': None}
     if tool['ink'] == 'dip' and value.get('slot') is not None:   # without a cap it draws dry: no dips
         slot = _id(value.get('slot'), 'canonical palette slot')
-        if slot not in (palette.get('slots') or {}) or palette['slots'][slot].get('arm') != arm:
-            raise CompileError('dipping requires a canonical palette slot assigned to the drawing arm')
+        if slot not in (palette.get('slots') or {}):
+            raise CompileError('dipping requires a canonical palette slot')
         try:
-            result.update(slot=slot, dip=resolve_dip(block, ink_id))
+            result.update(slot=slot, dip=_dip(block, ink_id, value.get('dip')), **_card(block))
         except ValueError as error:
             raise CompileError(f'{identity}: {error}') from error
-    elif value.get('slot') is not None:
-        raise CompileError('cartridge/none supplies cannot declare dips or palette slots')
+    elif value.get('slot') is not None or value.get('dip') is not None:
+        raise CompileError('cartridge/none supplies and dry resources cannot declare dips or palette slots')
     activation = value['activation']
     rinse = isinstance(activation, dict) and activation.get('method') == 'rinse'
-    result['activation'] = (_rinse(activation, result, block, arm, catalog, palette) if rinse
+    result['activation'] = (_rinse(activation, result, block, catalog, palette) if rinse
                             else _activation(activation, tool))
+    result.update(_wipe_before(value, rinse))
     return result
 
 
-def _rinse(value, resource, block, arm, catalog, palette):
+def _wipe_before(value, rinse) -> dict:
+    """{'wipe_before': True} for a resource the operator wipes the print before: recorded only where asked, so a
+    program without it keeps its digest."""
+    asked = value.get('wipe_before', False)
+    if type(asked) is not bool:
+        raise CompileError('wipe_before is true or false: the operator wipes the print before this resource draws')
+    if asked and rinse:
+        raise CompileError(f"{value['id']}: a wipe needs the arm landed, and a rinse does not land: wipe_before goes "
+                           'with a manual exchange')
+    return {'wipe_before': True} if asked else {}
+
+
+def _rinse(value, resource, block, catalog, palette):
     """A dipping cartridge that takes this ink by rinsing the last one out in a cap of water: no landing."""
     if resource['dip'] is None or set(value) != {'method', 'slot', 'ink_id'}:
         raise CompileError(f"{resource['id']}: a rinse names its cap and liquid (slot, ink_id), for a resource that dips")
     slot = _id(value['slot'], 'rinse slot')
-    if slot not in (palette.get('slots') or {}) or palette['slots'][slot].get('arm') != arm or slot == resource['slot']:
-        raise CompileError(f"{resource['id']}: a rinse needs a palette slot of the drawing arm other than its ink's")
+    if slot not in (palette.get('slots') or {}) or slot == resource['slot']:
+        raise CompileError(f"{resource['id']}: a rinse needs a palette slot other than its ink's")
     ink_id = _id(value['ink_id'], 'rinse liquid')
     _ink(resource['tool'], ink_id, catalog)
-    try:
-        return resolve_rinse(block, slot, ink_id)
+    try:   # the new ink's first dip holds a multiple of the dwell this resource dips with
+        return resolve_rinse({**block, 'dwell_s': resource['dip']['dwell_s']}, slot, ink_id)
     except ValueError as error:
         raise CompileError(f"{resource['id']}: {error}") from error
 
@@ -173,8 +231,8 @@ def bind_resources(path, design, *, repo, arm, speed_m_s):
     _number(speed_m_s, 'working speed')
     substrate = _id(document['substrate'], 'substrate')
     substrates = yaml.safe_load((repo / 'config/substrates.yaml').read_text())
-    if substrate not in substrates or not isinstance(substrates[substrate], dict) or substrates[substrate].get('shape', 'pad') != 'pad':
-        raise CompileError('ROS plane drawing requires a configured flat substrate')
+    if not isinstance(substrates.get(substrate), dict):
+        raise CompileError(f'substrate {substrate} is not configured in config/substrates.yaml')
     catalog = yaml.safe_load((repo / 'config/inks.yaml').read_text())
     palette = yaml.safe_load((repo / 'config/palette.yaml').read_text())
     if not isinstance(document['resources'], list) or not 1 <= len(document['resources']) <= 100:

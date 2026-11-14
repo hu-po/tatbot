@@ -1910,17 +1910,8 @@ mod tests {
     use super::*;
     use crate::{
         DistortionModel, Intrinsics, PixelFormat, Pose, StreamProfile,
-        calibration::CALIBRATION_SCHEMA_VERSION,
+        calibration::CALIBRATION_SCHEMA_VERSION, config::tests::deployed,
     };
-    /// False, with a note, in a checkout that omits the deployment's `rel`
-    /// (the public export): a test that reads it returns early there.
-    fn deployed(rel: &str) -> bool {
-        let present = Path::new(env!("CARGO_MANIFEST_DIR")).join(rel).is_file();
-        if !present {
-            eprintln!("skipped: needs the deployment's {rel}");
-        }
-        present
-    }
 
     #[test]
     fn detection_log_retains_planar_candidates_and_reads_legacy_rows() {
@@ -2175,10 +2166,10 @@ mod tests {
         assert!(detectable_frame(&color));
         let mut detector = AprilTagDetector::new(&inventory, None, Some(1.)).unwrap();
         let found = detector.detect_frame(&camera, &color).unwrap();
-        // The fixture's tag 5 is in no inventory target.
+        // The fixture's tags 3 and 5: the WXAI wrist's and the xArm cube's.
         assert_eq!(
             found.iter().map(|d| d.tag_id).collect::<BTreeSet<_>>(),
-            BTreeSet::from([3])
+            BTreeSet::from([3, 5])
         );
 
         let depth = crate::FrameRecord {
@@ -2275,9 +2266,13 @@ mod tests {
                     bytes: canvas.into_raw(),
                 },
             };
-            // Tag 5 (36h11) and the scene's 16h5 tag are in no inventory
-            // target, so no detector keeps them.
-            for (target, ids) in [(None, vec![3]), (Some("wrist"), vec![3])] {
+            // Tag 5 (36h11) is the xArm cube's, and the scene's 16h5 tag is in
+            // no inventory target: each detector keeps its own target's tags.
+            for (target, ids) in [
+                (None, vec![3, 5]),
+                (Some("wrist"), vec![3]),
+                (Some("xarm_cube"), vec![5]),
+            ] {
                 let mut detector = AprilTagDetector::new(&inventory, target, Some(1.)).unwrap();
                 let found = detector.detect_frame(&camera, &frame).unwrap();
                 assert_eq!(
@@ -2292,7 +2287,8 @@ mod tests {
                         let expected = expected[(index + 4 - turns) % 4];
                         assert!((actual[0] - expected[0]).hypot(actual[1] - expected[1]) < 2.);
                     }
-                    let edge = 0.047;
+                    let target = if detection.tag_id == 3 { "wrist" } else { "xarm_cube" };
+                    let edge = inventory.target(target).unwrap().edge_m;
                     assert!(!detection.camera_from_tag_candidates.is_empty());
                     assert!(
                         detection.camera_from_tag_candidates.iter().any(|pose| (pose

@@ -65,13 +65,6 @@ runlog::_reap_tee() {
   done
 }
 
-runlog::event() {   # runlog::event <kind> [key=value ...]
-  [ "$RUNLOG_ACTIVE" = 1 ] || return 0
-  local kind="$1"; shift
-  "$RUNLOG_PYTHON" "$RUNLOG_PY" event --dir "$RUN_DIR" --kind "$kind" "$@" \
-    >/dev/null 2>&1 || true
-}
-
 runlog::artifact() {   # runlog::artifact <path>
   [ "$RUNLOG_ACTIVE" = 1 ] || return 0
   "$RUNLOG_PYTHON" "$RUNLOG_PY" artifact --dir "$RUN_DIR" --path "$1" \

@@ -1,6 +1,6 @@
 /** Intrinsic chart-clipped tattoo preview on the canonical SOMA surface. */
 import * as THREE from "three";
-import { faceVertexIndices, frameAt, type Anchor, type Frame } from "./anchor.ts";
+import { faceVertexIndices, frameAt, posedFrame, type Anchor, type Frame } from "./anchor.ts";
 import { unfoldSurfacePatch, type Vec2 } from "./unfold.ts";
 
 export interface DecalParams {
@@ -21,6 +21,8 @@ export interface DecalQuality {
   /** Largest duplicate-edge disagreement relative to the design diagonal. */
   seamRatio: number;
   chartFaceCount: number;
+  /** How far the skin turns across the design along its more curved axis, degrees. */
+  wrapDeg: number;
 }
 
 interface ClipVertex {
@@ -48,6 +50,41 @@ export const CHART_CLOSURE_LIMIT = 0.5;
  * hemisphere, which no flat stencil represents.
  */
 export const CHART_AREA_BUDGET = 0.2;
+
+/** Bins along a design's axis when its wrap is measured: enough to follow a limb, few enough to skip mesh noise. */
+const WRAP_BINS = 16;
+
+/** How far the skin turns across a design along `axis`, in degrees: the rest surface's normal in the plane of that
+ *  chart axis, unwrapped bin to bin, so a design past a half turn reads past 180 and mesh noise does not add up. */
+function wrapDegrees(
+  rest: THREE.BufferGeometry,
+  faces: { face: number; polygon: ClipVertex[] }[],
+  frame: Frame,
+  axis: 0 | 1,
+  half: number,
+): number {
+  const bins = Array.from({ length: WRAP_BINS }, () => new THREE.Vector3());
+  const triangle = new THREE.Triangle();
+  const position = rest.getAttribute("position");
+  const corner = (face: number, index: number) => (rest.index ? rest.index.getX(3 * face + index) : 3 * face + index);
+  for (const { face, polygon } of faces) {
+    triangle.setFromAttributeAndIndices(position, corner(face, 0), corner(face, 1), corner(face, 2));
+    const centre = polygon.reduce((sum, vertex) => sum + vertex.chart[axis], 0) / polygon.length;
+    const at = Math.floor((centre / (2 * half) + 0.5) * WRAP_BINS);
+    bins[Math.min(WRAP_BINS - 1, Math.max(0, at))]
+      .addScaledVector(triangle.getNormal(new THREE.Vector3()), polygonArea(polygon.map((vertex) => vertex.chart)));
+  }
+  const direction = axis === 0 ? frame.u : frame.v;
+  const filled = bins.flatMap((sum, index) => (sum.lengthSq() > 0 ? [{ index, sum }] : []));
+  if (filled.length < 2) return 0;
+  const bearing = (sum: THREE.Vector3) => Math.atan2(sum.dot(direction), sum.dot(frame.n));
+  let turned = 0;
+  for (let index = 1; index < filled.length; index++) {
+    const step = bearing(filled[index].sum) - bearing(filled[index - 1].sum);
+    turned += Math.atan2(Math.sin(step), Math.cos(step));
+  }
+  return THREE.MathUtils.radToDeg(Math.abs(turned)) * WRAP_BINS / (filled.at(-1)!.index - filled[0].index);
+}
 
 export class SurfaceChartError extends Error {
   readonly code: "surface_chart_overlap" | "anchor_outside_domain";
@@ -206,9 +243,10 @@ export function buildDecal(
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
+  const restFrame = frameAt(rest, params.anchor, params.rotationRad);
   return {
     geometry,
-    frame: frameAt(posed, params.anchor, params.rotationRad),
+    frame: posedFrame(rest, posed, params.anchor, params.rotationRad),
     chartFaces: clipped.map((entry) => entry.face),
     quality: {
       requestedAreaMm2: requestedArea * 1_000_000,
@@ -219,6 +257,7 @@ export function buildDecal(
         ? Math.max(largest, entry.mismatchM / diagonal)
         : largest, 0),
       chartFaceCount: clipped.length,
+      wrapDeg: Math.max(wrapDegrees(rest, clipped, restFrame, 0, width / 2), wrapDegrees(rest, clipped, restFrame, 1, height / 2)),
     },
   };
 }

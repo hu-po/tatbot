@@ -27,10 +27,23 @@ if [ ! -x "$root/venv/bin/python" ]; then
   echo "inkgen_serve: creating $root/venv (first run; torch is large)"
   uv venv -q -p 3.12 "$root/venv"
 fi
-"$root/venv/bin/python" -c "import diffusers, gradio, torch" 2>/dev/null || \
-  uv pip install -q -p "$root/venv/bin/python" -r "$repo/web/inkgen/requirements.txt.local"
+provider=$(python3 - "$repo/web/inkgen" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from configuration import default_provider, server_environment
+print(default_provider(server_environment(sys.argv[1] + "/app.py")))
+PY
+)
+requirements="$repo/web/inkgen/requirements.txt.api"
+imports="import gradio, httpx, PIL"
+if [[ "$provider" == inkgen ]]; then
+  requirements="$repo/web/inkgen/requirements.txt.local"
+  imports="import diffusers, gradio, torch"
+fi
+"$root/venv/bin/python" -c "$imports" 2>/dev/null || \
+  uv pip install -q -p "$root/venv/bin/python" -r "$requirements"
 [ -n "$model" ] && export INKGEN_MODEL="$model"
 [ "$cpu" = 1 ] && export CUDA_VISIBLE_DEVICES=""
 export INKGEN_HOST="$host" INKGEN_PORT="$port"
-echo "inkgen_serve: http://$host:$port/  (health: /api/health)  model=${INKGEN_MODEL:-Tongyi-MAI/Z-Image-Turbo}"
+echo "inkgen_serve: http://$host:$port/  (health: /api/health)  provider=$provider"
 cd "$repo/web/inkgen" && exec "$root/venv/bin/python" app.py

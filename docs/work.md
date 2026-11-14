@@ -22,11 +22,11 @@ work durable the moment it exists.
 | `tatbot work land` | Rebase onto `origin/main`, push the branch, run the land gate (lint, disclosure, the export gate, complexity of the changed files: what the author answers for, under a minute), push `HEAD:main`, retrying the rebase while `main` moves, then delete the agent branch. `--full-check` runs the whole fast tier first; `--no-check` skips the gate. `--done` removes the worktree. After the push, the repository's post-land hook (`internal/ci/post-land`, when present) receives the landed range as `base head`. A failing hook fails the land's exit code; the push is never undone. Landing does not deploy CI infrastructure or enable its scheduling. |
 | `tatbot work park "why"` | Leave the work unlanded on purpose: a `wip:` commit if the tree is dirty, pushed, with the reason recorded. |
 | `tatbot work sweep` | What the hourly timer runs: autosave dirty worktrees idle for 30 min as `wip:` commits, push anything unpushed, move edits left in the mirror for a day into a pushed `mirror-rescue` worktree, fast-forward the mirror, prune worktrees that are clean and landed and idle for a day, delete remote agent branches already contained in `main`. |
-| `tatbot work init` | Once per machine: mark this checkout as the mirror, arm the git hooks, install the user systemd timer. |
+| `tatbot work init` | Once per machine: mark this checkout as the mirror, arm the git hooks, install the user systemd timer. `--pinned` marks a deploy checkout that is advanced by hand to a landed sha: the sweeper serves its worktrees but never fast-forwards it. |
 
 The shared checkout on each machine (the one `config/nodes.json` names as its `checkout`) is the **mirror**. Its
-pre-commit hook refuses commits; the sweeper fast-forwards it; nothing is
-edited there. Deployment reads from it, and so does `tatbot --on <node>`.
+pre-commit hook refuses commits; the sweeper fast-forwards it, unless it is
+pinned; nothing is edited there. Deployment reads from it, and so does `tatbot --on <node>`.
 
 ## What the hooks do
 
@@ -66,8 +66,8 @@ Nothing in this flow deletes a commit. An autosaved or parked branch is on
 origin under `agent/<node>/<session>`; check it out anywhere with
 `git fetch origin && git worktree add ~/tatbot-work/<session> agent/<node>/<session>`
 or resume it on its node with `tatbot work start --session <session>`. A
-branch already contained in `main` is deleted by the sweeper an hour after it
-merged; a branch with unlanded commits is never deleted by anything here.
+branch already contained in `main` is deleted by the sweeper once its tip
+commit is an hour old; a branch with unlanded commits is never deleted by anything here.
 
 ## Conventions
 

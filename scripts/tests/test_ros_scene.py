@@ -60,13 +60,36 @@ def test_draw_state_from_a_real_ledger(run_dir):
 def test_the_trim_is_the_cartridges_newest_pen_trim_row_of_the_runs_motion_yaml_limit(run_dir):
     state = scene.DrawState.load(run_dir)
     state.poll()
-    assert state.trim(3) == {"m": 0.0, "limit_m": None, "used_m": 0.0} and state.trim(None) is None   # no row yet
+    assert state.trim(3) == {"m": 0.0, "limit_m": None, "used_m": 0.0, "hold": False} and state.trim(None) is None   # no row yet
     shutil.copy(REPO / "ros" / "tatbot_motion" / "config" / "motion.yaml", run_dir / "motion.yaml")
     with (run_dir / "ledger.jsonl").open("a") as stream:
         for trim_m in (-0.0001, -0.0002):
             stream.write(json.dumps({"arm": "right", "event": "pen_trim", "resource": "nighthawk_black",
                                      "t": state.t, "trim_m": trim_m}) + "\n")
-    assert state.poll() == set() and state.trim(3) == {"m": -0.0002, "limit_m": 0.004, "used_m": -0.0002}
+    assert state.poll() == set() and state.trim(3) == {"m": -0.0002, "limit_m": 0.004, "used_m": -0.0002, "hold": False}
+
+
+def test_a_colour_a_rinse_takes_the_cartridge_to_shows_the_cartridges_trim(run_dir):
+    """The trim is the cartridge's (its tool's), as the executor keys it: a press on one colour is the trim of every
+    colour of that tool, and a row written by resource alone (before cartridges) reads as its resource's tool."""
+    program = json.loads((run_dir / "program.json").read_text())
+    red = {**program["resources"][0], "id": "bright_red", "ink_id": "bright_red"}
+    program["resources"].append(red)
+    program["ops"][5:] = [{**op, "resource_id": "bright_red"} for op in program["ops"][5:]]
+    (run_dir / "program.json").write_text(json.dumps(program))
+    state = scene.DrawState.load(run_dir)
+    state.poll()
+    with (run_dir / "ledger.jsonl").open("a") as stream:
+        stream.write("\n")                                       # the fixture's last row is torn
+        stream.write(json.dumps({"arm": "right", "event": "pen_trim", "resource": "nighthawk_black",
+                                 "cartridge": "lutin-3rl-bugpin", "t": state.t, "trim_m": -0.0005}) + "\n")
+    state.poll()
+    assert state.trim(3)["m"] == -0.0005 and state.trim(5)["m"] == -0.0005   # black's press, red's stroke
+    with (run_dir / "ledger.jsonl").open("a") as stream:
+        stream.write(json.dumps({"arm": "right", "event": "pen_trim", "resource": "bright_red", "t": state.t,
+                                 "trim_m": -0.00075}) + "\n")
+    state.poll()
+    assert state.trim(3)["m"] == state.trim(6)["m"] == -0.00075
 
 
 def test_the_trim_a_needle_stroke_takes_is_its_sent_rows_cap_while_it_is_the_op_drawn(run_dir):
@@ -97,6 +120,23 @@ def test_summary_reads_the_run_logs_end(run_dir):
     state.poll()
     assert state.summary()["status"] == "interrupted" and state.summary()["ended_s"] == 1792342800.0
     assert scene.stamp_s("latest") is None and scene.stamp_s(None) is None
+
+
+def test_a_run_draws_until_its_run_log_is_finalized_on_the_nodes_clock(run_dir):
+    """2026-11-09: the station's design map still showed a hover heart a day after its run ended. Between draws the
+    design map and the strokes are blank; a bag replayed on its own clock still draws the run up to its end."""
+    state = scene.DrawState.load(run_dir)
+    assert state.drawing(now_s=0.0)                            # no meta.json yet: a run starting
+    (run_dir / "meta.json").write_text(json.dumps({"status": "running", "started_at": "2026-10-18T16:45:26Z"}))
+    state.poll()
+    assert state.drawing(now_s=1792400000.0)                   # running, however late
+    (run_dir / "meta.json").write_text(json.dumps({"status": "ok", "started_at": "2026-10-18T16:45:26Z",
+                                                   "ended_at": "2026-10-18T17:00:00Z"}))
+    os.utime(run_dir / "meta.json", ns=(1, 1))
+    state.poll()
+    ended = 1792342800.0
+    assert not state.drawing(now_s=ended) and not state.drawing(now_s=ended + 86400) and not state.drawing()
+    assert state.drawing(now_s=ended - 1.0)                    # a replay before the end
 
 
 def test_current_stroke_is_cut_at_its_arc_on_the_print_and_moved_onto_the_page_by_the_newest_correction(run_dir):
@@ -166,7 +206,7 @@ def test_fitted_page_lifts_like_page_surface(run_dir):
 
 
 def test_page_layer_holds_the_fields_edge_past_its_extent(run_dir):
-    """The fixture's field covers a corner of the print: extrapolated, its polynomial puts the far corner 38 mm under
+    """The fixture's field covers a corner of the print: run on past its extent, it puts the far corner 13 mm under
     the page; the page layer holds the edge's height there, and its edges follow the surface between corners."""
     state = scene.DrawState.load(run_dir)
     state.poll()
@@ -174,7 +214,7 @@ def test_page_layer_holds_the_fields_edge_past_its_extent(run_dir):
     x0, y0, x1, y1 = surface.height.extent
     inside = np.array([[u, v] for u in np.linspace(x0, x1, 30) for v in np.linspace(y0, y1, 30)])
     low, high = surface.height(inside).min(), surface.height(inside).max()
-    assert surface.height([[0.0555, 0.07875]])[0] < -0.03                    # the bare polynomial at that corner
+    assert surface.height([[0.0555, 0.07875]])[0] < low - 0.005              # the bare field at that corner
     lines = scene.page_lines((0.111, 0.1575), (0.08, 0.12), surface)
     heights = np.concatenate([line[:, 2] for line in lines])
     assert len(lines) == 2 + 12 + 17 and low - 5e-4 < heights.min() and heights.max() < high + 5e-4
@@ -263,7 +303,7 @@ def test_palette_from_the_touch_and_its_caps(tmp_path):
     assert np.isclose(black["floor"][2], black["rim"][2] - 0.0135)              # the inside floor, under the wall
     assert caps["inkcap_medium_1"]["text"] == "M1 white ≥7.5 mm 79%"
     assert absent["state"] == "absent" and absent["height"] == 0.0 and absent["text"] == "S1 no cap"
-    assert np.isclose(absent["rim"][2], black["rim"][2])                         # its ring where its rim would be
+    assert np.isclose(absent["rim"][2], caps["inkcap_small_2"]["rim"][2])         # its ring where its rim would be
     water = caps["inkcap_large_1"]                                               # not in this catalog
     assert water["state"] == "unknown" and water["text"] == "L1 water? not an ink" and water["rgb"] is None
 
@@ -342,7 +382,7 @@ def test_each_wrist_tag_quad_stands_clear_of_its_carrier():
 
 def test_the_palette_takes_the_arms_black_and_shows_its_tag(tmp_path):
     repo = _deployed(tmp_path / "repo")
-    for part in ("meshes/palette/calibration_palette_v11.stl", "meshes/tags/36h11_000_46mm/tag.glb"):
+    for part in ("meshes/palette/merged_palette_v9.stl", "meshes/tags/36h11_000_46mm/tag.glb"):
         (repo / "urdf" / part).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / "urdf" / part, repo / "urdf" / part)
     robot = REPO / "urdf" / "tatbot.urdf"
@@ -363,7 +403,7 @@ def test_tag_assets_name_the_generated_quads():
     assert scene.tag_asset("apriltag_36h11", 2, 0.047) == "meshes/tags/36h11_002_47mm/tag.glb"
     assert scene.tag_asset("apriltag_36h11", 0, 0.046) == "meshes/tags/36h11_000_46mm/tag.glb"
     assert scene.is_tag_quad(REPO / "urdf" / scene.tag_asset("apriltag_36h11", 0, 0.046))
-    assert not scene.is_tag_quad(REPO / "urdf/meshes/palette/calibration_palette_v11.glb")
+    assert not scene.is_tag_quad(REPO / "urdf/meshes/palette/merged_palette_v9.glb")
 
 
 def test_page_outline_in_world():
@@ -432,9 +472,9 @@ def test_palette_layers_mark_each_cap_by_state_and_label_them_in_a_column(tmp_pa
     np.testing.assert_allclose(marks["positions"], [c["rim"] + [0.0, 0.0, lift] for c in caps])
     assert marks["colors"] == rings["colors"] and marks["radii"] == [-3.0, -3.5, -2.0, -2.0, -3.5, -4.0]
     # a row per loaded or next cap, as the eye sees their marks, the rest grouped by what they say, the footnote
-    assert labels["labels"] == ["M1 white ≥7.5 mm 79%", "M2 red ≥7.5 mm 79%", "next dip: L2 black ≥11.5 mm 85% · 2 dips",
+    assert labels["labels"] == ["M2 red ≥7.5 mm 79%", "next dip: L2 black ≥11.5 mm 85% · 2 dips", "M1 white ≥7.5 mm 79%",
                                 "L1 water? not an ink", "S1 S2 no cap", scene.CAP_FOOTNOTE]
-    assert labels["colors"] == [scene.CAP_RGB["loaded"], scene.CAP_RGB["loaded"], scene.NEXT_RGB,
+    assert labels["colors"] == [scene.CAP_RGB["loaded"], scene.NEXT_RGB, scene.CAP_RGB["loaded"],
                                 scene.CAP_RGB["unknown"], scene.CAP_RGB["absent"], scene.CAP_RGB["empty"]]
     assert [len(strip) for strip in leaders["strips"]] == [2, 4, 2, 2, 4, 4]       # a stem each; loaded ones lead on
     assert leaders["colors"][5] == (*scene.NEXT_RGB, 160)
@@ -453,7 +493,7 @@ def test_palette_layers_mark_each_cap_by_state_and_label_them_in_a_column(tmp_pa
     # the led rows centred on their marks would stand the last row past the pane's foot: the column moves up into it
     np.testing.assert_allclose(boxes[-1, 3], height - layout["margin_px"])
     assert middle[:3].mean() < mark_px[[1, 4, 5], 1].mean()
-    for row, k in zip((0, 1, 2), (1, 4, 5), strict=True):
+    for row, k in zip((0, 1, 2), (4, 5, 1), strict=True):   # v9: M2's, L2's then M1's mark, top to bottom
         strip = scene.transform(pose, leaders["strips"][k])
         px = scene.to_screen(strip)[0]
         np.testing.assert_allclose(px[1], mark_px[k], atol=1e-6)                  # from the cap's mark
@@ -478,8 +518,8 @@ def test_caps_not_loaded_share_a_row_by_what_they_say(tmp_path):
     assert forearm["labels"][1]["labels"] == ["L1 black ≥11.5 mm 85%", "M1 S1 S2 M2 L2 empty", scene.CAP_FOOTNOTE]
     assert [len(strip) for strip in forearm["leaders"][1]["strips"]] == [4, 2, 2, 2, 2, 2]
     middle = _boxes(forearm, RIG_PALETTE)[0, 1::2].mean()
-    mark = scene.to_screen(scene.transform(RIG_PALETTE, forearm["marks"][1]["positions"][:1]))[0][0]
-    np.testing.assert_allclose(middle, mark[1])                                   # its leader runs level
+    run = scene.to_screen(scene.transform(RIG_PALETTE, forearm["leaders"][1]["strips"][0]))[0]
+    np.testing.assert_allclose(run[2:, 1], middle)                                # its leader ends level with its row
     assert load(None)["labels"][1]["labels"] == ["L1 M1 S1 S2 M2 L2 empty"]       # no footnote to no level
 
 
@@ -666,3 +706,26 @@ def test_the_print_a_run_draws_on_is_its_run_logs(run_dir):
     (run_dir / "meta.json").write_text(json.dumps({"arms": {"right": {"pattern_id": "stencil-fc77"}}}))
     state.poll()
     assert state.pattern_id == "stencil-fc77"
+
+
+def test_a_depth_hold_shows_on_its_cartridges_trim_until_it_is_taken_or_left(run_dir):
+    """The executor's depth_hold rows: `holding` marks the cartridge's trim as the hold's (the top bar says so), with
+    the cap the skin read holds the keys at; `taken` or `left` ends it."""
+    state = scene.DrawState.load(run_dir)
+    state.poll()
+    op = state.ops[3]["id"]
+
+    def rows(*new):
+        with (run_dir / "ledger.jsonl").open("a") as stream:
+            stream.write("\n")
+            for row in new:
+                stream.write(json.dumps({"arm": "right", "t": state.t, "op": op, "cartridge": "lutin-3rl-bugpin",
+                                         **row}) + "\n")
+        state.poll()
+
+    cart = state._cartridge(state.ops[3]["resource_id"])
+    rows({"event": "pen_trim", "cartridge": cart, "trim_m": -0.00275},
+         {"event": "depth_hold", "cartridge": cart, "state": "holding", "trim_cap_m": -0.0025})
+    assert state.trim(3)["hold"] and state.trim(3)["used_m"] == pytest.approx(-0.0025)
+    rows({"event": "depth_hold", "cartridge": cart, "state": "taken", "trim_m": -0.00275, "held_m": -0.0025})
+    assert not state.trim(3)["hold"]

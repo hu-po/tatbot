@@ -57,7 +57,7 @@
       "schema": "tatbot.surface-curve/1"
     },
     {
-      "content_sha256": "e5b402eb0cbd7d1a40ef064d50407c637b5aef4261621ea8118c718ec373943f",
+      "content_sha256": "232fd62e3d35d0a94b9792467f0effc7c89914e3602c55052cb6e461c417d06c",
       "path": "ink-program.json",
       "schema": "tatbot.ink-program/1"
     },
@@ -67,14 +67,14 @@
       "schema": "tatbot.surface-registration/1"
     },
     {
-      "content_sha256": "016109a49a75d458c781f04ff44406776b529a52ff9b5610c6b73d1ae4627e36",
+      "content_sha256": "bc97bbc71eeb585deb0ade22df327392cf9b518c1e29886a3b8d943218e5cdea",
       "path": "execution-program.json",
       "schema": "tatbot.execution-program/1"
     }
   ],
   "python_files": [
     {
-      "content_sha256": "6fb51fc3e6969465a6a116eb333c16d1ded89d2a6237b938b41c6a6ef8ef4b39",
+      "content_sha256": "aa432dfbc971a323a313e749b91ff0651f9272914d74cc8c8f433a5677e45b55",
       "path": "current-samples.manifest.json",
       "schema": "tatbot.draw-samples-manifest/1"
     },

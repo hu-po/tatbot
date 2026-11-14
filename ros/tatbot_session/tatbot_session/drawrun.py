@@ -13,8 +13,9 @@ from tatbot_session.ledger import Ledger
 from tatbot_session.ports import Event
 
 
-def check_program(program: dict, stack: dict, arms: list[str]) -> None:
-    """A program fit to execute on `arms` within the stack's page (ValueError otherwise)."""
+def check_program(program: dict, stack: dict, arms: list[str]) -> str | None:
+    """A program fit to execute on `arms` within the stack's page (ValueError otherwise). Returns what its ink would
+    leave of the print's markers under the budget when that is not enforced (page.markers.enforce), for the log."""
     from tatbot_contracts.ros_program import validate_for_execution
 
     validate_for_execution(program)
@@ -23,6 +24,45 @@ def check_program(program: dict, stack: dict, arms: list[str]) -> None:
     off = geometry.off_print(program, stack["page"])
     if off:
         raise ValueError(off)
+    lost = marker_loss(program, stack)
+    if lost and stack["page"]["markers"]["enforce"]:
+        raise ValueError(lost)
+    return lost
+
+
+def marker_loss(program: dict, stack: dict, references=None) -> str | None:
+    """The marker budget (tatbot_ink.markers, stack.yaml page.markers) against the print installed as the page: what
+    the program's ink would leave the cameras under it, or None within it. Asked on the real rig only (no camera
+    reads a mock's or a simulator's print), and not of a fixed page, a sheet fixed on its mount (page.static_run), a
+    program prepared with --allow-marker-loss, a rehearsal (no ink) or a page whose print has no markers.
+    `references`: where prints are installed (default: this node's)."""
+    page = stack["page"]
+    untracked = stack.get("hardware") != "real" or page["source"] != "stencil" or page.get("static_run")
+    if (untracked or "markers" not in page or "rehearsal" in program
+            or program.get("preparation", {}).get("allow_marker_loss")):
+        return None
+    from tatbot_description import repo_root
+    from tatbot_ink import markers
+
+    repo = repo_root(None)
+    if references is None:
+        from tatbot_bridge import capture
+
+        capture._lib(repo)
+        from stencil_reference import observer_references
+
+        references = observer_references()
+    folder = references / str(page.get("pattern_id"))
+    if not (folder / "tile.json").is_file():
+        return None
+    try:
+        lost = markers.refusals(markers.predict(program, folder, repo, page["markers"]))
+    except ImportError as error:
+        return f"the marker budget could not be checked: this Python has no OpenCV ({error})"
+    if not lost:
+        return None
+    return ("the program covers the markers its print is tracked by: " + "; ".join(lost) + ". Prepare a smaller "
+            "design, or one prepared with --allow-marker-loss for a sheet fixed on its mount (page.static_run)")
 
 
 def fixed_page(stack: dict, arm: str):
@@ -35,13 +75,14 @@ def fixed_page(stack: dict, arm: str):
 
 
 def build_executor(stack: dict, arm: str, *, io, node, clock, sensing, machine, repo, motion,
-                   planner=None) -> ArmExecutor:
+                   planner=None, surface_source=None, wrist=None) -> ArmExecutor:
     """The arm's executor on the kinematics the description gives (config/workspace.yaml's tool and offsets)."""
     from tatbot_description import robot_description
     from tatbot_motion import Kinematics
 
     kin = Kinematics(robot_description(repo, arms=(arm,)), arm)
-    ex = ArmExecutor(node, io, kin, motion, stack, repo, clock=clock, sensing=sensing, planner=planner)
+    ex = ArmExecutor(node, io, kin, motion, stack, repo, clock=clock, sensing=sensing, planner=planner,
+                     surface_source=surface_source, wrist=wrist)
     ex.machine = machine
     return ex
 

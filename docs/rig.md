@@ -120,9 +120,9 @@ their services enabled as before; off leaves no marker.
 ## What check does
 
 `tatbot rig check` probes every demo-case host (the nodes marked `"off": true`)
-once, in parallel, and reports three parts: **pink drawing**, **station** and
-**blue arm**, each READY or NOT READY. It is read-only: it pings, lists devices
-and reads unit state, and never starts, stops or opens anything. It exits 5
+once, in parallel, and reports two parts, **pink drawing** and **station**, each
+READY or NOT READY. It is read-only: it pings, lists devices and reads unit
+state, and never starts, stops or opens anything. It exits 5
 while any part has a failed check; warnings never fail it. `--all` lists the
 passing checks too, `--json` the full report.
 
@@ -136,8 +136,9 @@ passing checks too, `--json` the full report.
 | peers | the rig router, the arm controllers or the D555 do not answer ping from the node that uses them | |
 
 Expectations come from the files that own them: roles and `services` in
-`config/nodes.json`, the wrist cameras' owners in vision.toml, the controller
-addresses in the hardware profile. A node's `hardware` list names what nothing
+`config/nodes.json`, the wrist cameras' owners in vision.toml, the arm that
+draws in `stack.yaml` (`arms`), and its controller's address in
+`config/arms.json` and the hardware profile. A node's `hardware` list names what nothing
 else records, each entry with a `name`, an optional `part`, and one of `usb`
 (`vid:pid`), `dev` (a path), `unit` or `user_unit`; a template unit
 `name@.service` is expected as the node's login-user instance. A manifested
@@ -148,6 +149,30 @@ expects is reported once, under its own part. The station touchscreen's
 USB hub is powered by the panel itself, so it is missing until the panel's
 own power button is on. While the rig sleeps, check reports what sleep
 stopped (the trackers, the D555's owner, the window) as not active.
+
+## Host settings
+
+Two settings of the node that runs the drawing stack live on the host, not in
+any deploy. `tatbot rig check --all` reports both as it finds them, on the
+host's line and on each wrist D405's; neither warns, because neither has been
+measured against a drawing.
+
+- **USB autosuspend for the wrist D405s.** The kernel's default suspends an
+  idle USB device after two seconds, and the stack opens and closes the
+  cameras all day. `config/udev/99-tatbot-realsense.rules` keeps them awake;
+  its header has the install lines. Check reads `USB autosuspend allowed` until
+  it is installed and `kept awake` after.
+- **CPU frequency governor.** The stock governor is `schedutil`, which leaves
+  cores at a fraction of their top frequency under the stack's load: one
+  Python thread and a 400 Hz control loop. On a wall-powered host
+  `performance` costs nothing that matters:
+
+  ```bash
+  echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/scaling_governor
+  ```
+
+  That lasts until the next boot. Change either setting between drawings,
+  never during one.
 
 ## What lan-install does
 

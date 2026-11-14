@@ -68,11 +68,11 @@ pub struct SensorControls {
 pub struct RealSenseConfig {
     pub name: String,
     pub serial: String,
-    /// Stable physical use (for example `wrist_lower` or `surface_overhead`).
+    /// Stable physical use (for example `wrist_1` or `surface_overhead`).
     #[serde(default)]
     pub role: String,
-    /// Capture/publication group. Devices in different groups are never opened
-    /// or synchronized by the same owner process.
+    /// Capture/publication group. `--group` selects one, and every fleet owner
+    /// captures exactly one; without it a bench capture takes every group.
     #[serde(default)]
     pub group: String,
     /// Physical mounting arm, independent of a session's teleop role. Omitted
@@ -106,8 +106,6 @@ pub struct RealSenseConfig {
     pub color_controls: SensorControls,
     pub color: StreamProfile,
     pub depth: StreamProfile,
-    #[serde(default = "default_queue_capacity")]
-    pub queue_capacity: usize,
 }
 
 /// How librealsense reaches a RealSense device.
@@ -219,9 +217,6 @@ impl VisionConfig {
             }
             camera.color.validate()?;
             camera.depth.validate()?;
-            if camera.queue_capacity == 0 {
-                return Err(format!("{} queue_capacity must be positive", camera.name));
-            }
             if camera.color.format == PixelFormat::Z16 || camera.depth.format != PixelFormat::Z16 {
                 return Err(format!(
                     "{} depth must be Z16 and color must not be depth",
@@ -311,11 +306,11 @@ fn validate_name(name: &str) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     /// False, with a note, in a checkout that omits the deployment's `rel`
     /// (the public export): a test that reads it returns early there.
-    fn deployed(rel: &str) -> bool {
+    pub(crate) fn deployed(rel: &str) -> bool {
         let present = Path::new(env!("CARGO_MANIFEST_DIR")).join(rel).is_file();
         if !present {
             eprintln!("skipped: needs the deployment's {rel}");
@@ -436,7 +431,7 @@ mod tests {
         }
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/vision.toml");
         let source = VisionConfig::load(path).unwrap();
-        // Both D405s are on the pink wrist since 2026-10-23, above and under it.
+        // Both D405s ride the xArm's dual-D405 bracket since 2026-11-08.
         let wrist = |role: &str| {
             source
                 .cameras
@@ -445,9 +440,9 @@ mod tests {
                 .find(|c| c.role == role)
                 .unwrap()
         };
-        let (upper, lower) = (wrist("wrist_upper"), wrist("wrist_lower"));
-        assert_ne!(upper.serial, lower.serial);
-        for camera in [upper, lower] {
+        let (two, one) = (wrist("wrist_2"), wrist("wrist_1"));
+        assert_ne!(two.serial, one.serial);
+        for camera in [two, one] {
             let mut config = source.clone();
             config
                 .select_realsense(Some("d405"), std::slice::from_ref(&camera.name))
@@ -459,8 +454,8 @@ mod tests {
         }
         for (group, selection) in [
             ("d405", vec!["missing".into()]),
-            ("overhead-depth", vec![lower.name.clone()]),
-            ("d405", vec![lower.name.clone(), lower.name.clone()]),
+            ("overhead-depth", vec![one.name.clone()]),
+            ("d405", vec![one.name.clone(), one.name.clone()]),
             ("missing", vec![]),
         ] {
             let mut config = source.clone();

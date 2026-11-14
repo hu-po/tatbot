@@ -1,2 +1,4 @@
-The original raster sources and acquired examples in dbv3-acquired-v1 are dedicated
-to the public domain under CC0-1.0. Application software is not included.
+The three designs in flash-art-v1 (swallow-poppies, sun-and-moon, snake-and-dagger) are images
+generated with Google Flow (Nano Banana Pro) from Tatbot prompts. They are not dedicated to the
+public domain, and no licence for them is granted here. Application software is not included.
+The pictures in renders/ are predictions made from those images and are held the same way.

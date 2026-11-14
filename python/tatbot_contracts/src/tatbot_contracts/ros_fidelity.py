@@ -190,8 +190,8 @@ def measure(image, program, border, centre, extent, ppm):
     if not np.all(np.isfinite(registration)) or min(border['scale']) <= 0:
         return {'valid': False, 'reason': 'printed-border registration is degenerate'}
     image = _registered(image, border, centre, extent, ppm)
-    at = np.asarray(program['design']['at_m']) if program.get('research') else np.zeros(2)
-    half = np.asarray(program['research']['slot_m'] if program.get('research') else program['page']['clear_m'])/2
+    at = np.zeros(2)
+    half = np.asarray(program['page']['clear_m'])/2
     gx, gy = page_grid(extent, ppm)
     roi = (np.abs(gx-at[0]) <= half[0]) & (np.abs(gy-at[1]) <= half[1])
     ink, reason = _observed(image, roi, ppm)

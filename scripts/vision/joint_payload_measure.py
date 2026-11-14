@@ -82,8 +82,6 @@ def rest(owner: Owner, log: Path, label: str, duration_s: float = 2.5) -> None:
 
 
 def prepare(run_dir: Path, tool: str) -> tuple[Path, Path, str, dict, list[float]]:
-    if tool != "lutin-ballpoint-dot":
-        raise CaptureError("this right-arm measurement expects the fitted ballpoint")
     if read_workspace(REPO).get("right", {}).get("tool_id") != tool:
         raise CaptureError("stated tool differs from the right arm workspace record")
     device = os.environ.get("TATBOT_ESTOP_DEVICE")

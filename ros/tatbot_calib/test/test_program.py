@@ -1,6 +1,6 @@
 """The S1 search against a simulated station: the probe as cad/calibration-palette-v11 draws it (the ball on a
 shaft and cone over a collar and the body) and a halo nose as a wall around a hole: the laser's, a 9.0 mm ring round
-a 7.7 mm hole, or a ballpoint's, a metal tip under a body about 4 mm across, its bore narrower than the ball.
+a 7.7 mm hole, or a needle cartridge's, a tube's end about 1 mm across, its needles' exit narrower than the ball.
 From a fix off across and in height it finds the ball, and on the way no touch lands on the stylus from above, meets
 the body, the collar or an inkcap, or lets the ball under a hole it fits; a probe that never fires stops it early.
 
@@ -48,9 +48,10 @@ class Nose:
 
 
 LASER = Nose(0.0090, 0.0077)
-# the ballpoint as the palette camera saw it (2026-10-02): its metal tip, 0.45 mm across at the ball and 1.6 mm at
-# the body's end 2.4 mm up, then the body
-CARTRIDGE = Nose(0.000225, 0.0001, profile=((0.0024, 0.0008), (0.00241, 0.0019), (0.008, 0.00205), (0.025, 0.0024)))
+# the 3RL's nozzle as the palette camera saw it (2026-10-05, its datasheet's profile): ~1 mm across at its end,
+# ~1.8 mm 4.5 mm up, ~4 mm 12 mm up, flaring into the cartridge's body ~20 mm up; the needles' exit narrower than the ball
+CARTRIDGE = Nose(0.0005, 0.0003, profile=((0.0045, 0.0009), (0.007, 0.0012), (0.010, 0.00145), (0.0124, 0.002),
+                                          (0.015, 0.0028), (0.0177, 0.0039), (0.020, 0.007)))
 GIVE = 0.0012        # the arm's travel past first contact before a side touch trips (program.SIDE_GIVE_M)
 
 
@@ -297,7 +298,7 @@ def test_the_search_starts_clear_of_the_inkcaps_and_the_camera(tmp_path):
 
     repo = Path(__file__).resolve().parents[3]
     inkcaps = station_mod.inkcap_rims(repo / "urdf" / "palette.urdf", repo / "config" / "palette.yaml")
-    assert len(inkcaps) == 6 and all(abs(rim[2] - 0.032) < 1e-6 for _, rim, _ in inkcaps)
+    assert len(inkcaps) == 17 and {round(rim[2], 6) for _, rim, _ in inkcaps} == {0.007, 0.006}   # merged v9
     base_from_palette = palette_at(TRUTH)
     caps = [((base_from_palette @ np.append(rim, 1.0))[:2], radius, (base_from_palette @ np.append(rim, 1.0))[2])
             for _, rim, radius in inkcaps]
@@ -313,23 +314,29 @@ def run_s1_cartridge(tmp_path, across, dz, inkcaps=()):
     station = Station(TRUTH, inkcaps, nose=CARTRIDGE)
     rig = FakeRig(station)
     prior = TRUTH + [*across, dz]
-    cal = calibration(tmp_path, rig, prior, palette_at(prior), tool="lutin-ballpoint-dot")
+    cal = calibration(tmp_path, rig, prior, palette_at(prior), tool="lutin-3rl-bugpin")
     return cal, station, cal.s1()
 
 
-@pytest.mark.parametrize("dz", [-0.002, 0.0, 0.002])
+# A needle measures no top (it sends no edge passes), so from a fix FIX_HEIGHT_M low S1 takes the ball's top from
+# where its search met the stylus, 6 mm under the true one, and its side touches stand 0.6 mm under the operator's
+# floor. A tool whose edge passes trip measures the top, and passes this case.
+LOW_FIX = pytest.param(-0.002, marks=pytest.mark.xfail(strict=True, reason="a needle's S1 under a low fix goes under the floor"))
+
+
+@pytest.mark.parametrize("dz", [LOW_FIX, 0.0, 0.002])
 @pytest.mark.parametrize("across", [(0.0, 0.0), (0.005, 0.0), (0.006, 0.006), (-0.008, 0.002), (0.0, -0.0115)])
 def test_s1_finds_the_ball_with_a_cartridge_tube_as_the_halo(tmp_path, dz, across):
-    """The ballpoint's tube, 2 mm across: its reach across a search line is a few millimetres, so lines offset
-    across find a fix up to 12 mm off; its bore is narrower than the ball, which never enters it."""
+    """The 3RL's tube, 1.5 mm across where the sides touch: its reach across a search line is a few millimetres, so
+    lines offset across find a fix up to 12 mm off; its needles' exit is narrower than the ball, which never enters it."""
     cal, station, found = run_s1_cartridge(tmp_path, across, dz)
     assert found, station.events
     assert cal.ball is not None  # s1() succeeded and set cal.ball
-    # its metal tip makes the edge passes read the top up to 0.6 mm low; the side pairs stand 7 mm under it
-    assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4 and abs(cal.ball[2] - TRUTH[2]) < 7e-4
+    # across to 0.1 mm; a needle sends no edge passes, so S1 measures no top (its height stays the search's)
+    assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4
     assert not [event for event in station.events if event[0] != "rode over"]
     assert not under_the_floor(cal.rig)
-    assert 0.0002 < cal.side_radius < 0.0005          # the tip's 0.45 mm and the ball, less the give, measured
+    assert 0.0004 < cal.side_radius < 0.0007          # the tube's 0.75 mm and the ball, less the give
 
 
 def test_s1_refuses_a_top_whose_edge_passes_went_by_the_ball(tmp_path):
@@ -339,7 +346,7 @@ def test_s1_refuses_a_top_whose_edge_passes_went_by_the_ball(tmp_path):
     import json
 
     station = Station(TRUTH, nose=CARTRIDGE)
-    cal = calibration(tmp_path, FakeRig(station), TRUTH, palette_at(TRUTH), tool="lutin-ballpoint-dot")
+    cal = calibration(tmp_path, FakeRig(station), TRUTH, palette_at(TRUTH), tool="lutin-3rl-bugpin")
     search = cal.search
 
     def off_the_stylus(rotation, heading, group="S1 search"):
@@ -433,24 +440,24 @@ class TipRig(FakeRig):
 
 def test_a_whole_cartridge_run_recovers_the_tube_end_across_its_axis(tmp_path, monkeypatch):
     """S1 (search, top, sides), two further yaws (the second placed by the fit of the first two), the fit, end to end
-    on the simulated station with the ballpoint's tube 0.8/-1.2/0.6 mm off the tcp the stack plans with. The fit
-    finds the tube's end across the axis to 0.1 mm; along it, the installed length stays."""
+    on the simulated station with the 3RL's tube 0.8/-1.2/0.6 mm off the tcp the stack plans with. The fit finds the
+    tube's end across the axis to 0.1 mm; along it, the installed length stays."""
     import json
 
     from tatbot_calib import station as station_mod
 
-    tip0 = np.array([0.00002, -0.002674, 0.074495])
+    tip0 = np.array([0.000083, 0.002685, 0.062179])
     true_tip = tip0 + [0.0008, -0.0012, 0.0006]
     world = Station(TRUTH, nose=CARTRIDGE)
     rig = TipRig(world, tip0, true_tip)
     prior = TRUTH + [0.003, -0.002, 0.001]                 # within FIX_HEIGHT_M with the tip's 0.6 mm
     cal = program.Calibration(rig, SimpleNamespace(dir=tmp_path), repo_root(None), "right",
-                              datasheet_halo("lutin-ballpoint-dot"), 0.0, PoseKin(tip0))
+                              datasheet_halo("lutin-3rl-bugpin"), 0.0, PoseKin(tip0))
     cal.tip0, cal.mount_in_tcp = tip0, np.eye(3)
     monkeypatch.setattr(program, "_preflight", lambda cal: None)
     monkeypatch.setattr(program, "_latched", lambda cal: False)
     fix = station_mod.StationFix("right", palette_at(prior), prior, "2026-09-29T18:00:00Z", "overhead_tag")
-    args = SimpleNamespace(attitudes=[(-30.0, 0.0), (30.0, 0.0)], tool="lutin-ballpoint-dot", station="fix.json")
+    args = SimpleNamespace(attitudes=[(-30.0, 0.0), (30.0, 0.0)], tool="lutin-3rl-bugpin", station="fix.json")
     assert program._stages(cal, fix, args) == 0
     candidate = json.loads((tmp_path / "candidate.json").read_text())
     tip = np.array(candidate["fit"]["tip_m"])
@@ -462,18 +469,21 @@ def test_a_whole_cartridge_run_recovers_the_tube_end_across_its_axis(tmp_path, m
     assert "placed ball met nothing" not in (tmp_path / "events.jsonl").read_text()
     assert "S4 +30/+0 search" not in (tmp_path / "touches.jsonl").read_text()   # the fit placed the third yaw
     touch = station_mod.StationTouch.from_dict(json.loads((tmp_path / "station-touch.json").read_text()))
-    assert np.linalg.norm(touch.ball - TRUTH) < 2e-3 and touch.tool_id == "lutin-ballpoint-dot"   # what dips aim by
+    # what dips aim by: across, the ball through the tcp the stack plans with; a needle measures no top, so its touch
+    # records the ball a fixed depth under the height its passes met the stylus at (program.search_seed)
+    assert np.linalg.norm(touch.ball[:2] - TRUTH[:2]) < 2e-3 and touch.tool_id == "lutin-3rl-bugpin"
+    assert -0.005 < touch.ball[2] - TRUTH[2] < 0.0
     np.testing.assert_allclose(touch.tcp_m, tip0)
 
 
 def test_a_fit_from_one_attitude_leaves_the_side_radius_s1_measured(tmp_path, monkeypatch):
-    """2026-09-30, pink at v11: after S1 alone the fit put the tip 12.8 mm off, and its side radius so fattened the
+    """2026-09-30, the WXAI at v11: after S1 alone the fit put the tip 12.8 mm off, and its side radius so fattened the
     tool that a touch straight down over the ball read as meeting the palette camera. S1's half-span stands until
     two attitudes are in."""
     from tatbot_calib import solve
 
     cal = program.Calibration(FakeRig(Station(TRUTH)), SimpleNamespace(dir=tmp_path), repo_root(None), "right",
-                              datasheet_halo("lutin-ballpoint-dot"), 0.0, PoseKin(np.zeros(3)))
+                              datasheet_halo("lutin-3rl-bugpin"), 0.0, PoseKin(np.zeros(3)))
     cal.s1_side_radius = cal.side_radius = 0.0023
     cal.tip0 = np.zeros(3)
     fitted = SimpleNamespace(side_radius=0.0412, rms_m={"side": 0.0009}, tip=np.zeros(3))
@@ -614,7 +624,7 @@ def test_an_s4_attitude_searches_before_its_sides_and_counts_only_its_own_trips(
     """2026-09-30, round 15: S4's sides from S1's ball met nothing at +30, +45 and +90 degrees of yaw. Before the fit
     can place the ball, an S4 yaw searches first, as S1 does, and a trip from before the search does not end it."""
     rig = FakeRig(Station(TRUTH))
-    cal = calibration(tmp_path, rig, TRUTH, palette_at(TRUTH), tool="lutin-ballpoint-dot")
+    cal = calibration(tmp_path, rig, TRUTH, palette_at(TRUTH), tool="lutin-3rl-bugpin")
     cal.proven, cal.trips = True, 5
     calls = []
 
@@ -726,7 +736,7 @@ def test_a_way_that_brings_a_body_near_the_station_is_refused_and_a_back_out_may
 
 
 def test_the_way_in_takes_a_staging_pose_only_when_the_direct_way_is_refused(tmp_path):
-    """2026-09-30, v11: the joint move from rest swept pink's wrist under the guard's margin from the landed blue
+    """2026-09-30, v11: the joint move from rest swept the WXAI's wrist under the guard's margin from the landed blue
     wrist, while a stop between them cleared both legs. With neither planned, nothing moves."""
     sent = []
 
@@ -748,7 +758,7 @@ def test_the_way_in_takes_a_staging_pose_only_when_the_direct_way_is_refused(tmp
     here[:3, 3] = [0.30, 0.0, 0.17]
     kin = SimpleNamespace(fk=lambda q: here, frame=lambda q, name: np.eye(4))
     cal = program.Calibration(rig, SimpleNamespace(dir=tmp_path), repo_root(None), "right",
-                              datasheet_halo("lutin-ballpoint-dot"), 0.0, kin)
+                              datasheet_halo("lutin-3rl-bugpin"), 0.0, kin)
     prior = np.array([0.16, 0.37, 0.083])
     cal.way_check = lambda label, poses, q=None: np.zeros(7)
     cal.approach(prior)
@@ -772,7 +782,7 @@ def test_the_way_in_takes_a_staging_pose_only_when_the_direct_way_is_refused(tmp
 
 
 def test_a_search_with_no_touch_for_now_starts_where_the_last_touch_met_the_ball_from_its_fix(monkeypatch):
-    """2026-10-12: a new registration staled pink's touch, and S1 searched from the overhead fix, 9 mm across from
+    """2026-10-12: a new registration staled the WXAI's touch, and S1 searched from the overhead fix, 9 mm across from
     where the 3RL had met the ball a week earlier and the 11RL met it again: 7 empty lines, 8 of 17 minutes."""
     from tatbot_calib import station
 
@@ -799,6 +809,33 @@ def test_a_search_with_no_touch_for_now_starts_where_the_last_touch_met_the_ball
     other = station.StationFix("right", np.eye(4), new_fix.ball, new_fix.measured_utc, "overhead_tag",
                                {"registration_sha256": "w" * 64})
     assert program.search_seed(cal, other, "lutin-11rl-wormhole") is None               # another registration
+
+
+def test_a_search_under_another_registration_starts_where_the_arm_last_touched_the_ball(monkeypatch):
+    """2026-10-25: every setup re-registers, staling the touch, and the search through the fix (the ball 3 mm across
+    from it) met nothing for ~1.8 min; the touched ball, by FK, stood within 0.1 mm of the 10-23 setup's."""
+    from tatbot_calib import station
+
+    heading = -30.0
+    rotation = halo.tool_pose(np.zeros(3), heading)[:3, :3]
+    ball = np.array([0.3019, 0.2909, 0.0909])
+    old_fix = station.StationFix("right", np.eye(4), ball + [-0.0015, 0.0029, 0.0046], "2026-10-23T02:47:00Z",
+                                 "overhead_tag", {"registration_sha256": "a" * 64})
+    touch = station.StationTouch("right", "lutin-3rl-bugpin", ball, rotation, np.zeros(3), [0.0] * 7, old_fix,
+                                 "old-touch", "2026-10-23T02:54:00Z")
+    monkeypatch.setattr(station, "load_touch", lambda arm: touch)
+    said = []
+    cal = SimpleNamespace(arm="right", heading=heading, repo=repo_root(None), say=said.append,
+                          halo=SimpleNamespace(edges_trip=False), search_below=0.004)
+    fix = station.StationFix("right", np.eye(4), ball + [0.0012, 0.0028, 0.0046], "2026-10-25T23:33:00Z",
+                             "overhead_tag", {"registration_sha256": "b" * 64})
+    assert program.search_seed(cal, fix, "lutin-3rl-bugpin") is None              # its offset carries the old error
+    assert np.allclose(program.across_seed(cal, fix, "lutin-3rl-bugpin"), [*ball[:2], fix.ball[2]])
+    assert "under another registration" in said[-1]
+    far = station.StationFix("right", np.eye(4), ball + [0.006, 0.002, 0.0], fix.measured_utc, "overhead_tag",
+                             fix.detail)
+    assert program.across_seed(cal, far, "lutin-3rl-bugpin") is None              # moved since: the fix's search
+    assert program.across_seed(cal, fix, "picosecond-laser-pen") is None          # another machine
 
 
 def test_a_needle_cartridge_sends_no_edge_passes_and_still_finds_the_ball(tmp_path):
@@ -915,3 +952,39 @@ def test_a_search_grazing_the_balls_top_goes_lower_and_keeps_its_floor(tmp_path,
     assert cal.s1(), station.events
     assert np.linalg.norm(cal.ball[:2] - TRUTH[:2]) < 1e-4
     assert not under_the_floor(cal.rig)
+
+
+def test_the_guard_is_the_calibrated_arms_own_and_reads_the_palette_round_it(tmp_path, monkeypatch):
+    """2026-11-08: built from the installed stack.yaml's arms (the WXAI's), the xArm's run had no guard of its own
+    and stopped at its first plan (KeyError 'xarm')."""
+    from tatbot_calib import cli
+    from tatbot_motion import load_motion
+    from tatbot_motion.collision import PALETTE_PADS
+
+    repo = repo_root(None)
+    registration = tmp_path / "arm-registration-xarm-current.json"
+    registration.write_text(json.dumps({"world_from_arm_base": np.eye(4).tolist()}))
+    stack = cli._stack(repo)
+    monkeypatch.setattr(cli, "_stack", lambda _repo: {**stack, "registration": {"xarm": str(registration)}})
+    guard, text = program._guard(repo, load_motion(), "xarm")
+    assert guard is not None and "xarm" in text, text
+    rest = np.array(guard.rest["xarm"], float)
+    far = guard.scene.parts_clearance("xarm", [rest], [("ball", "sphere", [0.29, 0.22, 0.016], 0.001)], PALETTE_PADS)
+    near = guard.scene.parts_clearance("xarm", [rest], [("ball", "sphere", [0.40, 0.0, 0.40], 0.001)], PALETTE_PADS)
+    assert far.distance_m > 0.05 and near.distance_m < far.distance_m   # link7 stands at (0.4, 0, 0.4) at rest
+
+
+@pytest.mark.parametrize("source, camera", [("the palette camera, run (the tip)", True), ("", False), (None, False)])
+def test_s1_searches_at_a_touch_height_only_the_palette_camera_measured(monkeypatch, source, camera):
+    """A needle's touches settle a fixed depth under the prior's top, so S1's prior takes the overhead's height, unless
+    the palette camera measured the touch's (calib height): on the xArm rig the overhead's stood 8.9 mm under it and
+    the passes met the stylus (2026-11-09). No touch at all is no camera height."""
+    from tatbot_calib import station
+
+    def load(arm):
+        if source is None:
+            raise station.StaleStationError("the station has not been touched")
+        return SimpleNamespace(height_source=source)
+
+    monkeypatch.setattr(program.station, "load_touch", load)
+    assert program._camera_height(SimpleNamespace(arm="xarm")) is camera

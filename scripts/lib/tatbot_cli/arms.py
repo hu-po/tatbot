@@ -29,12 +29,16 @@ class TeleopRoles:
 @dataclass(frozen=True)
 class PhysicalArm:
     id: str
+    model: str  # config/arm-models/<model>.yaml: the kind of arm
     control_role: str
     profile_ip_field: str
-    controller_config: str
-    sdk_end_effector: str
+    controller_config: str | None   # a Trossen arm's controller golden (config/trossen/); None for another make
+    sdk_end_effector: str | None    # a Trossen arm's SDK end-effector preset; None for another make
     workspace_section: str
     urdf_prefix: str
+
+
+TROSSEN_ONLY = ("controller_config", "sdk_end_effector")
 
 
 def select_roles(leader: str | None = None, follower: str | None = None) -> TeleopRoles:
@@ -56,16 +60,16 @@ def _physical_arm(arm_id: str, entry: dict) -> PhysicalArm:
     if not isinstance(arm_id, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", arm_id):
         raise ValueError(f"invalid physical arm ID: {arm_id!r}")
     if (not isinstance(entry, dict) or set(entry) != fields
-            or any(not isinstance(v, str) or not v.strip() for v in entry.values())):
+            or any(not (isinstance(v, str) and v.strip() or v is None and k in TROSSEN_ONLY) for k, v in entry.items())):
         raise ValueError(f"invalid physical arm entry: {arm_id}")
     if not all(re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", entry[field])
-               for field in ("workspace_section", "urdf_prefix", "profile_ip_field", "control_role")):
+               for field in ("model", "workspace_section", "urdf_prefix", "profile_ip_field", "control_role")):
         raise ValueError(f"{arm_id}: invalid arm binding")
     if entry["workspace_section"] != entry["urdf_prefix"]:
         raise ValueError(f"{arm_id}: workspace and URDF must name the same physical chain")
-    config = PurePosixPath(entry["controller_config"])
-    if (config.is_absolute() or ".." in config.parts or len(config.parts) < 2
-            or config.parts[0] != "config" or config.suffix != ".yaml"):
+    config = None if entry["controller_config"] is None else PurePosixPath(entry["controller_config"])
+    if config is not None and (config.is_absolute() or ".." in config.parts or len(config.parts) < 2
+                               or config.parts[0] != "config" or config.suffix != ".yaml"):
         raise ValueError(f"{arm_id}: controller config must be a relative YAML path under config/")
     return PhysicalArm(id=arm_id, **entry)
 
@@ -78,14 +82,14 @@ def load(repo: Path) -> dict[str, PhysicalArm]:
     except (OSError, ValueError) as exc:
         raise ValueError(f"cannot read arm registry: {exc}") from exc
     if (not isinstance(document, dict) or set(document) != {"schema", "arms"}
-            or document["schema"] != "tatbot.arms/1"
+            or document["schema"] != "tatbot.arms/2"
             or not isinstance(document["arms"], dict) or not document["arms"]):
-        raise ValueError("arm registry requires tatbot.arms/1 and at least one arm")
+        raise ValueError("arm registry requires tatbot.arms/2 and at least one arm")
     result = {arm_id: _physical_arm(arm_id, entry) for arm_id, entry in document["arms"].items()}
     # Renaming an ID may keep the installed URDF and calibration sections, but
     # two IDs may never address one controller, kinematic chain or tool fit.
     for field in ("profile_ip_field", "controller_config", "workspace_section", "urdf_prefix"):
-        values = [getattr(arm, field) for arm in result.values()]
+        values = [getattr(arm, field) for arm in result.values() if getattr(arm, field) is not None]
         if len(values) != len(set(values)):
             raise ValueError(f"physical arms must have distinct {field} references")
     return result
@@ -97,15 +101,15 @@ CONTROLLER_ROLES = {"config/trossen/leader.yaml": "leader", "config/trossen/foll
 def execution_blockers(arms: dict[str, PhysicalArm], roles: TeleopRoles) -> list[str]:
     """Describe the existing executor, not a user-editable qualification switch."""
     blockers = []
-    if set(arms) != set(ARM_IDS):
-        blockers.append("the current teleop executor requires exactly the configured left and right arms")
+    if not set(ARM_IDS) <= set(arms):
+        blockers.append("the current teleop executor requires the configured left and right arms")
     if roles != select_roles():
         blockers.append(REVERSE_BLOCKER)
     for arm_id, legacy_role in (("left", "leader"), ("right", "follower")):
         if arm_id not in arms:
             continue
         arm = arms[arm_id]
-        if (arm.control_role != "arm" or arm.profile_ip_field != f"{legacy_role}_ip"
+        if (arm.model != "trossen-wxai" or arm.control_role != "arm" or arm.profile_ip_field != f"{legacy_role}_ip"
                 or arm.controller_config != f"config/trossen/{legacy_role}.yaml"
                 or arm.sdk_end_effector != f"wxai_v0_{legacy_role}_20250509"):
             blockers.append(f"{arm_id}: registry differs from the current executor's physical binding")

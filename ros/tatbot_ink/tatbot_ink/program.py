@@ -15,12 +15,12 @@ from tatbot_motion import load_motion
 from tatbot_motion.estimate import estimate_duration
 from tatbot_motion.timelaw import polyline_length
 
-from tatbot_ink import passes
+from tatbot_ink import dose, order, passes
 from tatbot_ink.errors import CompileError
 from tatbot_ink.input import read_input, read_layers
 from tatbot_ink.place import MIN_STROKE_M, drop_dots, keep_region, placed_strokes, print_page, relocate
-from tatbot_ink.resources import bind_resources, fitted_bindings
-from tatbot_ink.schedule import schedule_ops
+from tatbot_ink.resources import bind_resources, borrowed_dips, fitted_bindings
+from tatbot_ink.schedule import line_per_dip, schedule_ops
 
 DEFAULT_SPEED_M_S = 0.0035
 MAX_SEGMENT_S = 60.0
@@ -58,18 +58,28 @@ def compile(design_path: str | Path, *, arm: str = "right", tool_id: str | None 
             repo: str | Path | None = None, speed_m_s: float = DEFAULT_SPEED_M_S,
             inks_path: str | Path | None = None, max_segment_s: float = MAX_SEGMENT_S,
             at_m=None, width_m: float | None = None, stencil=None, min_stroke_m: float = MIN_STROKE_M,
-            mark_width_m: float | None = None, keep_region_m=None, max_stroke_m: float | None = None) -> dict:
+            mark_width_m: float | None = None, keep_region_m=None, max_stroke_m: float | None = None,
+            after=(), wiped: bool = False, allow_borrowed_dip: bool = False, allow_marker_loss: bool = False) -> dict:
     """Prepare acquired artwork at its original metric size; --width is an assertion; `stencil` (a generated
     print's directory) places it on that print's page instead of the nominal 128 x 172 mm one. A path inside
     `min_stroke_m` that lies on its own ink's line is dropped (place.drop_dots). The pen's passes are counted at
-    `mark_width_m`, else each tool's line width, else each path's generation width (passes.mark). `keep_region_m`, a
+    `mark_width_m`, else each tool's line width, else each path's generation width (passes.mark), and its pokes over
+    each spot at the same width (stats.dose: tatbot_ink.dose, from the planner's time law and motion.yaml
+    machine.rate_hz). `keep_region_m`, a
     polygon in page metres, keeps only the placed paths inside it (place.keep_region), their geometry as placed: a
     part of a design drawn again over its own. `max_stroke_m` draws a longer path as strokes of at most that length,
-    each lifted (schedule_ops).
+    each lifted (schedule_ops). `after` names the programs already drawn on this print, oldest first, and `wiped`
+    says the print was wiped since the last of them: a lighter ink is refused over a darker one's mark, in this
+    program or after those (tatbot_ink.order). A cartridge whose datasheet says its dip values are borrowed is
+    refused unless `allow_borrowed_dip` (the lab's trials, which are how its card gets drawn; an operator's choice).
+    On a fiducial-tile print (`stencil`) the markers the program's ink leaves readable are counted into
+    stats.markers, over the ink of the `after` programs, and a program under the budget is refused
+    (_marker_budget), unless `allow_marker_loss`.
 
-    The input is Artwork/2 or Inkmap Design/1 with acquired DBV3 paths. Source
-    order, direction, pen IDs and repeats survive rigid placement and timed
-    chunking. Computational chunks continue in contact and do not imply dips.
+    The input is acquired DBV3 Artwork/2: one file, or several (a list) drawn as
+    layers in the order given, centred on the page or at `at_m`. Source order,
+    direction, pen IDs and repeats survive rigid placement and timed chunking.
+    Computational chunks continue in contact and do not imply dips.
     """
     if not (math.isfinite(speed_m_s) and speed_m_s > 0 and math.isfinite(max_segment_s) and max_segment_s > 0):
         raise CompileError("the draw speed and max_segment_s must be positive")
@@ -91,6 +101,7 @@ def compile(design_path: str | Path, *, arm: str = "right", tool_id: str | None 
     motion = load_motion(root / "ros/tatbot_motion/config/motion.yaml")
     resources, bindings, binding_source = (bind_resources(inks_path, design, repo=root, arm=arm, speed_m_s=speed_m_s)
                                           if inks_path else fitted_bindings(design, repo=root, arm=arm, tool_id=tool_id, pen_mode=motion['pen']['mode']))
+    borrowed_dips(resources, allowed=allow_borrowed_dip)
     table = {resource['id']: resource for resource in resources}
     widths = {key: table[value]['tool']['line_width_m'] for key, value in bindings.items()}
     strokes, page = placed_strokes(design, tool_widths=widths, page=None if stencil is None else print_page(stencil, root))
@@ -99,11 +110,15 @@ def compile(design_path: str | Path, *, arm: str = "right", tool_id: str | None 
     region = None
     if keep_region_m is not None:   # after the dots: one on a line of the whole design is ink the skin already has
         strokes, region = keep_region(strokes, keep_region_m, min_size_m=min_stroke_m)
+    strokes, stroke_order = _ordered(strokes, bindings, widths, stencil, root)
     ops = schedule_ops(strokes, bindings, resources, speed=speed_m_s, max_seconds=max_segment_s, motion=motion,
                       max_stroke_m=max_stroke_m)
     contact = sum(polyline_length(stroke.points_m) for stroke in strokes)
     travel = sum(float(np.linalg.norm(b.points_m[0] - a.points_m[-1])) for a, b in zip(strokes, strokes[1:], strict=False))
-    timing = estimate_duration(ops, speed_m_s, travel, motion, resources=resources)
+    page_record = {k: page[k] for k in ("kind", "size_m", "clear_m")}
+    doses = dose.strokes({"ops": ops, "resources": resources, "page": page_record, "draw_speed_m_s": speed_m_s}, motion)
+    timing = estimate_duration(ops, speed_m_s, travel, motion, resources=resources,
+                               drawing_s={op_id: d.drawing_s for op_id, d in doses.items()})
     notes = []
     for resource in resources:
         tool = resource['tool']
@@ -118,10 +133,11 @@ def compile(design_path: str | Path, *, arm: str = "right", tool_id: str | None 
                    "implementation": _implementation(), "min_stroke_m": min_stroke_m, "max_stroke_m": max_stroke_m,
                    "dropped_dots": [{k: s.src[k] for k in ("placement", "layer", "path")} for s in dots],
                    **({} if region is None else {"keep_region": region}),
+                   **({} if stroke_order == "source" else {"stroke_order": stroke_order}),
                    "pen_bindings": [{"artwork_sha256": a, "pen_id": p, "resource_id": resource}
                                     for (a, p), resource in bindings.items()]}
     result = {"format": FORMAT, "version": VERSION, "design": _provenance(design, "+".join(p.name for p in paths), raw),
-            "arm": arm, "substrate": binding_source['substrate'], "page": {k: page[k] for k in ("kind", "size_m", "clear_m")}, "resources": resources,
+            "arm": arm, "substrate": binding_source['substrate'], "page": page_record, "resources": resources,
             "draw_speed_m_s": float(speed_m_s), "preparation": preparation, "ops": ops,
             "stats": {"strokes": sum(op["op"] == "stroke" for op in ops), "paths": len(strokes),
                       "contact_m": round(contact, 9), "travel_m": round(travel, 9), "dips": sum(op['op'] == 'dip' for op in ops),
@@ -131,8 +147,93 @@ def compile(design_path: str | Path, *, arm: str = "right", tool_id: str | None 
                                "kept_alone": alone}}}
     result["stats"]["passes"] = {"marks": {r['id']: passes.mark(r['tool'], mark_width_m) for r in resources}}
     result["stats"]["passes"] = {**passes.summary(passes.program_lines(result)), **result["stats"]["passes"]}
+    _ink_order(result, after, wiped)
+    result["stats"]["line_per_dip"] = line_per_dip(ops, resources)
+    result["stats"]["dose"] = dose.summary(result, motion, doses)
+    _marker_budget(result, stencil, root, [prior for prior, _ in _earlier(after, wiped)], allow_marker_loss)
     validate_for_execution(result)
     return result
+
+
+def _ink_order(program: dict, after, wiped: bool) -> None:
+    """stats.ink_order, or the refusal (tatbot_ink.order); preparation.drawn_after names the earlier programs."""
+    program["stats"]["ink_order"] = order.check(program, _earlier(after, wiped))
+    if after:
+        program["preparation"]["drawn_after"] = [
+            {"sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest(), "wiped": wiped and index == len(after) - 1}
+            for index, path in enumerate(after)]
+
+
+def _earlier(after, wiped: bool) -> list:
+    """The programs drawn before this one on its print, each with whether the print was wiped after it: `wiped`
+    is the last one's, since a wipe takes off what every run before it left wet."""
+    earlier = []
+    for index, path in enumerate(after):
+        try:
+            prior = parse_json(Path(path).read_bytes())
+            if prior.get("format") != FORMAT or not isinstance(prior.get("ops"), list):
+                raise ValueError(f"not a {FORMAT}")
+            order.runs(prior)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            raise CompileError(f"--after {path}: {error}") from error
+        earlier.append((prior, wiped and index == len(after) - 1))
+    if wiped and not earlier:
+        raise CompileError("--wiped says the print was wiped after an earlier run: name its program with --after")
+    return earlier
+
+
+def _ordered(strokes, bindings, widths, stencil, root):
+    """(the placed paths in the order they are drawn, that order's name): source order, or, on a print with
+    markers and stack.yaml page.markers.order `spare`, each ink's paths ordered to spare the markers
+    (markers.spare_order)."""
+    from tatbot_ink import markers
+
+    config = None if stencil is None else markers.settings(root)
+    if config is None or config["order"] == "source":
+        return strokes, "source"
+    if config["order"] != "spare":
+        raise CompileError(f"stack.yaml page.markers.order is source or spare, not {config['order']!r}")
+
+    def key(stroke):
+        return stroke.src["artwork_sha256"], stroke.src["pen"]
+    return markers.spare_order(strokes, lambda s: bindings[key(s)], lambda s: widths[key(s)] or s.generation_width_m,
+                               stencil, root, config), "spare"
+
+
+def _marker_budget(program: dict, stencil, root, earlier: list, allow: bool) -> None:
+    """stats.markers: what the program's ink leaves of the print's markers for the cameras (markers.predict), over
+    the ink of the programs drawn there before (`earlier`, wiped since or not: a wipe takes off wet ink, not a
+    line). Under stack.yaml's page.markers budget, with page.markers.enforce, it is refused, each line naming the
+    stage and the markers lost, unless `allow` (recorded as preparation.allow_marker_loss, which the draw
+    honours): a sheet fixed on its mount is drawn without them
+    (page.static_run). Not enforced, the lines go into stats.notes. Nothing is counted without a print (`stencil`
+    None) or on a print without markers. Where the count cannot be made (a Python without OpenCV, a layout record
+    the detector cannot load) a program the budget would not refuse anyway is prepared with a note saying so."""
+    from tatbot_ink import markers
+
+    if stencil is None:
+        return
+    config = markers.settings(root)
+    try:
+        report = markers.predict(program, stencil, root, config, drawn=earlier)
+    except (ImportError, OSError, KeyError, ValueError) as error:
+        why = "this Python has no OpenCV" if isinstance(error, ImportError) else f"the print's markers did not load ({error!r})"
+        if config["enforce"] and not allow:
+            raise CompileError(f"the marker budget could not be counted: {why}") from error
+        program["stats"]["notes"].append(f"marker budget not counted: {why}")
+        return
+    if report is None:
+        return
+    lost = markers.refusals(report)
+    program["stats"]["markers"] = {**report, "within_budget": not lost}
+    if lost and not allow and not config["enforce"]:
+        program["stats"]["notes"] += [f"marker budget (not enforced, stack.yaml page.markers.enforce): {line}" for line in lost]
+    elif lost and not allow:
+        raise CompileError("the design covers the markers its print is tracked by: " + "; ".join(lost)
+                           + ". Draw it smaller or off the markers it covers, or pass --allow-marker-loss to draw "
+                             "it anyway (a sheet fixed on its mount: stack.yaml page.static_run)")
+    if allow:
+        program["preparation"]["allow_marker_loss"] = True
 
 
 def write_program(program: dict, path: str | Path) -> Path:

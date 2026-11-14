@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export the follower's measured tool poses from explicit recorded inputs; no motion authority.
 
-The follower (the pink, right arm) is the one arm the model carries; the teleop
+The follower (the WXAI right arm) is the one arm the model carries; the teleop
 leader has no chain in urdf/tatbot.urdf. A tool without a touch-off is placed
 at its datasheet nominal and the manifest says so (`tip_source`).
 
@@ -26,6 +26,7 @@ from tatbot_paths import bootstrap  # noqa: E402
 
 bootstrap()
 import arm_kinematics as kin  # noqa: E402
+import arm_model  # noqa: E402
 import tool_spec  # noqa: E402
 from kinematic_calibration import KEY as JOINT_OFFSETS_KEY  # noqa: E402
 from kinematic_calibration import validate_offsets  # noqa: E402
@@ -100,13 +101,14 @@ def _joint(name, joint, required, model):
 def _source_paths():
     return [Path(__file__), REPO / 'scripts/vision/teleop_log.py',
             REPO / 'scripts/vision/urdf_kinematics.py', REPO / 'scripts/lib/arm_kinematics.py',
-            REPO / 'scripts/lib/kinematic_calibration.py', REPO / 'scripts/lib/tool_spec.py']
+            REPO / 'scripts/lib/arm_model.py', REPO / 'scripts/lib/kinematic_calibration.py',
+            REPO / 'scripts/lib/tool_spec.py']
 
 
 def _poses(positions, chain, tip, model):
     tcp, link6 = [], []
     for row in positions:
-        joints = model.joint_map(row[:6], row[6])
+        joints = model.joint_map(row[model.chain], row[model.carriage])
         pose = chain.link_pose(model.tool_mount, joints)
         pose[:3, 3] += pose[:3, :3] @ tip
         tcp.append(pose)
@@ -172,7 +174,7 @@ def export(log_path, out, urdf_path, workspace_path, ee_tool):
               'workspace': _read(workspace_path, 1024**2)}
     _log_bytes(inputs['log'])
     workspace = _workspace(inputs['workspace'], arm)
-    offsets = np.asarray(validate_offsets(workspace[arm].get(JOINT_OFFSETS_KEY)))
+    offsets = np.asarray(validate_offsets(workspace[arm].get(JOINT_OFFSETS_KEY), arm_model.for_arm(arm, REPO)))
     if tool_spec.active_tool_id(workspace=workspace, arm=arm) != ee_tool:
         raise ValueError('stated tool differs from recorded workspace')
     tool_path = REPO / 'config/tools' / (ee_tool + '.yaml')
@@ -190,7 +192,7 @@ def export(log_path, out, urdf_path, workspace_path, ee_tool):
             (temporary / key).write_bytes(inputs[key])
         log = TeleopLog(temporary / 'log')
         chain = kin.urdf_chain(temporary / 'urdf')
-        model = kin.ArmModel(arm)
+        model = kin.ArmFrames(arm)
         root = _model(chain, model)
         positions, read_offset_s = log.follower_pos, log.t_follower_read
         tcp, link6 = _poses(positions + offsets, chain, tip, model)

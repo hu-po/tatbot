@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tatbot-lab"
+version = "0.1.0"
+description = "The lab: studies of what the rig can tattoo, their trials, plans and readings from the rig's cameras"
+authors = [{ name = "Hugo Ponte" }]
+license = "MIT"
+requires-python = ">=3.11"
+# The shared offline drawing interpreter's set (scripts/lib/drawing_python.py).
+dependencies = ["numpy", "opencv-python-headless", "PyYAML"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tatbot_lab*"]

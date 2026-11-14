@@ -28,6 +28,8 @@ from frame_set_wire import unpack
 from tatbot_session import inspect as ins
 
 REPO = Path(__file__).resolve().parents[2]
+# The arm whose wrist carries the session camera (vision.toml's wrist_2), which a tap with no fixture opens.
+ARM = next(c['arm'] for c in wrist_cameras.registry(REPO) if c['role'] == 'wrist_2')
 OPENCV_JPEG = wrist_tap.encode_jpeg
 UNITS = float(np.float32(0.0001))     # what get_depth_scale() returns on the D405
 
@@ -112,12 +114,15 @@ class Pipeline:
 
     def start(self, cfg):
         with self.guard.enter('start'):
+            if self.rs.refuses(cfg.size, cfg.fps):
+                raise RuntimeError("Couldn't resolve requests")
             self.size = cfg.size
             w, h = cfg.size
             streams = {'color': Optics(w, h, 600.0), 'depth': Optics(w, h, 400.0)}
             serial = getattr(cfg, 'serial', '000000000000')   # the device enable_device asked for, as a real one
-            device = types.SimpleNamespace(get_info=lambda _key: serial, first_depth_sensor=lambda: types.
-                                           SimpleNamespace(get_depth_scale=lambda: UNITS))
+            info = {'serial_number': serial, 'usb_type_descriptor': self.rs.usb}
+            device = types.SimpleNamespace(get_info=info.__getitem__, supports=info.__contains__,
+                                           first_depth_sensor=lambda: types.SimpleNamespace(get_depth_scale=lambda: UNITS))
             return types.SimpleNamespace(get_stream=streams.__getitem__, get_device=lambda: device)
 
     def wait_for_frames(self, _timeout_ms):
@@ -142,16 +147,17 @@ class Empty:
 def stub_realsense(monkeypatch):
     rs = types.ModuleType('pyrealsense2')
     rs.guard, rs.pipelines = Guard(), []
+    rs.refuses, rs.usb = (lambda size, fps: False), '3.2'   # what the camera's link cannot stream, and its USB
     rs.stream = types.SimpleNamespace(color='color', depth='depth')
     rs.format = types.SimpleNamespace(bgr8='bgr8', z16='z16')
-    rs.camera_info = types.SimpleNamespace(serial_number='serial_number')
+    rs.camera_info = types.SimpleNamespace(serial_number='serial_number', usb_type_descriptor='usb_type_descriptor')
 
     class Config:
         def enable_device(self, serial):
             self.serial = serial
 
-        def enable_stream(self, stream, width, height, _fmt, _fps):
-            self.size = (width, height)
+        def enable_stream(self, stream, width, height, _fmt, fps):
+            self.size, self.fps = (width, height), fps
 
     class Align:
         def __init__(self, _to):
@@ -195,8 +201,8 @@ def rig(monkeypatch):
     return stub_realsense(monkeypatch)
 
 
-def camera(bus, logs, *, poll=False, width=64, height=48, aligned=False, open_bus=None):
-    tap = wrist_tap.factory({'enabled': True, 'poll': poll}, repo=REPO, arm='right',
+def camera(bus, logs, *, poll=False, width=64, height=48, aligned=False, open_bus=None, arm=ARM):
+    tap = wrist_tap.factory({'enabled': True, 'poll': poll}, repo=REPO, arm=arm,
                             open_bus=open_bus or (lambda: bus), frames=(ins.CAMERA_FRAME, ins.DEPTH_FRAME),
                             log=logs.append)
     return ins.WristCamera(width=width, height=height, depth=True, aligned=aligned, tap=tap)
@@ -212,7 +218,7 @@ def wait_for(condition, timeout_s=5.0):
 def mounted():
     """The vision.toml camera a WristCamera with no serial opens (stack.yaml page.locate.camera's)."""
     serial = ins.configured_serial()
-    return next(c for c in wrist_cameras.mounted_for_arm(REPO, 'right') if c['serial'] == serial)
+    return next(c for c in wrist_cameras.mounted_for_arm(REPO, ARM) if c['serial'] == serial)
 
 
 def source(blob):
@@ -357,9 +363,9 @@ def test_a_camera_dropped_without_close_is_not_kept_alive_by_its_tap(rig):
 
 
 def test_off_in_stack_yaml_means_no_tap_at_all(rig):
-    assert wrist_tap.factory({'enabled': False, 'poll': True}, repo=REPO, arm='right', open_bus=None,
+    assert wrist_tap.factory({'enabled': False, 'poll': True}, repo=REPO, arm=ARM, open_bus=None,
                              frames=()) is None
-    assert wrist_tap.factory(None, repo=REPO, arm='right', open_bus=None, frames=()) is None
+    assert wrist_tap.factory(None, repo=REPO, arm=ARM, open_bus=None, frames=()) is None
     before = set(threading.enumerate())             # another test's tap may still be ending
     cam = ins.WristCamera(depth=True, tap=None)
     cam.grab_both(1)
@@ -386,15 +392,15 @@ def test_a_message_carries_the_contract_metadata_at_the_d405_size(rig, aligned, 
     for meta in (color_meta, depth_meta):
         attrs = meta['attributes']
         assert (attrs['physical_arm'], attrs['device_serial'], attrs['capture_owner_role']) == \
-            ('right', camera_entry['serial'], camera_entry['owner_role'])
+            (ARM, camera_entry['serial'], camera_entry['owner_role'])
         assert before <= meta['timestamps']['normalized_unix_ns'] <= after
     color_optics, depth_optics = (json.loads(m['attributes']['intrinsics']) for m in (color_meta, depth_meta))
     assert color_optics['fx'] == 600.0 and (color_optics['width'], color_optics['height']) == (1280, 720)
     assert depth_optics['fx'] == (600.0 if aligned else 400.0)
     assert depth_optics['schema'] == 'tatbot.camera-intrinsics/1' and depth_optics['distortion_model'] == 'BrownConrady'
-    assert color_meta['attributes']['ros_frame'] == 'right/realsense_color_optical_frame'
-    assert depth_meta['attributes']['ros_frame'] == ('right/realsense_color_optical_frame' if aligned
-                                                     else 'right/realsense_depth_optical_frame')
+    assert color_meta['attributes']['ros_frame'] == f'{ARM}/realsense_color_optical_frame'
+    assert depth_meta['attributes']['ros_frame'] == (f'{ARM}/realsense_color_optical_frame' if aligned
+                                                     else f'{ARM}/realsense_depth_optical_frame')
     assert depth_meta['attributes'].get('aligned_to') == (f'{name}_color' if aligned else None)
     assert depth_meta['attributes']['depth_units_m'] == '0.0001' and 'depth_units_m' not in color_meta['attributes']
     assert color_meta['profile']['format'] == 'bgr8' and depth_meta['profile']['format'] == 'z16'
@@ -411,7 +417,7 @@ TWO_WRISTS = """
 [[cameras.realsense]]
 name = "upper"
 serial = "upper-serial"
-role = "wrist_upper"
+role = "wrist_2"
 group = "d405"
 arm = "right"
 owner_role = "ros"
@@ -421,14 +427,14 @@ depth_optical_frame = "right/realsense_depth_optical_frame"
 [[cameras.realsense]]
 name = "lower"
 serial = "lower-serial"
-role = "wrist_lower"
+role = "wrist_1"
 group = "d405"
 arm = "right"
 owner_role = "ros"
 optical_frame = "right/realsense_lower_color_optical_frame"
 depth_optical_frame = "right/realsense_lower_depth_optical_frame"
 """
-PREVIEW = {'enabled': True, 'poll': False, 'preview': {'cameras': ['wrist_lower'], 'width': 32, 'height': 24, 'fps': 15}}
+PREVIEW = {'enabled': True, 'poll': False, 'preview': {'cameras': ['wrist_1'], 'width': 32, 'height': 24, 'fps': 15}}
 
 
 @pytest.fixture
@@ -461,7 +467,7 @@ def test_each_camera_publishes_as_the_vision_toml_camera_of_its_serial(rig, two_
     assert frames['lower_color'][0]['attributes']['ros_frame'] == 'right/realsense_lower_color_optical_frame'
     assert frames['lower_depth'][0]['attributes']['device_serial'] == 'lower-serial' and logs == []
 
-    stranger = camera(bus, logs)                     # stack.yaml's role, now on a device vision.toml lacks
+    stranger = camera(bus, logs, arm='right')        # stack.yaml's role, now on a device vision.toml lacks
     stranger.serial = 'stranger'
     stranger.tap = wrist_tap.factory({'enabled': True}, repo=REPO, arm='right', open_bus=lambda: bus,
                                      log=logs.append, frames=(ins.CAMERA_FRAME, ins.DEPTH_FRAME))(stranger)
@@ -512,16 +518,52 @@ def test_a_preview_still_opening_at_close_is_closed_once_open_and_one_not_mounte
         opened[-1].close = lambda: opened[-1].closes.append(1)
         return opened[-1]
 
-    config = {'enabled': True, 'preview': {'cameras': ['wrist_probe', 'wrist_lower', 'wrist_upper'],
+    config = {'enabled': True, 'preview': {'cameras': ['wrist_probe', 'wrist_1', 'wrist_2'],
                                            'width': 32, 'height': 24, 'fps': 15}}
     preview = wrist_tap.previews(config, repo=REPO, arm='right', open_camera=open_camera, open_bus=None,
                                  log=logs.append)()
     assert entered.wait(5) and 'preview wrist_probe not opened' in logs[0]
-    preview.close()                                  # wrist_lower is still opening
+    preview.close()                                  # wrist_1 is still opening
     gate.set()
     assert wait_for(lambda: not preview.thread.is_alive())
     assert [(c.serial, c.profile, c.closes) for c in opened] == [('lower-serial', (32, 24, 15), [1])]
-    assert preview.cameras == [] and len(logs) == 1   # wrist_upper never opened after the close
+    assert preview.cameras == [] and len(logs) == 1   # wrist_2 never opened after the close
+
+
+def test_a_session_camera_on_a_usb2_link_keeps_its_size_at_a_rate_the_link_carries(rig, capsys):
+    """On USB 2.1 a D405 streams colour and depth at 1280x720 only at 5 fps (2026-11-08)."""
+    rig.refuses, rig.usb = (lambda size, fps: size == (1280, 720) and fps > 5), '2.1'
+    cam = ins.WristCamera(serial='slow-serial', depth=True)
+    assert (cam.fps, rig.pipelines[0].size) == (5, (1280, 720))
+    assert 'wrist D405 slow-serial: 1280x720 at 5 fps, not 30, on its USB 2.1 link' in capsys.readouterr().err
+    rig.refuses = lambda size, fps: True
+    with pytest.raises(RuntimeError, match='resolve'):
+        ins.WristCamera(serial='slow-serial', depth=True)
+
+
+def test_a_camera_on_a_usb2_link_that_streams_as_asked_is_still_reported_once(rig, capsys, monkeypatch):
+    monkeypatch.setattr(ins.WristCamera, 'USB2_SEEN', set())
+    rig.usb = '2.1'
+    for _ in range(2):   # the idle feed opens it again and again
+        assert ins.WristCamera(serial='small-serial', width=640, height=360, fps=15, claim=False).fps == 15
+    said = capsys.readouterr().err
+    assert said.count('wrist D405 small-serial: on a USB 2.1 link, not USB 3: 640x360 at 15 fps as asked') == 1
+    rig.usb = '3.2'
+    ins.WristCamera(serial='fast-serial', claim=False)
+    assert capsys.readouterr().err == ''
+
+
+def test_a_preview_whose_link_carries_no_such_stream_opens_at_a_size_any_link_does(rig, two_wrists, monkeypatch):
+    own_guards(rig, monkeypatch)
+    rig.refuses = lambda size, fps: size == (32, 24)
+    logs = []
+    shared = {'repo': REPO, 'arm': 'right', 'open_bus': lambda: Bus(), 'log': logs.append}
+    preview = wrist_tap.previews(PREVIEW, open_camera=functools.partial(ins.WristCamera, depth=True), **shared)()
+    assert wait_for(lambda: len(preview.cameras) == 1)
+    (lower,) = preview.cameras
+    assert (lower.serial, lower.fps, rig.pipelines[-1].size) == ('lower-serial', 15, wrist_tap.ANY_LINK_SIZE)
+    assert len(logs) == 1 and 'preview D405 lower-serial: 32x24 not opened' in logs[0] and '480x270' in logs[0]
+    preview.close()
 
 
 # --- the readings' markers: tatbot.wrist-markers/1 beside the frames they were read in ------------------------------

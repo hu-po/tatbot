@@ -20,22 +20,61 @@ approach:
   standoff_m: 0.010               # pen-up height above the stroke start/end (motion_constants orbit.no_scan_lift_mm)
   withdraw_m: 0.030               # a stack restarted with a pen away from rest (no page known) pulls it out this far along
                                   # its axis before landing: the controller idles on a lost connection, and in the ~10 s
-                                  # before the restart the pink tip sagged 9-13 mm down and 12-17 mm aside (2026-10-08)
-  descend_m_s: 0.010              # pen_path DESCENT_SPEED_M_S
-  final_m: 0.005                  # the last 5 mm of the descent (pen_path FINAL_DESCENT_M)...
+                                  # before the restart the WXAI tip sagged 9-13 mm down and 12-17 mm aside (2026-10-08)
+  descend_m_s: 0.030              # the descent's cap above its last final_m. pen_path's 10 mm/s (DESCENT_SPEED_M_S) was
+                                  # never reached: from the 10 mm standoff the pen-up budget below held it to 5.5 mm/s
+  final_m: 0.005                  # the last 5 mm of the descent... The running needles of a needle cartridge first
+                                  # meet the skin inside it: the 3RL's reach it (trim + skin error - 1) mm over the
+                                  # stop (ride 5.0 mm, reach 4.0), 4.7 mm at the deepest trim the keys take
+                                  # (page.surface.rigid.trim_stop_m, 3.3 mm) over skin 2.4 mm higher than gauged:
+                                  # the 1 mm the gauge reads low (pen.ride), the surface field's 0.9 mm
+                                  # (page.surface.max_loo_m) and half a millimetre of one reading's scatter. At 3 mm
+                                  # (2026-11-12, with the faster pen-up legs) a stroke planned with its trim already in
+                                  # met that skin at 9.9 mm/s, and at the owner's -2.5 mm at 5.4. pen_path's value
+                                  # (FINAL_DESCENT_M)
   final_m_s: 0.003                # ...at 3 mm/s (FINAL_DESCENT_SPEED_M_S), also the gentle stretch of a lift
-  lift_m_s: 0.010                 # pen_path LIFT_SPEED_M_S
-  omega_max_rad_s: 0.1396         # 8 deg/s rotation cap on pen-up travel (pen_path APPROACH_OMEGA_MAX_RAD_S)
-  angular_accel_rad_s2: 0.1       # rotary budget of a turning pen-up leg (pen_path RETIME_ANGULAR_ACCEL_RAD_S2)
+  lift_m_s: 0.030                 # past the lift's first lift_first_m; pen_path's was 10 mm/s (LIFT_SPEED_M_S)
+  lift_first_m: 0.003             # a lift's first 3 mm at the touchdown budget (corners.touchdown_m_s2): the needles
+                                  # leave the skin under the snag guard, and at the descent's 5 mm each lift took
+                                  # 0.3 s longer
+  cap_drop_m_s: 0.050             # a dip's drop down the cap's axis to its hover, ~80 mm under the crossing height: at the
+                                  # 120 mm/s of travel its stop 8 mm over the rim rang +-1.2 mm at ~5 Hz for 0.5 s, and it
+                                  # looked jerky (2026-10-25); 50 mm/s takes ~1.7 s longer a dip
+  omega_max_rad_s: 0.5            # 29 deg/s rotation cap on pen-up travel. pen_path's 8 deg/s
+                                  # (APPROACH_OMEGA_MAX_RAD_S) and 0.1 rad/s2 below were the compliant arm's: a pen
+                                  # turning 3 deg to the next stroke's skin took 1.5 s whatever the distance
+  angular_accel_rad_s2: 0.5       # rotary budget of a turning pen-up leg: about the tip, the mount 0.2 m up the tool
+                                  # then moves at corners.pen_up_m_s2. Drawn in ink on the rig 2026-11-13
 
 draw:
-  ease_s: 2.0                     # quintic end ease of a stroke (the retired draw CLI's ease_s)
+  ease_s: 0.5                     # quintic end ease of a stroke: 14 mm/s2 at most at 3.5 mm/s. The retired draw CLI's
+                                  # 2.0 s cost every stroke 2 s and put ~4 times the middle's pokes on its first and
+                                  # last millimetre; by the dose model 0.5 s puts ~1.9 times. Drawn in ink on the rig 2026-11-13
   short_ease_fraction: 0.45       # a short stroke's ease is at most this fraction of length / speed (pen_path)
   min_ease_s: 0.05                # the shortest ease (pen_path MIN_STROKE_EASE_S); a dot dwells twice this
+  ends: stop                      # stop | fly. stop: the pen comes down on the stroke's first point, eases from rest
+                                  # along it, eases to rest and lifts, the machine running throughout: by the dose
+                                  # model (tatbot_motion.dose) the first and last millimetre of a long stroke take
+                                  # ~1.9 times the middle's pokes and the descent ~54 on one spot (2026-11-10, at a
+                                  # 2.0 s ease and ~4 times: a dark dot at every stroke end). fly: the eases happen
+                                  # in the air and the pen comes down and leaves moving (the `fly` block). Not yet
+                                  # drawn on the rig
+  fly:                            # draw.ends: fly (tatbot_motion.plan.flying_law)
+    band_m: 0.0015                # the needles can mark while the pen is within this of its pen-down path: the 3RL's
+                                  # mark fades out over 0.7 mm of lift from a -1.75 mm trim (its fade_lift_mm), and the
+                                  # 2026-11-10 runs drew at -2.5 mm, 0.75 mm deeper
+    clear_m: 0.0005               # the pen starts and stops moving sideways this far over that band
+    glide_m: 0.003                # along the stroke's line, the distance over which it comes down from there (a quintic
+                                  # of distance, level at both ends): at 3.5 mm/s 0.86 s, the pen 4.4 mm/s down and
+                                  # 16 mm/s2 at most, between the pen-up legs' 10 and a gauge hop's 40 mm/s2
+    inset_m: 0.0015               # it reaches its pen-down path this far inside the stroke's end, so it enters the
+                                  # band 0.4 mm outside the end. A stroke shorter than its flying ends' insets (3 mm
+                                  # lifted at both) would never reach its path: its ends stop
+    ease_s: 1.0                   # rest to the draw speed, in the air: 1.75 mm at 3.5 mm/s, 6.6 mm/s2 at most
 
 pen:                              # pen-down path relative to the touch-derived page (tatbot_motion.pen_down)
-  mode: ride                      # the block below that draws: ride for the ballpoint and for a 3RL whose needle
-                                  # reach is recorded; hover rehearses without a mark (a resource may still ride: a ladder)
+  mode: ride                      # the block below that draws: ride for a 3RL whose needle reach is recorded;
+                                  # hover rehearses without a mark (a resource may still ride: a ladder)
   hover:                          # the tattoo machine off, the path held over the page: a rehearsal that marks nothing
     height_m: 0.006               # over the measured page; a running 3RL reaches ~2 mm past its tube's end
     settle_s: 0.0
@@ -49,21 +88,16 @@ pen:                              # pen-down path relative to the touch-derived 
                                   # every run and never pressed deeper; on a silicone ink run they lifted the full
                                   # +2.0 mm trim and called that the right height). By the datasheet the needles stop
                                   # 1.0 mm short there, yet it inks: the gauge reads the skin about that much low (an
-                                  # open wrist-camera calibration question). Was 0.75 after a 2026-10-05 ride ladder. Put 1.057 back with the ballpoint:
-                                  # this fraction of fitted stroke_mm over the page the wrist gauge measures: 3.70 mm for
-                                  # the 3.5 mm stroke (2026-10-05: a fresh black pressed hard at 3.5 on a traced-twice
-                                  # outline; the operator trimmed to 3.7 and it still inked). A ladder on gauge-measured paper (2026-10-03, close-up scored)
-                                  # left nothing at 4.5 and 4.1 mm, a broken line at 3.7, solid lines at 3.3, 2.9 and
-                                  # 2.5. 3.3 drew a cat and a swirl; at 2.9 the purple cartridge pressed too hard
-                                  # (operator). At 3.3 an outline's out-and-back retrace tore thin paper and dragged
-                                  # the sheet (2026-10-04), so the pen presses less. The old 1.1 (3.85 mm) rested on
-                                  # touch heights the guard tripped in the air; tune on ink, not FK
+                                  # open wrist-camera calibration question). Was 0.75 after a 2026-10-05 ride ladder.
+                                  # Tune on ink, not FK. The ballpoint, retired 2026-11-02, rode 1.057 on paper.
     settle_s: 0.0                 # a running tip that dwells dots the page
-  trim:                           # the operator's height trim over that path, kept per cartridge for the run
+  trim:                           # the operator's height trim over that path, kept per cartridge (its tool, so
+                                  # through a rinse to the next colour) for the run
                                   # (tatbot_motion.trim; the station keyboard: Fn+W up, Fn+S down, Fn+X back to 0)
-    step_m: 0.0001                # one key press. The ladder (2026-10-03) drew solid from 3.3 down to 2.5 mm and
-                                  # pressed too hard at 2.9 with a swapped cartridge: 0.4 mm already shows
-    limit_m: 0.004                # the trim stays within +-this. At 2 mm (2026-10-04) the owner's forearm tattoo
+    step_m: 0.00025               # one key press. The ladder (2026-10-03) drew solid from 3.3 down to 2.5 mm and
+                                  # pressed too hard at 2.9 with a swapped cartridge: 0.4 mm already shows. 0.1 mm
+                                  # steps were too fine to see a correction take (2026-11-02)
+    limit_m: 0.004                # the trim stays within +-this. At 2 mm (2026-10-04) a forearm tattoo
                                   # pressed Fn+S 141 times at -2 mm where the wrist read the skin up to 4.06 mm under
                                   # the field (2026-10-20). At -4 mm the 3RL's tube rides 1.0 mm over the skin the
                                   # gauge measures and its needles reach 3.0 mm past it by the datasheet (ride 5.0,
@@ -73,20 +107,51 @@ pen:                              # pen-down path relative to the touch-derived 
     min_s: 0.2                    # ...and its shortest ramp
     lead_s: 0.1                   # a change mid-goal starts this far ahead of now: the replacement goal reaches
                                   # the controller before the trajectories part
+    hold:                         # the depth hold (ros/README.md 4.4): before a needle cartridge's first dip the pen
+                                  # goes to its first stroke's start, the machine running and no ink on it, and waits
+                                  # there while Fn+S and Fn+W trim it; Fn+E takes the depth, and the run dips and draws
+      substrates: [human_skin]    # the programs that hold (their `substrate`); [] holds none
+      start_m: 0.001              # the trim a cartridge with none yet holds at first: at 0 the 3RL's needles stop
+                                  # 1.0 mm short of the gauged skin by its datasheet (ride 5.0 mm, reach 4.0)
+      window_s: 60.0              # one hold goal's length; a hold nobody took goes on in another
 
 corners:
-  velocity_change_m_s2: 0.010     # pen-down corner slow-down budget and ramp (pen_path RETIME_CORNER_ACCEL_M_S2)
-  pen_up_m_s2: 0.010              # pen-up legs (RETIME_PEN_UP_ACCEL_M_S2)
+  velocity_change_m_s2: 0.050     # pen-down corner slow-down budget and ramp. pen_path's 10 mm/s2
+                                  # (RETIME_CORNER_ACCEL_M_S2) slowed a 90 deg turn to 0.33 mm/s and a letter's tight
+                                  # curves to a third of the draw speed all along them (40 pokes/mm against the
+                                  # middle's 14.6); at 50 the turn slows to 1.7 mm/s and those curves draw at speed.
+                                  # Replayed, a 27-stroke run's drawing takes 167 s, not 220. Drawn in ink on the rig 2026-11-13
+  pen_up_m_s2: 0.100              # pen-up legs: 0.01 g. pen_path's 10 mm/s2 (RETIME_PEN_UP_ACCEL_M_S2) was tuned on
+                                  # the compliant arm, and on a 27-stroke run it, not any speed cap, set the time of
+                                  # every leg: 2.5 s to travel ~15 mm to the next stroke, 3.7 s down the standoff and
+                                  # 3.1 s up it, 9.3 s a stroke against 8.2 s of drawing. Replayed through the planner
+                                  # at 100 mm/s2 with the approach values above: 5.6 s. Drawn in ink on the rig 2026-11-13.
+                                  # A gauge hold's hop (up and over from the last hold) had its own 40 mm/s2 until
+                                  # then: at 10 a 66 mm hop took 5.2 s, 29 a set-up
   s_curve_s: 0.2                  # S-curve time constant (RETIME_RAMP_S)
-  touchdown_m_s2: 0.003           # the last final_m into and out of the page (RETIME_TOUCHDOWN_ACCEL_M_S2)
+  touchdown_m_s2: 0.003           # the last final_m into the page and the first lift_first_m out of it
+                                  # (RETIME_TOUCHDOWN_ACCEL_M_S2)
   end_ease: quintic
+  blend_radius_m: 0.0             # a pen-down corner cut by an arc of this radius, never more than half the width the
+                                  # stroke was generated at (tatbot_motion.plan.blend_corners). 0: the sharp corner,
+                                  # which a 90 deg turn slows to 1.7 mm/s at 3.5 mm/s. Not yet drawn on the rig
+
+machine:                          # the tattoo machine, for the dose model (tatbot_motion.dose): pokes = rate x time
+  rate_hz: 51.0                   # the needles' rate drawing. The lab's held constant (docs/lab.md: the battery at
+                                  # 6.0 V runs it at 51 Hz). The simulator's 79 Hz (config/sim2/priors.yaml P17) was
+                                  # the earlier arm's joint states at another supply setting. On this arm the joints
+                                  # report 250 Hz states resampled at 400 Hz, a 50/100/150 Hz comb with the machine on
+                                  # or off, so the line cannot be read as P17 was: in the 2026-11-10 black run's bag a
+                                  # line at 51.3-51.8 Hz stands 6-12 times over the floor with the machine on (1-2
+                                  # off); the red run's is not separable from the comb
+  battery_v: 6.0
 
 touch:                            # motion_constants touchoff.*
   fast_m_s: 0.010                 # to slow_above_m above the prior
   slow_above_m: 0.010             # slow throughout descent from start_above_m; unloaded baseline needs separate validation
   slow_m_s: 0.0002                # slow: more force and fiducial samples through contact (operator, 2026-09-26)
   wiggle_amplitude_m: 0.0         # across the direction, faded in and out over a quarter period. 0: on the
-                                  # pink arm's compliant mat a pressed, wiggling tip slipped sideways and
+                                  # WXAI follower's compliant mat a pressed, wiggling tip slipped sideways and
                                   # dragged the mat (bench 2026-09-26); the wiggle also put +-0.3 mm into the lag
   wiggle_hz: 0.5
   search_m: 0.025                 # the slow cover without a prior
@@ -127,7 +192,7 @@ collision:                        # the arm keeps off itself (tatbot_motion.coll
                                   # The unsafe state: the arm folding onto itself
   self_m: 0.010                   # the least planned gap between two of one arm's own bodies (Scene.self_pairs,
                                   # the wrist tag cube among them), no bubbles. 2026-09-30: an inspection view folded
-                                  # the pink cube 11 mm into link_2 in the model; the arm met itself there
+                                  # the WXAI's cube 11 mm into link_2 in the model; the arm met itself there
   step_rad: 0.010                 # a planned way is checked wherever a joint has moved this far (7 mm at full reach)
 
 # Dip entry/withdrawal values belong to the measured ink.ros_profiles record

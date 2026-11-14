@@ -1,15 +1,15 @@
-import { requireAcquiredArtwork } from "./core/artwork-record.ts";
 import { create } from "zustand";
 import type { Anchor } from "./core/anchor.ts";
 import { BODY_SPEC, type BodySpec, type Skin } from "./core/body.ts";
 import { DEFAULT_POSE_ID, DEFAULT_SKIN_TONE } from "./core/defaults.ts";
-import { newPlacementId, SCHEMA_VERSION, validatePlacementFile, type DesignMeta, type Placement, type PlacementFile } from "./core/schema.ts";
+import { newPlacementId, SCHEMA_VERSION, validatePlacementFile, type DesignMeta, type EmbeddedDesign, type Placement, type PlacementFile } from "./core/schema.ts";
 import type { AtlasIndex } from "./core/atlas.ts";
 import { INKLANG_VERSION, realize, type TattooProgram } from "./core/lang.ts";
 import {
   acceptResolutionCandidate,
   intentFromSite,
   realizePlacement,
+  RESOLVER_VERSION,
   resolutionFromAnchor,
   type InkLangIntent,
   type InkLangResolution,
@@ -17,12 +17,12 @@ import {
 import { POSE_CATALOG } from "./core/pose.ts";
 import { buildDecal } from "./core/decal.ts";
 import { makeProject, type InkmapProject, type ProjectCamera } from "./core/project.ts";
-import type { InkmapDesign } from "./core/design.ts";
-import { chartDocumentFromDraft, chartDraftFromDocument, chartItemRefusal, EMPTY_DRAFT, freshChartDraft, MAX_CHART_ITEMS, newChartItem, type ChartDraft, type ChartItem } from "./core/chart-draft.ts";
-import { frozenArtwork } from "./core/frozen-artwork.ts";
-import { artworkSizeM } from "./core/artwork-record.ts";
-import { renderTattooProgramSvg } from "./core/human-representation/program-svg.ts";
-import { artworkSources } from "./core/design-assets.ts";
+import { artSizeMm, maxWidthMm, MIN_WIDTH_MM, validateArtShape } from "./core/art.ts";
+import { withInks } from "./core/art-image.ts";
+import { refreezeDesign } from "./core/design-assets.ts";
+import { uprightRotation } from "./core/landmarks.ts";
+import { makeBrief, type InkmapBrief } from "./core/brief.ts";
+import { findRender, MAX_RENDERS, type InkmapRender } from "./core/render-record.ts";
 
 export interface LoadedBody {
   spec: BodySpec;
@@ -47,6 +47,8 @@ export interface PendingTattoo {
   program: TattooProgram | null;
   intent: InkLangIntent;
   resolution: InkLangResolution;
+  /** A width the sentence gave, mm. */
+  widthMm?: number | null;
 }
 
 export interface State {
@@ -60,50 +62,21 @@ export interface State {
   surfaceInteraction: SurfaceInteraction | null;
   showQuality: boolean;
   neutralLight: boolean;
+  /** Robot renders loaded in this browser, newest first; a placement shows the one made for it. */
+  renders: InkmapRender[];
+  /** The collection's own renders of designs placed so far. They come with the page, so nothing saves them. */
+  stockRenders: InkmapRender[];
+  /** Show a placement's robot render on the body in place of its source art. Off until someone asks: a new visitor
+   *  meets the art, and turning this on, or loading a render, is remembered in this browser. */
+  showRender: boolean;
+  addRender: (render: InkmapRender) => void;
+  addStockRender: (render: InkmapRender) => void;
+  toggleRender: () => void;
   toProject: () => Promise<InkmapProject>;
   restoreProject: (project: InkmapProject) => void;
-  /** An empty project in place of this one: no placements, no chart items,
-   *  no history, the default name. The library, pose and skin tone stay. */
+  /** An empty project in place of this one: no placements, no history, the
+   *  default name. The library, pose and skin tone stay. */
   newProject: () => void;
-  /** The paper/cylinder editor's working draft, kept beside the body one so a
-   *  view switch or a reload does not throw it away. */
-  chart: ChartDraft;
-  /** Surface and items wholesale (a fixture change, an opened design). A new
-   *  item list ends any edit in progress; the placement machine below edits
-   *  items through its own actions. */
-  setChart: (value: Partial<ChartDraft>) => void;
-  /** The chart's own choose → place → adjust → ready machine, the body's
-   *  shape exactly (placing ghost, edit snapshot for Cancel, history), kept
-   *  as its own fields so neither editor can reach into the other's. */
-  chartPlacing: string | null;
-  chartDraft: { rotation_rad: number; size: [number, number] };
-  chartHover: [number, number] | null;
-  chartEditBefore: ChartItem[] | null;
-  chartPast: ChartItem[][];
-  chartFuture: ChartItem[][];
-  chartInteraction: SurfaceInteraction | null;
-  /** The other surface's draft and history, parked while `chart` shows.
-   *  Paper and cylinder are two drafts in one project; a tab switch parks
-   *  one and shows the other, and nothing crosses between them. */
-  chartParked: { draft: ChartDraft; past: ChartItem[][]; future: ChartItem[][] } | null;
-  switchChartKind: (kind: ChartDraft["kind"]) => void;
-  /** A draft arriving from a file takes the place of the draft of its kind. */
-  openChartDraft: (draft: ChartDraft) => void;
-  chartStartPlacing: (artworkId: string) => void;
-  chartCancelPlacing: () => void;
-  chartSetHover: (uv: [number, number] | null) => void;
-  chartCommit: (uv: [number, number]) => Promise<void>;
-  chartSelect: (id: string | null) => void;
-  chartUpdate: (id: string, patch: Partial<Pick<ChartItem, "uv" | "size" | "rotation_rad" | "mirror">>) => void;
-  chartRemove: (id: string) => void;
-  chartReorder: (id: string, index: number) => void;
-  chartAccept: () => void;
-  chartDiscard: () => void;
-  chartNudgeRotation: (rad: number) => void;
-  chartNudgeSize: (factor: number) => void;
-  chartUndo: () => void;
-  chartRedo: () => void;
-  chartSetInteraction: (interaction: SurfaceInteraction | null) => void;
   /** The accepted state before the current edit; null means no pending edit. */
   editBefore: Placement[] | null;
   past: Placement[][];
@@ -148,6 +121,8 @@ export interface State {
   setDesigns: (d: DesignMeta[]) => void;
   /** Add a session design (generated) to the picker; returns its id. */
   addDesign: (d: DesignMeta) => void;
+  /** Change the inks a design's art names: what `tatbot art separate --brief` loads. */
+  setArtInks: (designId: string, inks: string[]) => Promise<void>;
   setError: (e: string | null) => void;
   setAtlas: (a: AtlasIndex | null) => void;
   toggleAtlas: () => void;
@@ -174,14 +149,13 @@ export interface State {
   discard: () => void;
   setToast: (t: string | null) => void;
   nudgeRotation: (rad: number) => void;
-  /** Keyboard nudges: scale the ghost or the selected placement by `factor`, aspect locked, width clamped to [MIN_WIDTH_MM, MAX_WIDTH_MM]. */
+  /** Keyboard nudges: scale the ghost or the selected placement by `factor`, aspect locked, kept within the size limits. */
   nudgeSize: (factor: number) => void;
   toFile: () => PlacementFile | null;
   snapshotFile: () => PlacementFile | null;
   loadFile: (raw: unknown) => void;
-  /** The accepted body placements as one portable design, and back again. */
-  toDesign: () => Promise<InkmapDesign>;
-  loadDesign: (design: InkmapDesign) => Promise<void>;
+  /** The accepted placements as a tattoo brief: each design's art and the size to separate it at. */
+  toBrief: () => Promise<InkmapBrief>;
   loadShowcaseSlide: (slide: ShowcaseSlide) => void;
   toggleShowcaseFocus: () => void;
 }
@@ -193,18 +167,32 @@ export interface ShowcaseSlide {
   title: string;
   description: string;
   artwork_id: string;
-  /** The artwork record's source_sha256: the slide names the exact collection bytes it shows. */
+  /** The art's image sha256: the slide names the exact collection bytes it shows. */
   artwork_sha256: string;
   pose_id: string;
   placement: Placement;
 }
 
-/** The design a sentence's motif refers to, if one already exists. */
+/** The render made for this art, width and mirror: one the person loaded, else the collection's. */
+export const renderFor = (s: Pick<State, "renders" | "stockRenders">, artSha: string | undefined, widthMm: number, mirror: boolean) =>
+  findRender(s.renders, artSha, widthMm, mirror) ?? findRender(s.stockRenders, artSha, widthMm, mirror);
+
+/** The design a sentence's motif refers to, if one already exists: only what the picker offers. */
 export function findDesignForMotif(designs: DesignMeta[], motif: string): DesignMeta | undefined {
   const normal = (value: string) => value.toLowerCase().replace(/[-_]+/g, " ");
   const m = normal(motif);
-  return designs.find((d) => normal(d.name) === m)
-    ?? designs.find((d) => m.includes(normal(d.name)) || normal(d.name).includes(m));
+  const offered = designs.filter((d) => d.library !== false);
+  return offered.find((d) => normal(d.name) === m)
+    ?? offered.find((d) => m.includes(normal(d.name)) || normal(d.name).includes(m));
+}
+
+function loadShowRender(): boolean {
+  try { return localStorage.getItem("inkmap.showRender") === "1"; } catch { return false; }
+}
+
+function rememberShowRender(show: boolean): boolean {
+  try { localStorage.setItem("inkmap.showRender", show ? "1" : "0"); } catch { /* private mode etc. */ }
+  return show;
 }
 
 function loadShowAtlas(): boolean {
@@ -267,15 +255,30 @@ function loadSkinTone(): string {
   return DEFAULT_SKIN_TONE;
 }
 
-export const MIN_WIDTH_MM = 10;
-export const MAX_WIDTH_MM = 300;
-
+/** A uniform resize: the aspect stays, the width to 0.1 mm (the art pipeline's 10 px/mm). */
 function scaled(size: [number, number], factor: number): [number, number] {
-  const w = Math.min(MAX_WIDTH_MM, Math.max(MIN_WIDTH_MM, size[0] * factor));
-  return [w, (w * size[1]) / size[0]];
+  const w = Math.round(Math.min(maxWidthMm(size), Math.max(MIN_WIDTH_MM, size[0] * factor)) * 10) / 10;
+  return [w, Number(((w * size[1]) / size[0]).toFixed(3))];
 }
 
 const wrap = (rad: number) => rad === 0 ? 0 : Math.atan2(Math.sin(rad), Math.cos(rad));
+
+/** The stored rotation that stands a design upright here. Placements store rotation from the body's up; a person
+ *  sets it from upright, so a new design stands straight and a dragged one keeps its turn. */
+export function uprightAt(anchor: Anchor): number {
+  const { atlas, body } = useStore.getState();
+  return atlas && body ? uprightRotation(atlas, body.restSkin.geometry, anchor) : 0;
+}
+
+/** A placement's rotation as a person reads it: how far it is turned from upright. */
+export const turnFromUpright = (placement: Pick<Placement, "anchor" | "rotation_rad">) =>
+  wrap(placement.rotation_rad - uprightAt(placement.anchor));
+
+const priorRequest = (placement: Placement): PendingTattoo | null => placement.language?.intent && placement.language.resolution ? {
+  program: placement.language.program as unknown as TattooProgram,
+  intent: placement.language.intent,
+  resolution: placement.language.resolution,
+} : null;
 
 /** Exercise the exact render geometry before admitting a placement to state.
  *  Scene rendering is intentionally not a second, weaker validation path. */
@@ -315,193 +318,32 @@ export const useStore = create<State>((set, get) => ({
   surfaceInteraction: null,
   showQuality: false,
   neutralLight: false,
+  renders: [],
+  stockRenders: [],
+  showRender: loadShowRender(),
+  addRender: (render) => set((s) => ({ showRender: rememberShowRender(true),
+    renders: [render, ...s.renders.filter((held) => held.content_sha256 !== render.content_sha256)].slice(0, MAX_RENDERS) })),
+  addStockRender: (render) => set((s) => ({ stockRenders: [...s.stockRenders, render] })),
+  toggleRender: () => set((s) => ({ showRender: rememberShowRender(!s.showRender) })),
   toProject: async () => {
     const s = get();
     const file = s.snapshotFile();
     if (!file) throw new Error(s.error ?? "Wait for the body before saving a project.");
     return makeProject({ name: s.projectName, placement_file: file,
       editor: { pose_id: s.poseId, skin_tone: s.skinTone, show_atlas: s.showAtlas, camera: s.cameraSnapshot },
-      history: { past: s.past, future: s.future }, edit_before: s.editBefore, selected_id: s.selected,
-      chart: s.chart.items.length ? chartDocumentFromDraft(s.chart) : null,
-      chart_parked: s.chartParked?.draft.items.length ? chartDocumentFromDraft(s.chartParked.draft) : null });
+      history: { past: s.past, future: s.future }, edit_before: s.editBefore, selected_id: s.selected });
   },
-  chart: EMPTY_DRAFT,
-  setChart: (value) => set(s => {
-    const chart = { ...s.chart, ...value };
-    for (const item of chart.items) requireAcquiredArtwork(item.artwork);
-    // A new item list is a new document: no ghost, no history — and a
-    // selection that arrived with it is an edit in progress, so Cancel has
-    // the accepted state to return to.
-    return { chart, ...("items" in value ? { chartPlacing: null, chartHover: null, chartEditBefore: chart.selected ? chart.items : null,
-      chartPast: [], chartFuture: [], chartInteraction: null } : {}) };
-  }),
-  chartPlacing: null,
-  chartDraft: { rotation_rad: 0, size: [50, 50] },
-  chartHover: null,
-  chartEditBefore: null,
-  chartPast: [],
-  chartFuture: [],
-  chartInteraction: null,
-  chartParked: null,
-  switchChartKind: (kind) => {
-    const s = get();
-    if (s.chart.kind === kind) return;
-    // A pending edit is settled first: accepted if it still fits, cancelled
-    // otherwise; a ghost being placed is dropped. Nothing crosses surfaces.
-    if (s.chartEditBefore) { if (s.chart.selected && !chartItemRefusal(s.chart, s.chart.items.find((item) => item.id === s.chart.selected)!)) s.chartAccept(); else s.chartDiscard(); }
-    const settled = get();
-    const parked = settled.chartParked?.draft.kind === kind ? settled.chartParked : null;
-    set({
-      chartParked: { draft: { ...settled.chart, selected: null }, past: settled.chartPast, future: settled.chartFuture },
-      chart: parked?.draft ?? freshChartDraft(kind), chartPast: parked?.past ?? [], chartFuture: parked?.future ?? [],
-      chartPlacing: null, chartHover: null, chartEditBefore: null, chartInteraction: null,
-    });
-  },
-  openChartDraft: (draft) => {
-    const s = get();
-    if (s.chart.kind !== draft.kind) {
-      if (s.chartEditBefore) s.chartDiscard();
-      const current = get();
-      set({ chartParked: { draft: { ...current.chart, selected: null }, past: current.chartPast, future: current.chartFuture } });
-    }
-    get().setChart(draft);
-  },
-  chartSetInteraction: (chartInteraction) => set({ chartInteraction }),
-  chartStartPlacing: (artworkId) => set((s) => {
-    if (s.chartEditBefore) return { error: "Accept or cancel the current edit before adding another artwork." };
-    const design = s.designs.find((d) => d.id === artworkId);
-    if (!design) return { error: `Unknown artwork ${artworkId}` };
-    return { chartPlacing: artworkId, chartHover: null, chartDraft: { rotation_rad: 0, size: [...design.default_size_mm] },
-      chart: { ...s.chart, selected: null }, error: null };
-  }),
-  chartCancelPlacing: () => { if (get().chartEditBefore) get().chartDiscard(); else set({ chartPlacing: null, chartHover: null }); },
-  chartSetHover: (chartHover) => set({ chartHover }),
-  chartCommit: async (uv) => {
-    const s = get();
-    if (!s.chartPlacing) return;
-    if (s.chart.items.length >= MAX_CHART_ITEMS) { set({ error: `Design limit: ${MAX_CHART_ITEMS} placements` }); return; }
-    if (s.chartEditBefore) { set({ error: "Accept or cancel the current edit before adding another artwork." }); return; }
-    const design = s.designs.find((d) => d.id === s.chartPlacing);
-    if (!design?.embedded) { set({ error: "Artwork is still loading" }); return; }
-    const candidate = { uv, size: s.chartDraft.size, rotation_rad: s.chartDraft.rotation_rad };
-    const refusal = chartItemRefusal(s.chart, candidate);
-    if (refusal) { set({ error: refusal }); return; }
-    const artworkId = s.chartPlacing;
-    let item: ChartItem;
-    try {
-      // Freezing the artwork reads its bytes; the surface may have moved on meanwhile.
-      const artwork = await frozenArtwork(artworkId, design.embedded, artworkSources(s.designs)[artworkId]);
-      item = newChartItem(newPlacementId(), artworkId, artwork, candidate.size, uv, candidate.rotation_rad);
-    } catch (failure) { set({ error: failure instanceof Error ? failure.message : String(failure) }); return; }
-    set((now) => {
-      if (now.chartPlacing !== artworkId || now.chartEditBefore) return {};
-      return { chart: { ...now.chart, items: [...now.chart.items, item], selected: item.id }, chartEditBefore: now.chart.items,
-        chartPlacing: null, chartHover: null, error: null };
-    });
-  },
-  chartSelect: (id) => set((s) => {
-    if (id === s.chart.selected) return {};
-    if (s.chartEditBefore) return { error: "Accept or cancel the current edit before selecting another artwork." };
-    if (id && !s.chart.items.some((item) => item.id === id)) return {};
-    return { chart: { ...s.chart, selected: id }, chartEditBefore: id ? s.chart.items : null, chartPlacing: null, chartHover: null };
-  }),
-  chartUpdate: (id, patch) => set((s) => {
-    if (s.chart.selected !== id || s.chartEditBefore === null) return { error: "Select the artwork before editing it." };
-    const current = s.chart.items.find((item) => item.id === id);
-    if (!current) return {};
-    const next = { ...current, ...patch };
-    const refusal = chartItemRefusal(s.chart, next);
-    if (refusal) return { error: refusal };
-    return { chart: { ...s.chart, items: s.chart.items.map((item) => (item.id === id ? next : item)) }, error: null };
-  }),
-  chartRemove: (id) => set((s) => {
-    if (!s.chart.items.some((item) => item.id === id)) return {};
-    if (s.chartEditBefore && s.chart.selected !== id) return { error: "Accept or cancel the current edit before deleting another artwork." };
-    const before = s.chartEditBefore ?? s.chart.items;
-    const next = before.filter((item) => item.id !== id);
-    return { chart: { ...s.chart, items: next, selected: null }, chartPast: next.length === before.length ? s.chartPast : [...s.chartPast, before].slice(-50),
-      chartFuture: [], chartEditBefore: null, chartInteraction: null, error: null };
-  }),
-  chartReorder: (id, index) => set((s) => {
-    if (s.chart.selected !== id || !s.chartEditBefore || !Number.isInteger(index) || index < 0 || index >= s.chart.items.length) return {};
-    const item = s.chart.items.find((candidate) => candidate.id === id);
-    if (!item) return {};
-    const items = s.chart.items.filter((candidate) => candidate.id !== id); items.splice(index, 0, item);
-    return { chart: { ...s.chart, items }, error: null };
-  }),
-  chartAccept: () => set((s) => {
-    if (!s.chart.selected) return {};
-    const item = s.chart.items.find((candidate) => candidate.id === s.chart.selected);
-    const refusal = item ? chartItemRefusal(s.chart, item) : "Selected artwork is missing";
-    if (refusal) return { error: refusal };
-    const changed = s.chartEditBefore && s.chartEditBefore !== s.chart.items;
-    return { chartPast: changed ? [...s.chartPast, s.chartEditBefore!].slice(-50) : s.chartPast, chartFuture: changed ? [] : s.chartFuture,
-      chartEditBefore: null, chartInteraction: null, chart: { ...s.chart, selected: null }, error: null, toast: `Artwork ${s.chart.items.length} placed on the ${s.chart.kind === "cylinder" ? "cylinder" : "pad"}` };
-  }),
-  chartDiscard: () => set((s) => {
-    if (!s.chart.selected && !s.chartPlacing) return {};
-    return { chart: { ...s.chart, items: s.chartEditBefore ?? s.chart.items, selected: null }, chartEditBefore: null, chartPlacing: null, chartHover: null,
-      chartInteraction: null, error: null, toast: s.chartEditBefore ? "Edit cancelled" : null };
-  }),
-  chartNudgeRotation: (rad) => set((s) => {
-    if (s.chartPlacing) return { chartDraft: { ...s.chartDraft, rotation_rad: wrap(s.chartDraft.rotation_rad + rad) } };
-    if (!s.chart.selected) return {};
-    const current = s.chart.items.find((item) => item.id === s.chart.selected);
-    if (!current) return {};
-    const next = { ...current, rotation_rad: wrap(current.rotation_rad + rad) };
-    const refusal = chartItemRefusal(s.chart, next);
-    if (refusal) return { error: refusal };
-    return { chart: { ...s.chart, items: s.chart.items.map((item) => (item.id === current.id ? next : item)) }, error: null };
-  }),
-  chartNudgeSize: (factor) => set((s) => {
-    if (s.chartPlacing) return { chartDraft: { ...s.chartDraft, size: scaled(s.chartDraft.size, factor) } };
-    if (!s.chart.selected) return {};
-    const current = s.chart.items.find((item) => item.id === s.chart.selected);
-    if (!current) return {};
-    const next = { ...current, size: scaled(current.size, factor) };
-    const refusal = chartItemRefusal(s.chart, next);
-    if (refusal) return { error: refusal };
-    return { chart: { ...s.chart, items: s.chart.items.map((item) => (item.id === current.id ? next : item)) }, error: null };
-  }),
-  chartUndo: () => set((s) => {
-    if (s.chartEditBefore) return { chart: { ...s.chart, items: s.chartEditBefore, selected: null }, chartEditBefore: null, chartInteraction: null, chartPlacing: null, chartHover: null };
-    if (!s.chartPast.length) return {};
-    const previous = s.chartPast[s.chartPast.length - 1];
-    return { chart: { ...s.chart, items: previous, selected: null }, chartPast: s.chartPast.slice(0, -1), chartFuture: [s.chart.items, ...s.chartFuture] };
-  }),
-  chartRedo: () => set((s) => {
-    if (s.chartEditBefore || !s.chartFuture.length) return {};
-    const [next, ...rest] = s.chartFuture;
-    return { chart: { ...s.chart, items: next, selected: null }, chartPast: [...s.chartPast, s.chart.items], chartFuture: rest };
-  }),
   newProject: () => set(s => ({
     projectName: "Untitled project", placements: [], selected: null, placing: null, hover: null, draft: { rotation_rad: 0, size_mm: [50, 50] },
     pending: null, intentRevision: s.intentRevision + 1, projectEpoch: s.projectEpoch + 1,
     past: [], future: [], editBefore: null, surfaceInteraction: null, error: null, toast: "New project",
-    chart: EMPTY_DRAFT, chartPlacing: null, chartHover: null, chartEditBefore: null, chartPast: [], chartFuture: [], chartInteraction: null, chartParked: null,
   })),
   restoreProject: (project) => {
-    for (const record of Object.values(project.placement_file.designs ?? {})) requireAcquiredArtwork(record);
-    for (const chart of [project.chart, project.chart_parked]) {
-      for (const record of Object.values(chart?.artwork ?? {})) requireAcquiredArtwork(record);
-    }
     get().loadFile(project.placement_file);
     get().setPoseId(project.editor.pose_id);
     set(s => ({ projectName: project.name, skinTone: project.editor.skin_tone, showAtlas: project.editor.show_atlas,
       cameraSnapshot: project.editor.camera, cameraRevision: s.cameraRevision + 1,
-      past: project.history.past, future: project.history.future, editBefore: project.edit_before, selected: project.selected_id,
-      chart: EMPTY_DRAFT, chartPlacing: null, chartHover: null, chartEditBefore: null, chartPast: [], chartFuture: [], chartInteraction: null, chartParked: null }));
-    // Validate each retained record before restoring its chart state.
-    if (project.chart) {
-      void chartDraftFromDocument(project.chart)
-        .then(chart => get().setChart(chart))
-        .catch((error: Error) => get().setError(`Saved surface draft could not be reopened: ${error.message}`));
-    }
-    if (project.chart_parked) {
-      void chartDraftFromDocument(project.chart_parked)
-        .then(draft => set({ chartParked: { draft: { ...draft, selected: null }, past: [], future: [] } }))
-        .catch((error: Error) => get().setError(`Saved surface draft could not be reopened: ${error.message}`));
-    }
+      past: project.history.past, future: project.history.future, editBefore: project.edit_before, selected: project.selected_id }));
   },
   editBefore: null,
   past: [],
@@ -560,18 +402,26 @@ export const useStore = create<State>((set, get) => ({
   }),
   setDesigns: (designs) => {
     for (const design of designs) {
-      if (!design.embedded) throw new Error("Load DBV3 artwork.json before selecting artwork");
-      requireAcquiredArtwork(design.embedded);
+      if (!design.embedded) throw new Error("Import PNG or JPEG art before selecting it");
+      validateArtShape(design.embedded);
     }
+    // The same art restored from a project gives way to the collection's entry, which knows its renders.
+    const same = (a: DesignMeta, b: DesignMeta) => a.id === b.id && a.embedded?.content_sha256 === b.embedded?.content_sha256;
     set((s) => ({ designs: [
-      ...designs.filter(design => !s.designs.some(existing => existing.embedded && existing.id === design.id)),
-      ...s.designs.filter(design => design.embedded),
+      ...designs.filter(design => !s.designs.some(existing => existing.embedded && existing.id === design.id && !same(existing, design))),
+      ...s.designs.filter(design => design.embedded && !designs.some(stock => same(stock, design))),
     ] }));
   },
   addDesign: (d) => {
-    if (!d.embedded) throw new Error("Import DBV3 artwork.json before adding artwork");
-    requireAcquiredArtwork(d.embedded);
+    if (!d.embedded) throw new Error("Import PNG or JPEG art before adding it");
+    validateArtShape(d.embedded);
     set((s) => ({ designs: [...s.designs.filter((x) => x.id !== d.id), d] }));
+  },
+  setArtInks: async (designId, inks) => {
+    const record = get().designs.find((d) => d.id === designId)?.embedded;
+    if (!record) return;
+    const embedded = await withInks(record, inks);
+    set((s) => ({ designs: s.designs.map((d) => (d.id === designId ? { ...d, embedded } : d)) }));
   },
   setError: (error) => set({ error }),
   setAtlas: (atlas) => set({ atlas }),
@@ -590,7 +440,6 @@ export const useStore = create<State>((set, get) => ({
     return { pending: { ...s.pending, resolution }, intentRevision: s.intentRevision + 1 };
   }),
   placeAt: (designId, anchor, pending) => {
-    if (get().placements.length >= 100) { set({ error: "Project limit: 100 placements." }); return; }
     if (get().editBefore) { set({ error: "Accept or cancel the current edit before adding another tattoo." }); return; }
     const { body, designs, atlas } = get();
     if (!atlas?.isValidAnchor(anchor)) {
@@ -599,10 +448,10 @@ export const useStore = create<State>((set, get) => ({
     }
     const d = designs.find((x) => x.id === designId);
     if (!d) return;
-    const p = annotate(
-      { id: newPlacementId(), design_id: d.id, anchor, rotation_rad: 0, size_mm: [...d.default_size_mm], mirror: false },
-      pending, atlas, d,
-    );
+    if (get().placements.length >= 100) { set({ error: "Project limit: 100 placements." }); return; }
+    const width = pending?.widthMm && d.embedded ? Math.min(maxWidthMm(d.default_size_mm), Math.max(MIN_WIDTH_MM, pending.widthMm)) : null;
+    const size = width && d.embedded ? artSizeMm(d.embedded, width) : d.default_size_mm;
+    const p = annotate({ id: newPlacementId(), design_id: d.id, anchor, rotation_rad: uprightAt(anchor), size_mm: [...size], mirror: false }, pending, atlas, d);
     const refusal = placementGeometryRefusal(body, p);
     if (refusal) {
       set({ error: refusal });
@@ -619,7 +468,6 @@ export const useStore = create<State>((set, get) => ({
   cancelPlacing: () => { if (get().editBefore) get().discard(); else set({ placing: null, hover: null }); },
   setHover: (hover) => set({ hover }),
   commit: (anchor) => {
-    if (get().placements.length >= 100) { set({ error: "Project limit: 100 placements." }); return; }
     if (get().editBefore) { set({ error: "Accept or cancel the current edit before adding another tattoo." }); return; }
     const { body, placing, designs, atlas, pending } = get();
     if (!placing) return;
@@ -630,10 +478,8 @@ export const useStore = create<State>((set, get) => ({
     const d = designs.find((x) => x.id === placing);
     if (!d) return;
     const { draft } = get();
-    const p = annotate(
-      { id: newPlacementId(), design_id: d.id, anchor, rotation_rad: draft.rotation_rad, size_mm: [...draft.size_mm], mirror: false },
-      pending, atlas, d,
-    );
+    if (get().placements.length >= 100) { set({ error: "Project limit: 100 placements." }); return; }
+    const p = annotate({ id: newPlacementId(), design_id: d.id, anchor, rotation_rad: wrap(draft.rotation_rad + uprightAt(anchor)), size_mm: [...draft.size_mm], mirror: false }, pending, atlas, d);
     const refusal = placementGeometryRefusal(body, p);
     if (refusal) {
       set({ error: refusal });
@@ -655,19 +501,15 @@ export const useStore = create<State>((set, get) => ({
     if (state.selected !== id || state.editBefore === null) { set({ error: "Select the tattoo before editing it." }); return; }
     const current = state.placements.find((placement) => placement.id === id);
     if (!current) return;
-    let next = { ...current, ...patch };
+    if (patch.anchor && !state.atlas?.isValidAnchor(patch.anchor)) {
+      set({ error: "surface_region_unsupported: anchor is outside the reviewed SOMA tattoo domain" });
+      return;
+    }
+    let next = { ...current, ...structuredClone(patch) };
     if (patch.anchor) {
-      if (!state.atlas?.isValidAnchor(patch.anchor)) {
-        set({ error: "surface_region_unsupported: anchor is outside the reviewed SOMA tattoo domain" });
-        return;
-      }
-      const design = state.designs.find(item => item.id === current.design_id);
-      const prior = current.language?.intent && current.language.resolution ? {
-        program: current.language.program as unknown as TattooProgram,
-        intent: current.language.intent,
-        resolution: current.language.resolution,
-      } : null;
-      next = annotate(next, prior, state.atlas, design);
+      const turned = uprightAt(patch.anchor) - uprightAt(current.anchor);
+      if (patch.rotation_rad === undefined && turned !== 0) next.rotation_rad = wrap(current.rotation_rad + turned);
+      next = annotate(next, priorRequest(current), state.atlas, state.designs.find(item => item.id === current.design_id));
     }
     const refusal = placementGeometryRefusal(state.body, next);
     if (refusal) {
@@ -713,7 +555,7 @@ export const useStore = create<State>((set, get) => ({
     const next = { ...current, rotation_rad: wrap(current.rotation_rad + rad) };
     const refusal = placementGeometryRefusal(s.body, next);
     if (refusal) return { error: refusal };
-    return { placements: s.placements.map((placement) => (placement.id === s.selected ? next : placement)), error: null };
+    return { placements: s.placements.map((placement) => (placement.id === current.id ? next : placement)), error: null };
   }),
   nudgeSize: (factor) => set((s) => {
     if (s.placing) return { draft: { ...s.draft, size_mm: scaled(s.draft.size_mm, factor) } };
@@ -723,7 +565,7 @@ export const useStore = create<State>((set, get) => ({
     const next = { ...current, size_mm: scaled(current.size_mm, factor) };
     const refusal = placementGeometryRefusal(s.body, next);
     if (refusal) return { error: refusal };
-    return { placements: s.placements.map((placement) => (placement.id === s.selected ? next : placement)), error: null };
+    return { placements: s.placements.map((placement) => (placement.id === current.id ? next : placement)), error: null };
   }),
   toFile: () => {
     if (get().editBefore || get().placing) { set({ error: "Accept or cancel pending edits before exporting." }); return null; }
@@ -740,13 +582,13 @@ export const useStore = create<State>((set, get) => ({
     if (!body) return null;
     const history = [...get().past, ...get().future, ...(get().editBefore ? [get().editBefore!] : [])];
     const used = new Set([...placements, ...history.flat()].map((p) => p.design_id));
-    // Retain custom artwork and every undo/redo dependency. Unused catalogue
-    // entries load from the library; serializing them overwhelms a small project.
+    // Retain imported art and every undo/redo dependency. Unused collection
+    // entries load from the collection; carrying them would bloat every save.
     const embedded = Object.fromEntries(designs.filter((d) => d.embedded
-      && (used.has(d.id) || d.sha256 !== d.embedded.source_sha256)).map((d) => [d.id, d.embedded!]));
+      && (used.has(d.id) || !d.sourcePath)).map((d) => [d.id, d.embedded!]));
     const missing = [...used].filter(id => !Object.hasOwn(embedded, id));
     if (missing.length) {
-      set({ error: `Artwork unavailable for export: ${missing.join(", ")}. Reload or replace these designs.` });
+      set({ error: `Art unavailable for export: ${missing.join(", ")}. Reload or replace these designs.` });
       return null;
     }
     return {
@@ -765,28 +607,18 @@ export const useStore = create<State>((set, get) => ({
       ...(Object.keys(embedded).length ? { designs: embedded } : {}),
     };
   },
-  toDesign: async () => {
-    const { toFile, atlas, designs, projectName } = get();
+  toBrief: async () => {
+    const { toFile, projectName } = get();
     const file = toFile();
-    if (!file || !atlas) throw new Error(get().error ?? "Wait for the body before exporting a design.");
-    const { designFromBodyFile } = await import("./core/body-design.ts");
-    const { artworkSources } = await import("./core/design-assets.ts");
-    return designFromBodyFile(projectName, file, atlas.atlas, artworkSources(designs));
-  },
-  loadDesign: async (design) => {
-    const { atlas } = get();
-    if (!atlas) throw new Error("body_not_ready: wait for the canonical SOMA surface before loading a design");
-    const { bodyFileFromDesign } = await import("./core/body-design.ts");
-    const file = await bodyFileFromDesign(design, atlas.atlas);
-    get().loadFile(file);
-    set({ projectName: design.name, error: null, toast: `Opened design “${design.name}”` });
+    if (!file) throw new Error(get().error ?? "Wait for the body before exporting a brief.");
+    if (!file.placements.length) throw new Error("Place a design before exporting a brief.");
+    return makeBrief(projectName, file);
   },
   loadFile: (raw) => {
     if (get().editBefore) throw new Error("Accept or cancel pending edits before importing.");
     validatePlacementFile(raw);
-    for (const record of Object.values(raw.designs ?? {})) requireAcquiredArtwork(record);
     const available = new Set([...get().designs.filter(d => d.embedded).map(d => d.id), ...Object.keys(raw.designs ?? {})]);
-    for (const placement of raw.placements) if (!available.has(placement.design_id)) throw new Error(`legacy_artwork: ${placement.design_id} is unavailable. Generate with DrawingBot V3 and import artwork.json, then place it again.`);
+    for (const placement of raw.placements) if (!available.has(placement.design_id)) throw new Error(`art_unavailable: ${placement.design_id} is not in this file or the collection. Import its art, then place it again.`);
     const { body } = get();
     if (!body) throw new Error("body_not_ready: wait for the canonical SOMA surface before loading placements");
     if (
@@ -801,11 +633,15 @@ export const useStore = create<State>((set, get) => ({
       throw new Error("placement file body binding differs from the loaded SOMA surface — anchors would not line up");
     }
     const { atlas } = get();
+    // What an older lexicon or resolver called a place is out of date, not false: the anchor is the record, so its
+    // words are made again below, and only a current resolution is held to the atlas.
+    const outdated = (placement: Placement) => Boolean(placement.site && placement.site.lexicon !== INKLANG_VERSION)
+      || Boolean(placement.language?.resolution && placement.language.resolution.resolver.version !== RESOLVER_VERSION);
     if (atlas) {
       for (const placement of raw.placements) {
         if (!atlas.isValidAnchor(placement.anchor)) throw new Error(`placement ${placement.id} has an invalid or unlabeled anchor`);
         const resolution = placement.language?.resolution;
-        if (resolution) {
+        if (resolution && !outdated(placement)) {
           const actual = atlas.describe(placement.anchor);
           const sameBarycentric = resolution.anchor?.barycentric.every(
             (value, index) => Math.abs(value - placement.anchor.barycentric[index]) <= 1e-9,
@@ -839,24 +675,26 @@ export const useStore = create<State>((set, get) => ({
       const refusal = placementGeometryRefusal(body, placement);
       if (refusal) throw new Error(`placement ${placement.id} refused: ${refusal}`);
     }
-    const restored: DesignMeta[] = Object.entries(raw.designs ?? {}).map(([id, e]) => {
-      // An ID alone is not stock provenance. Retain the known source only
-      // when the incoming artwork is identical to the loaded record.
-      const previous = get().designs.find(d => d.id === id && d.embedded?.content_sha256 === e.content_sha256);
-      // A frozen record owns its name as well as its geometry and provenance.
-      return { id, name: e.name, path: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(renderTattooProgramSvg(e.program))}`,
-        default_size_mm: artworkSizeM(e).map(m => m * 1000) as [number, number], embedded: e,
-        ...(previous?.source ? { source: previous.source, sha256: previous.sha256,
-          usage: previous.usage, family: previous.family, split: previous.split, library: previous.library } : {}),
-        ...(previous?.sourcePath ? { sourcePath: previous.sourcePath, sourceSha256: previous.sourceSha256 } : {}),
-      };
-    });
+    // An ID alone is not collection provenance: an entry identical to one already held stays that entry;
+    // the rest show their image at once, and their ink-only thumbnail once it is decoded.
+    const held = (id: string, e: EmbeddedDesign) => get().designs.find(d => d.id === id && d.embedded?.content_sha256 === e.content_sha256);
+    const fromFile: DesignMeta[] = Object.entries(raw.designs ?? {}).filter(([id, e]) => !held(id, e))
+      .map(([id, e]) => ({ id, name: e.name, path: `data:${e.image.media_type};base64,${e.image.data_base64}`, default_size_mm: artSizeMm(e), embedded: e }));
+    const restored: DesignMeta[] = Object.entries(raw.designs ?? {}).map(([id, e]) => held(id, e) ?? fromFile.find(d => d.id === id)!);
+    void Promise.all(fromFile.map(refreezeDesign))
+      .then(fresh => set(s => ({ designs: s.designs.map(d => fresh.find(f => f.id === d.id && f.embedded?.content_sha256 === d.embedded?.content_sha256) ?? d) })))
+      .catch(error => console.warn("[inkmap] thumbnail:", error));
     set((s) => ({
-      // Restoring used catalogue entries must not change the library's order.
+      // Restoring used collection entries must not change the library's order.
       designs: [...s.designs.map(d => restored.find(r => r.id === d.id) ?? d),
         ...restored.filter(r => !s.designs.some(d => d.id === r.id))],
       past: [...s.past, s.placements].slice(-50), future: [], editBefore: null,
-      placements: structuredClone(raw.placements), selected: null, placing: null, hover: null, error: null,
+      placements: structuredClone(raw.placements).map((placement) => {
+        if (!outdated(placement)) return placement;
+        const { site: _site, language: _language, ...kept } = placement;
+        return annotate(kept, null, atlas, restored.find((d) => d.id === placement.design_id));
+      }),
+      selected: null, placing: null, hover: null, error: null,
       projectEpoch: s.projectEpoch + 1,
     }));
   },
@@ -865,16 +703,17 @@ export const useStore = create<State>((set, get) => ({
     if (slide.placement.design_id !== slide.artwork_id) throw new Error(`showcase slide ${slide.id} places another artwork`);
     const design = get().designs.find((d) => d.id === slide.artwork_id);
     if (!design?.embedded) throw new Error(`showcase artwork ${slide.artwork_id} is not in the collection`);
-    if (design.embedded.source_sha256 !== slide.artwork_sha256) {
+    if (design.embedded.image.sha256 !== slide.artwork_sha256) {
       throw new Error(`showcase artwork ${slide.artwork_id} differs from the bytes the slide names`);
     }
+    const placements = [structuredClone(slide.placement)];
     set((s) => {
       const reloadBody = s.poseId !== slide.pose_id;
       return {
         poseId: slide.pose_id,
         body: reloadBody ? null : s.body,
         atlas: reloadBody ? null : s.atlas,
-        placements: [structuredClone(slide.placement)],
+        placements,
         selected: null,
         placing: null,
         hover: null,

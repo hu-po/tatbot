@@ -18,13 +18,13 @@ max_pairwise_skew_ms = 40.0
 name = "realsense2"
 serial = "000000000000"
 # Which wrist camera this is; consumers map by role, never by file order.
-role = "wrist_upper"
+role = "wrist_2"
 group = "d405"
-arm = "right"
+arm = "xarm"
 owner_role = "realsense"
-# Two cameras on one arm each name their frames in urdf/tatbot.urdf.
-optical_frame = "right/realsense_color_optical_frame"
-depth_optical_frame = "right/realsense_depth_optical_frame"
+# Two cameras on one arm each name their frames in that arm's URDF (here urdf/xarm7.urdf).
+optical_frame = "xarm/realsense2_color_optical_frame"
+depth_optical_frame = "xarm/realsense2_depth_optical_frame"
 
 [cameras.realsense.color]
 stream = "color"
@@ -45,13 +45,13 @@ format = "z16"
 [[cameras.realsense]]
 name = "realsense1"
 serial = "000000000001"
-# The same wrist's second D405, its mount turned 180 deg about the wrist.
-role = "wrist_lower"
+# The same wrist's second D405, across the pen from the first.
+role = "wrist_1"
 group = "d405"
-arm = "right"
+arm = "xarm"
 owner_role = "realsense"
-optical_frame = "right/realsense_lower_color_optical_frame"
-depth_optical_frame = "right/realsense_lower_depth_optical_frame"
+optical_frame = "xarm/realsense1_color_optical_frame"
+depth_optical_frame = "xarm/realsense1_depth_optical_frame"
 
 [cameras.realsense.color]
 stream = "color"

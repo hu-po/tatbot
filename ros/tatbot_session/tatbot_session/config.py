@@ -23,8 +23,12 @@ def load_stack(path: str | None = None) -> dict:
 
 
 def workspace_arm(repo: Path, arm: str) -> dict:
-    """config/workspace.yaml's section for one arm (read, never written)."""
-    return yaml.safe_load((Path(repo) / "config" / "workspace.yaml").read_text())[arm]
+    """One arm's config/workspace.yaml section as the ROS owner fits it: its fitted cartridge and that cartridge's tip
+    (scripts/lib/cartridge_fit.py) over git's. Read, never written."""
+    capture._lib(Path(repo))
+    import tool_spec
+
+    return tool_spec.read_workspace(repo)[arm]
 
 
 def fitted_tool(repo: Path, arm: str) -> str:

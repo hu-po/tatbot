@@ -1,69 +1,104 @@
 /** Files in and out, named by what they hold.
  *
- * Every export here says what it is: the artwork SVG *as this editor draws
- * it* (a preview, not a calibrated stencil and not a robot path), a portable
- * design, a project backup, and — under Advanced — the placement file and the
- * simulation bundle. A refusal is reported beside the action that produced
- * it; nothing is silently narrowed to something else.
+ * Inkmap takes source art in (PNG or JPEG, with the art corpus's generation sidecar when there is one) and
+ * gives out what it decided: the tattoo brief for the art pipeline (each design's art and the size to separate
+ * it at), the project backup, the source image itself, and under Advanced the placement file. A refusal is
+ * reported beside the action that produced it; nothing is silently narrowed to something else.
  */
 import { parseJsonStrict } from "./core/human-representation/schema.ts";
-import { artworkSizeM, requireAcquiredArtwork, validateArtworkRecord } from "./core/artwork-record.ts";
-import { tattooProgramToSvg } from "./core/human-representation/program-svg.ts";
-import { artworkSources } from "./core/design-assets.ts";
-import { frozenArtwork } from "./core/frozen-artwork.ts";
-import { openDesignFile } from "./core/design-open.ts";
-import { chartDraftFromDesign, designFromChartDraft } from "./core/chart-draft.ts";
+import { base64ToBytes } from "./core/art.ts";
+import { captureView } from "./capture.ts";
+import { artFromFile, artProfile, artThumbnail, importNotes, knownInks } from "./core/art-image.ts";
+import { saveRenders } from "./core/project-db.ts";
+import { validateRender } from "./core/render-record.ts";
+import { thinInks } from "./core/art-profile.ts";
+import { cardHtml, type CardSection } from "./core/card.ts";
+import { libraryEntry } from "./core/design-assets.ts";
 import { downloadJson, downloadText } from "./core/download.ts";
+import { estimateCost, formatMinutes } from "./core/estimate.ts";
+import { inkById } from "./core/inks.ts";
+import { placementGuide } from "./core/landmarks.ts";
+import { overflowMm, STENCIL_TILES } from "./core/tiles.ts";
 import { parseProject, MAX_PROJECT_BYTES } from "./core/project.ts";
 import { validatePlacementFile } from "./core/schema.ts";
 import type { DesignMeta } from "./core/schema.ts";
-import { useStore } from "./store.ts";
+import { renderFor, useStore } from "./store.ts";
 import { useUi } from "./ui.ts";
 
 const notice = (action: string, error: unknown) =>
   useUi.getState().setNotice({ action, message: error instanceof Error ? error.message : String(error) });
 
-/** A file kept for download exactly as it arrived, when it could not be opened. */
-export interface UnsupportedFile { name: string; text: string; reason: string }
+const safeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "art";
 
-const safeName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "artwork";
-
-/** The artwork itself, before or after any placement: the frozen record's preview SVG. */
-export async function exportArtworkSvg(design: DesignMeta): Promise<void> {
-  const action = "Artwork SVG";
+/** The design's source image, byte for byte. */
+export function exportArtImage(design: DesignMeta): void {
   useUi.getState().setNotice(null);
   try {
-    if (!design.embedded) throw new Error("Artwork is still loading");
-    const record = await frozenArtwork(design.id, design.embedded, artworkSources(useStore.getState().designs)[design.id]);
-    downloadText(await tattooProgramToSvg(record.program), `inkmap-artwork-${safeName(design.name)}.svg`, "image/svg+xml");
-  } catch (error) { notice(action, error); }
+    const record = design.embedded;
+    if (!record) throw new Error("The art is still loading");
+    const blob = new Blob([base64ToBytes(record.image.data_base64) as BlobPart], { type: record.image.media_type });
+    const url = URL.createObjectURL(blob);
+    const link = Object.assign(document.createElement("a"), { href: url, download: `${safeName(record.name)}.${record.image.media_type === "image/png" ? "png" : "jpg"}` });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { notice("Source image", error); }
 }
 
-/** The body's accepted placements as one portable design. */
-export async function exportBodyDesign(): Promise<void> {
+/** The accepted placements as a tattoo brief, for `tatbot art separate --brief`. */
+export async function exportBrief(): Promise<void> {
   useUi.getState().setNotice(null);
-  try { downloadJson(await useStore.getState().toDesign(), "inkmap-design.json"); }
-  catch (error) { notice("Portable design", error); }
+  try { downloadJson(await useStore.getState().toBrief(), "inkmap-brief.json"); }
+  catch (error) { notice("Tattoo brief", error); }
 }
 
-/** The paper/cylinder draft as one portable design. */
-export async function exportChartDesign(): Promise<void> {
-  useUi.getState().setNotice(null);
-  const { chart, chartEditBefore, chartPlacing } = useStore.getState();
-  if (chartEditBefore || chartPlacing) { notice("Portable design", new Error("Accept or cancel pending edits before exporting.")); return; }
-  try { downloadJson(await designFromChartDraft(chart), "inkmap-design.json"); }
-  catch (error) { notice("Portable design", error); }
-}
-
-/** The selected chart placement's artwork — the selected one, not the first. */
-export async function exportChartArtworkSvg(): Promise<void> {
+/** `inkmap-render.json` files from `tatbot art separate --brief`, to show on the body. */
+export async function importRenders(input: FileList | readonly File[] | null | undefined): Promise<void> {
   useUi.getState().setNotice(null);
   try {
-    const { chart } = useStore.getState();
-    const item = chart.items.find((candidate) => candidate.id === chart.selected);
-    if (!item) throw new Error("Select a placement to export its artwork");
-    downloadText(await tattooProgramToSvg(item.artwork.program), `inkmap-artwork-${safeName(item.artwork.name)}.svg`, "image/svg+xml");
-  } catch (error) { notice("Artwork SVG", error); }
+    for (const file of input ? [...input] : []) {
+      const render = await validateRender(parseJsonStrict(await file.text()));
+      if (!useStore.getState().designs.some((design) => design.embedded?.content_sha256 === render.art_sha256)) {
+        throw new Error(`${file.name} is of art this project does not hold, or whose inks have changed. Separate its brief again.`);
+      }
+      useStore.getState().addRender(render);
+    }
+    await saveRenders(useStore.getState().renders);
+  } catch (error) { notice("Robot render", error); }
+}
+
+/** One printable page per placement, for whoever lays the stencil: `core/card.ts`. */
+export async function exportCard(): Promise<void> {
+  useUi.getState().setNotice(null);
+  try {
+    const state = useStore.getState();
+    const brief = await state.toBrief();
+    const tile = STENCIL_TILES.find((item) => item.id === useUi.getState().tile)!;
+    const sections = await Promise.all(state.placements.map(async (placement): Promise<CardSection> => {
+      const record = brief.art[placement.design_id];
+      const profile = await artProfile(record);
+      const inks = record.palette?.inks ?? [];
+      const cost = estimateCost(profile.coverage, placement.size_mm, inks.length);
+      const render = renderFor(state, record.content_sha256, placement.size_mm[0], placement.mirror);
+      return {
+        name: record.name, sentence: placement.language?.sentence ?? null, sizeMm: placement.size_mm, mirror: placement.mirror, flipArt: placement.mirror && !render,
+        tile: { name: tile.name, sizeMm: tile.size_mm, fits: overflowMm(tile, placement.size_mm).every((over) => over === 0) },
+        guide: state.atlas && state.body ? placementGuide(state.atlas, state.body.restSkin.geometry, placement) : null,
+        inks: inks.map((id) => ({ name: inkById.get(id)?.name ?? id, rgb: inkById.get(id)?.rgb ?? null })),
+        estimate: render ? `${formatMinutes(render.minutes)}, ${render.dips} dips (separated)` : `about ${formatMinutes(cost.minutes)}, ${Math.round(cost.dips / 5) * 5} dips`,
+        detail: render ? render.lost_inks.map((id) => `${inkById.get(id)?.name ?? id} drew nothing at this size`)
+          : thinInks(profile, knownInks(record), placement.size_mm[0]).map(({ ink, minWidthMm }) => `${ink.name} may be lost below about ${Math.ceil(minWidthMm)} mm`),
+        artUrl: render ? `data:image/png;base64,${render.image.data_base64}` : await artThumbnail(record, 1024), mockupUrl: captureView(placement),
+      };
+    }));
+    downloadText(cardHtml(brief.name, brief.content_sha256, sections), "inkmap-card.html", "text/html");
+  } catch (error) { notice("Placement card", error); }
+}
+
+/** The current view of the body, as a picture to share. */
+export function exportMockup(): void {
+  useUi.getState().setNotice(null);
+  try { Object.assign(document.createElement("a"), { href: captureView(), download: "inkmap-mockup.jpg" }).click(); }
+  catch (error) { notice("Mockup image", error); }
 }
 
 export async function exportProjectBackup(): Promise<void> {
@@ -72,7 +107,7 @@ export async function exportProjectBackup(): Promise<void> {
   catch (error) { notice("Project backup", error); }
 }
 
-/** Advanced: the v6 body placement file. */
+/** Advanced: the v7 body placement file. */
 export function exportPlacementFile(): void {
   useUi.getState().setNotice(null);
   const file = useStore.getState().toFile();
@@ -90,33 +125,7 @@ export async function openProject(file: File | undefined): Promise<void> {
   } catch (error) { notice("Open project", error); }
 }
 
-/** One Open design: the file says which editor can show it, and the shell
- *  goes there. An unsupported file leaves the working draft alone and stays
- *  available for download, byte for byte. */
-export async function openDesign(file: File | undefined): Promise<UnsupportedFile | null> {
-  if (!file) return null;
-  useUi.getState().setNotice(null);
-  try {
-    const text = await file.text();
-    const route = await openDesignFile(new File([text], file.name));
-    if (route.kind === "unsupported") {
-      notice("Open design", route.reason);
-      return { name: file.name, text, reason: route.reason };
-    }
-    if (route.kind === "body") {
-      await useStore.getState().loadDesign(route.design);
-      useUi.getState().setWorkspace("body");
-      return null;
-    }
-    const draft = chartDraftFromDesign(route.design);
-    useStore.getState().openChartDraft(draft);
-    useUi.getState().setWorkspace(draft.kind === "cylinder" ? "cylinder" : "paper");
-    useStore.getState().setToast(`Opened design “${route.design.name}”`);
-    return null;
-  } catch (error) { notice("Open design", error); return null; }
-}
-
-/** Advanced: a raw v6 placement file into the body editor. */
+/** Advanced: a raw v7 placement file into the editor. */
 export async function loadPlacementFile(file: File | undefined): Promise<void> {
   if (!file) return;
   useUi.getState().setNotice(null);
@@ -124,27 +133,42 @@ export async function loadPlacementFile(file: File | undefined): Promise<void> {
     if (file.size > MAX_PROJECT_BYTES) throw new Error("Placement file exceeds 20 MB");
     const value = parseJsonStrict(await file.text());
     validatePlacementFile(value);
-    await Promise.all(Object.values(value.designs ?? {}).map(validateArtworkRecord));
+    const { validateArtRecord } = await import("./core/art.ts");
+    await Promise.all(Object.values(value.designs ?? {}).map(validateArtRecord));
     useStore.getState().loadFile(value);
     useStore.getState().setError(null);
   }
   catch (error) { notice("Load placement file", error); }
 }
 
-/** Import only the native acquisition record; previews and source SVGs are not artwork. */
-export async function importArtwork(file: File | undefined): Promise<string | null> {
-  if (!file) return null;
+/** Import source art: PNG or JPEG images, each with its generation sidecar (`<image stem>.json`) when that is
+ *  selected too. Returns the first new entry's id, to place next. */
+export async function importArt(input: FileList | readonly File[] | File | null | undefined): Promise<string | null> {
+  const files = !input ? [] : input instanceof File ? [input] : [...input];
+  if (!files.length) return null;
   useUi.getState().setNotice(null);
   try {
-    if (file.size > MAX_PROJECT_BYTES) throw new Error("Artwork exceeds 20 MB");
-    const text = await file.text();
-    if (!text.trimStart().startsWith("{")) throw new Error("Generate with DrawingBot V3, then import its artwork.json. Supply source SVG or images to DBV3 first.");
-    const artwork = await validateArtworkRecord(parseJsonStrict(text));
-    requireAcquiredArtwork(artwork);
-    const id = `art-${artwork.content_sha256}`;
-    useStore.getState().addDesign({ id, name: artwork.name,
-      path: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(await tattooProgramToSvg(artwork.program))}`,
-      default_size_mm: artworkSizeM(artwork).map(m => m * 1000) as [number, number], embedded: artwork });
-    return id;
-  } catch (error) { notice("Import artwork", error); return null; }
+    const stem = (file: File) => file.name.replace(/\.[^.]+$/, "");
+    const sidecars = new Map<string, unknown>();
+    for (const file of files.filter(f => /\.json$/i.test(f.name))) {
+      if (file.size > 1_000_000) throw new Error(`${file.name} is too large for a generation sidecar`);
+      const value = parseJsonStrict(await file.text()) as { schema?: unknown } | null;
+      if (typeof value?.schema === "string" && /^tatbot\.inkmap-(artwork|design)\//.test(value.schema)) {
+        throw new Error(`${file.name} is DBV3 stroke artwork. Inkmap places the source image; the art pipeline makes the strokes.`);
+      }
+      sidecars.set(stem(file), value);
+    }
+    const images = files.filter(f => !/\.json$/i.test(f.name));
+    if (!images.length) throw new Error("Choose a PNG or JPEG image of the design (a generation sidecar alone is not art).");
+    const ids: string[] = [], notes: string[] = [];
+    for (const file of images) {
+      const record = await artFromFile(file, sidecars.get(stem(file)));
+      const entry = await libraryEntry(`art-${record.content_sha256}`, record);
+      useStore.getState().addDesign(entry);
+      ids.push(entry.id);
+      notes.push(...await importNotes(record));
+    }
+    if (notes.length) useUi.getState().setNotice({ action: "Import art", message: notes.join(" "), advice: true });
+    return ids[0];
+  } catch (error) { notice("Import art", error); return null; }
 }

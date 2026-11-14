@@ -76,8 +76,9 @@ for d in glob.glob("/sys/bus/usb/devices/*"):
     if vid and pid:
         speed = read(d + "/speed")
         usb.append({"id": f"{vid}:{pid}", "serial": read(d + "/serial"), "product": read(d + "/product"),
-                    "mbps": int(float(speed)) if speed else None})
+                    "mbps": int(float(speed)) if speed else None, "power": read(d + "/power/control")})
 facts["usb"] = usb
+facts["governors"] = sorted({g for g in (read(p) for p in glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor")) if g})
 facts["devs"] = {p: os.path.exists(p) for p in exp["devs"]}
 def units(user, names):
     if not names:

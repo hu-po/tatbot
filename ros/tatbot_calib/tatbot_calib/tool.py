@@ -1,6 +1,7 @@
 """The tool a probe calibration touches the station with, refused before anything moves when it cannot be one.
 
-The tool is the arm's fitted tool: config/workspace.yaml `<arm>.tool_id`, whose tip the stack's tcp is built from.
+The tool is the arm's fitted tool (`tatbot ros cartridge fit`, over config/workspace.yaml's `<arm>.tool_id`), whose
+tip the stack's tcp is built from.
 It is never a default. A stated tool must be that one: the stack plans every touch through the fitted tool's tip,
 so calibrating another tool against it would plan with the wrong tip, tens of millimetres off between two tools.
 Its datasheet must declare the contact model the touches are planned for (`calibration.face_kind`): a tool
@@ -29,11 +30,11 @@ def fitted_tool(repo: Path, arm: str, stated: str | None = None):
 
     tool_id = tool_spec.active_tool_id(repo, arm)
     if not tool_id:
-        raise ToolRefusedError(f"config/workspace.yaml names no tool_id for the {arm} arm: the fitted tool is unknown")
+        raise ToolRefusedError(f"no tool is fitted on the {arm} arm: `tatbot ros cartridge fit <tool> --arm {arm}`")
     if stated and stated != tool_id:
-        raise ToolRefusedError(f"{stated!r} is stated, but config/workspace.yaml fits {tool_id!r} on the {arm} arm "
-                               "and the stack plans every touch through that tool's tip. For a new tool, record it "
-                               f"under `{arm}:` there with its datasheet's nominal tip, deploy, and calibrate again")
+        raise ToolRefusedError(f"{stated!r} is stated, but {tool_id!r} is fitted on the {arm} arm and the stack plans "
+                               "every touch through that tool's tip. For another cartridge: `tatbot ros cartridge fit "
+                               f"{stated} --arm {arm}`, then calibrate again")
     tool = tool_spec.load_tool(tool_id, repo)
     try:
         return tool, halo.Halo.from_datasheet(tool.raw.get("calibration") or {}, tool.profile)

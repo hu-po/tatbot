@@ -1,13 +1,29 @@
-//! Fleet trackers on the camera node. The wrist trackers (`trackd`) and the
-//! stencil observer (`stencild`) share the frame-socket merge, the bounded
-//! evidence file and the supervised Python estimator. No camera backend or
+//! Fleet trackers on the camera node. The wrist tracker (`trackd`) merges
+//! frame sockets, the stencil observer (`stencild`) supervises the Python
+//! estimator, and both write the bounded evidence file. No camera backend or
 //! arm driver lives here; every binary is a subscriber to an owner's socket.
 pub mod evidence;
 pub mod worker;
 
 use anyhow::{Result, ensure};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use tatbot_visiond::ReceivedFrameSet;
+
+pub fn now_unix_ns() -> Result<i128> {
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_nanos() as i128)
+}
+
+/// The 95th percentile of a metric window, 0 before its first sample.
+pub fn p95(samples: &VecDeque<f64>) -> f64 {
+    let mut sorted = samples.iter().copied().collect::<Vec<_>>();
+    sorted.sort_by(f64::total_cmp);
+    sorted
+        .get(sorted.len().saturating_sub(1) * 95 / 100)
+        .copied()
+        .unwrap_or(0.0)
+}
 
 /// Merge the fresh auxiliary sets that share the cadence set's timestamp
 /// basis and fall within `tolerance_ns` of it. Returns the merged set, how

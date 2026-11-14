@@ -28,7 +28,7 @@ from tatbot_session import geometry
 # nothing it would not set up again for: a 4 deg limit followed a still forearm's noise by 4.8 deg, a 4 mm one by
 # 4.4 mm, and the swallow's last strokes went down that far off its first (2026-10-07); past 12 mm or 12 deg the
 # forearm moved, and is set up again.
-WATCH = {"follow_m": 0.012, "follow_rad": 0.21, "follow_max_m": 0.024, "follow_max_rad": 0.42}   # owner 2026-10-20: x2
+WATCH = {"follow_m": 0.012, "follow_rad": 0.21, "follow_max_m": 0.024, "follow_max_rad": 0.42}   # 2026-10-20: x2
 # The wrist camera's rigid follow of a curved page (page.surface.rigid, RigidWatch, ArmExecutor._rigid_follow): the
 # stencil read at hover stops and lifts against where the setup's holds read it, the whole surface moved with it.
 RIGID = {"enabled": True,
@@ -46,8 +46,8 @@ RIGID = {"enabled": True,
          "hover_frames": 5,       # depth frames at a curved hover stop, pooled (gauge.pool)
          # A stroke rides the skin its hover reads along its own path (skin_along, ride_profile), not one number: the
          # tiny heart's skin sank 1.2-1.3 mm on one lobe against the other under one field (2026-10-21)
-         "profile_lower_m": 0.001,   # it goes at most this much under its plan where the skin reads under (owner)
-         "profile_setup_m": 0.004,   # the skin along it this far off the field: a move, set the page up again (owner;
+         "profile_lower_m": 0.001,   # it goes at most this much under its plan where the skin reads under
+         "profile_setup_m": 0.004,   # the skin along it this far off the field: a move, set the page up again (
                                      # 2 mm until 2026-10-23, when a 2.35 mm read re-fit the page 4.5 deg off and
                                      # the stroke's plan met joint_3's limit on a snake the ride was following)
          "profile_near_m": 0.002,    # a path point's skin: the skin points within this of it on the page plane
@@ -66,7 +66,6 @@ def config(stack: dict) -> dict:
     """page.surface with its defaults; mode plane (the default) is the flat page every run used."""
     cfg = dict(stack["page"].get("surface") or {})
     cfg.setdefault("mode", "plane")
-    cfg.setdefault("degree", 4)
     cfg.setdefault("max_loo_m", 0.0005)
     cfg.setdefault("reach_m", 0.020)
     cfg.setdefault("check", True)
@@ -76,6 +75,8 @@ def config(stack: dict) -> dict:
     cfg.setdefault("turn_pen", False)
     cfg.setdefault("along_skin", False)
     cfg.setdefault("turned_checks", 2)
+    cfg.setdefault("source_replan_m", 0.0003)
+    cfg.setdefault("source_follow", "goal")
     for key, value in WATCH.items():
         cfg.setdefault(key, value)
     cfg["rigid"] = {**RIGID, **(cfg.get("rigid") or {})}
@@ -253,7 +254,7 @@ def surface_normal_base(frame, base_from_camera: np.ndarray, turn=None) -> np.nd
     return base_from_camera[:3, :3] @ (n if turn is None else rotation(turn) @ n)
 
 
-def fit_turn(runs, degree: int = 4, reject_m: float = 0.0008, rounds: int = 4) -> np.ndarray:
+def fit_turn(runs, reject_m: float = 0.0008, rounds: int = 4) -> np.ndarray:
     """The wrist camera's turn (a rotation vector in its frame, rad) that brings the skins of every run's holds
     together: camera_tilt's model in the camera's frame, one height field per run and one turn for all. A hold's
     point d (camera frame, from its tip) turned by w moves along the page normal by n_page . (w x d) = w . (d x m),
@@ -261,57 +262,35 @@ def fit_turn(runs, degree: int = 4, reject_m: float = 0.0008, rounds: int = 4) -
     3), "tip_cam" (3,), "base_from_camera", "tcp" (4 x 4), "point" (base, or None)}]}]. A turn about the page normal
     moves no height, so the turn is fitted about the two axes square to the holds' mean normal (in the camera's
     frame) and is 0 about it."""
-    from tatbot_motion.surface import _design, _terms
+    from tatbot_motion.surface import fit_fields
 
     normals = [np.asarray(h["base_from_camera"], float)[:3, :3].T @ np.asarray(run["page"], float)[:3, 2]
                for run in runs for h in run["holds"]]
     mean = np.mean(normals, axis=0)
     mean /= np.linalg.norm(mean)
     axes = np.linalg.svd(np.eye(3) - np.outer(mean, mean))[0][:, :2]   # the two axes square to the mean normal
-    blocks, rhs, weights, columns = [], [], [], 0
-    terms = _terms(degree)
+    fields, heights, weights, turns, groups, count = [], [], [], [], [], 0
     for run in runs:
         page = np.asarray(run["page"], float)
-        rows, z, w, turn_rows = [], [], [], []
-        for hold in run["holds"]:
+        rows = []
+        for k, hold in enumerate(run["holds"]):
             rot, origin = np.asarray(hold["base_from_camera"], float)[:3, :3], np.asarray(hold["base_from_camera"])[:3, 3]
             tip = np.asarray(hold["tip_cam"], float)
             shift = np.asarray(hold["tcp"], float)[:3, 3] - (rot @ tip + origin)
             local = _local(page, hold["patch_cam"] @ rot.T + origin + shift)
-            m = rot.T @ page[:3, 2]
-            rows.append(local)
-            z.append(local[:, 2])
-            w.append(np.ones(len(local)))
-            turn_rows.append(np.cross(np.asarray(hold["patch_cam"], float) - tip, m))
-            if hold.get("point") is not None:
-                pt = _local(page, [hold["point"]])
-                rows.append(pt)
-                z.append(pt[:, 2])
-                w.append(np.full(1, POINT_WEIGHT))
-                turn_rows.append(np.zeros((1, 3)))
-        local, z, w, turn_rows = (np.concatenate(v) for v in (rows, z, w, turn_rows))
-        lo, hi = local[:, :2].min(axis=0), local[:, :2].max(axis=0)
-        scale = max(*(hi - lo), 1e-3) / 2.0
-        blocks.append((_design(local[:, :2], terms, scale), turn_rows))
-        rhs.append(z)
-        weights.append(w)
-        columns += len(terms)
-    a = np.zeros((sum(len(r) for r in rhs), columns + 2))
-    row = col = 0
-    for (field, turn_rows), z in zip(blocks, rhs, strict=True):
-        a[row:row + len(z), col:col + field.shape[1]] = field
-        a[row:row + len(z), columns:] = -turn_rows @ axes   # z + w . (d x m) = h  ->  h - w . (d x m) = z
-        row, col = row + len(z), col + field.shape[1]
-    z, w = np.concatenate(rhs), np.concatenate(weights)
-    keep = np.ones(len(z), bool)
-    coeffs = np.zeros(a.shape[1])
-    for _ in range(rounds):
-        sw = np.sqrt(w[keep])
-        coeffs = np.linalg.lstsq(a[keep] * sw[:, None], z[keep] * sw, rcond=None)[0]
-        r = z - a @ coeffs
-        mad = float(np.median(np.abs(r[keep] - np.median(r[keep]))))
-        keep = np.abs(r) < max(reject_m, 3.0 * 1.4826 * mad)
-    return axes @ coeffs[-2:]
+            point = _local(page, [hold["point"]]) if hold.get("point") is not None else np.zeros((0, 3))
+            rows += [local, point]
+            weights += [np.ones(len(local)), np.full(len(point), POINT_WEIGHT)]
+            turns += [np.cross(np.asarray(hold["patch_cam"], float) - tip, rot.T @ page[:3, 2]), np.zeros((len(point), 3))]
+            groups.append(np.full(len(local) + len(point), k))
+        local = np.concatenate(rows)
+        fields.append((count + np.arange(len(local)), local[:, :2], (*local[:, :2].min(axis=0), *local[:, :2].max(axis=0))))
+        heights.append(local[:, 2])
+        count += len(local)
+    # z + w . (d x m) = h  ->  z = h - w . (d x m)
+    _, turn = fit_fields(np.concatenate(heights), np.concatenate(weights), fields, -np.concatenate(turns) @ axes,
+                         groups=np.concatenate(groups), reject_m=reject_m, rounds=rounds)
+    return axes @ turn
 
 
 def _local(page: np.ndarray, pts_base: np.ndarray) -> np.ndarray:
@@ -337,84 +316,51 @@ def untilt(page: np.ndarray, points_base, tip_base, tilt) -> np.ndarray:
     return _turned(_local(page, pts), _local(page, [tip_base])[0], tilt) @ page[:3, :3].T + page[:3, 3]
 
 
-def camera_tilt(points, patches, tips, degree: int, extent=None, reject_m: float = 0.0008, rounds: int = 4):
+def _gathered(points, patches) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Every hold's gauge point and patch (page frame) as one set: the points (N, 3), their weights (the gauge's
+    own point under the tip against one patch point) and the hold each came from."""
+    pts = np.concatenate([np.r_[p, patch] for p, patch in zip(points, patches, strict=True)])
+    weights = np.concatenate([np.r_[np.full(len(p), POINT_WEIGHT), np.ones(len(patch))]
+                              for p, patch in zip(points, patches, strict=True)])
+    hold = np.concatenate([np.full(len(p) + len(patch), k) for k, (p, patch) in enumerate(zip(points, patches, strict=True))])
+    return pts, weights, hold
+
+
+def camera_tilt(points, patches, tips, extent=None, reject_m: float = 0.0008, rounds: int = 4):
     """The wrist camera's tilt (x, y rad, page frame) that brings the holds' skins together: each hold's patch is
     carried into the base by the camera's mounting and pinned at the tip, so a mounting turned by w turns every patch
     by w about its own tip, and two holds' skins then disagree where they overlap by w across their tips. Fitted with
     the height field, robustly (as fit_height): z + w_x dy - w_y dx = h(x, y), d from each point's tip. On the forearm
     (2026-10-07) the patches agreed on the skin's shape (radius 49-54 mm) and put its crest 3 mm off where the gauge
     points under the tips put it: a 3.4-3.7 deg turn about page y."""
-    from tatbot_motion.surface import _design, _terms
+    from tatbot_motion.surface import fit_fields
 
-    pts = np.concatenate([np.r_[p, patch] for p, patch in zip(points, patches, strict=True)])
-    tip = np.concatenate([np.repeat(t[None], len(p) + len(patch), axis=0)
-                          for t, p, patch in zip(tips, points, patches, strict=True)])
-    w = np.concatenate([np.r_[np.full(len(p), POINT_WEIGHT), np.ones(len(patch))]
-                        for p, patch in zip(points, patches, strict=True)])
+    pts, weights, hold = _gathered(points, patches)
+    d = pts[:, :2] - np.asarray(tips)[hold, :2]
     if extent is None:
         extent = (*pts[:, :2].min(axis=0), *pts[:, :2].max(axis=0))
-    scale = max(extent[2] - extent[0], extent[3] - extent[1], 1e-3) / 2.0
-    d = pts[:, :2] - tip[:, :2]
-    a = np.column_stack([_design(pts[:, :2], _terms(degree), scale), -d[:, 1], d[:, 0]])
-    keep = np.ones(len(pts), bool)
-    coeffs = np.zeros(a.shape[1])
-    for _ in range(rounds):
-        sw = np.sqrt(w[keep])
-        coeffs = np.linalg.lstsq(a[keep] * sw[:, None], pts[keep, 2] * sw, rcond=None)[0]
-        r = pts[:, 2] - a @ coeffs
-        mad = float(np.median(np.abs(r[keep] - np.median(r[keep]))))
-        keep = np.abs(r) < max(reject_m, 3.0 * 1.4826 * mad)
-    return coeffs[-2:]
+    return fit_fields(pts[:, 2], weights, [(np.arange(len(pts)), pts[:, :2], extent)], np.c_[-d[:, 1], d[:, 0]],
+                      groups=hold, reject_m=reject_m, rounds=rounds)[1]
 
 
-def _field(points, patches, degree: int, extent, offsets: bool, reject_m: float = 0.0008, rounds: int = 4):
-    """(HeightField, each patch's own offset) through holds' points and patches (page frame), robustly as fit_height.
-    With `offsets` every patch may sit its own height off the field and only the gauge points place it: each hold's
-    skin gives the shape, its point the height (a hold's patch shares its pose's error with its point, which the
-    pen at that pose shares too). Raises ValueError with too few points, or with offsets and no gauge point."""
-    from tatbot_motion.surface import HeightField, _design, _terms, fit_height
+def _field(points, patches, extent, stiffness: float | None = None):
+    """The height field through holds' points and patches (page frame): fit_height, each hold held out in turn to
+    choose how stiff it is. Raises ValueError with too few points."""
+    from tatbot_motion.surface import fit_height
 
-    if not offsets:
-        pts = np.concatenate([np.r_[p, patch] for p, patch in zip(points, patches, strict=True)])
-        w = np.concatenate([np.r_[np.full(len(p), POINT_WEIGHT), np.ones(len(patch))]
-                            for p, patch in zip(points, patches, strict=True)])
-        return fit_height(pts, w, degree=degree, extent=extent), [0.0] * len(patches)
-    if not sum(len(p) for p in points):
-        raise ValueError("no gauge point: a field whose patches float needs one to place it")
-    pts = np.concatenate([np.r_[p, patch] for p, patch in zip(points, patches, strict=True)])
-    if len(pts) < 30:
-        raise ValueError(f"{len(pts)} surface points: too few to fit a height field")
-    w = np.concatenate([np.r_[np.full(len(p), POINT_WEIGHT), np.ones(len(patch))]
-                        for p, patch in zip(points, patches, strict=True)])
-    which = np.concatenate([np.r_[np.full(len(p), -1), np.full(len(patch), k)]
-                            for k, (p, patch) in enumerate(zip(points, patches, strict=True))])
-    if extent is None:
-        extent = (*pts[:, :2].min(axis=0), *pts[:, :2].max(axis=0))
-    scale = max(extent[2] - extent[0], extent[3] - extent[1], 1e-3) / 2.0
-    terms = _terms(degree)
-    a = np.c_[_design(pts[:, :2], terms, scale), (which[:, None] == np.arange(len(patches))[None, :]).astype(float)]
-    keep = np.ones(len(pts), bool)
-    coeffs = np.zeros(a.shape[1])
-    for _ in range(rounds):
-        sw = np.sqrt(w[keep])
-        coeffs = np.linalg.lstsq(a[keep] * sw[:, None], pts[keep, 2] * sw, rcond=None)[0]
-        r = pts[:, 2] - a @ coeffs
-        mad = float(np.median(np.abs(r[keep] - np.median(r[keep]))))
-        keep = np.abs(r) < max(reject_m, 3.0 * 1.4826 * mad)
-    field = HeightField(degree, tuple(float(c) for c in coeffs[:len(terms)]), float(scale),
-                        tuple(float(v) for v in extent))
-    return field, [float(c) for c in coeffs[len(terms):]]
+    pts, weights, hold = _gathered(points, patches)
+    return fit_height(pts, weights, extent=extent, groups=hold, stiffness=stiffness)
 
 
-def fit(page: np.ndarray, holds: list[dict], cfg: dict, extent=None, bounds=None, turned: bool = False, drawing=None):
+def fit(page: np.ndarray, holds: list[dict], extent=None, bounds=None, turned: bool = False, drawing=None):
     """(HeightField over `page`, report) from holds [{"xy", "point" (base, or None), "patch" (N, 3 base), "tip" (base,
     or None)}]. A hold whose gauge point is None (its frames disagreed under the tip) gives its skin alone: the patch
     is the depth carried by the hold's pose, the point a quadric carried across the tip, and on the forearm's far
     flank the patches of the holds there were the field's only long baseline across the arm (2026-10-07).
     The wrist camera's turn: with `turned` the patches were turned by its calibration (hold_patch), and the turn left
     in them is fitted and reported, never applied; else (no calibration) it is fitted and taken out of each hold's
-    point and patch about its tip (camera_tilt). With cfg["patch_offsets"] each patch sits its own height off the
-    field and the gauge points place it (_field). The report holds the turn, each hold's skin's rms off the field
+    point and patch about its tip (camera_tilt). The report holds the turn, the field's stiffness (the bending
+    penalty the holds chose, tatbot_motion.surface), each hold's skin's rms off the field
     and its leave-one-out residual (the field fitted without that hold, at its point: at a corner an
     extrapolation, so it is reported, never refused on; the check holds between corners are the field's test).
     `bounds` (half width, half height): skin points past the print are left out, the mat beyond a skin's edge among
@@ -426,33 +372,32 @@ def fit(page: np.ndarray, holds: list[dict], cfg: dict, extent=None, bounds=None
     tilt = np.zeros(2)
     if all(h.get("tip") is not None for h in holds):
         tips = [_local(page, [h["tip"]])[0] for h in holds]
-        tilt = camera_tilt(points, patches, tips, int(cfg["degree"]), extent)
+        tilt = camera_tilt(points, patches, tips, extent)
         if not turned:
             points = [_turned(p, t, tilt) for p, t in zip(points, tips, strict=True)]
             patches = [_turned(patch, t, tilt) for patch, t in zip(patches, tips, strict=True)]
-    degree, offsets = int(cfg["degree"]), bool(cfg.get("patch_offsets", False))
-    field, shifts = _field(points, patches, degree, extent, offsets)
+    field = _field(points, patches, extent)
     loo = []
     for k in range(len(holds)):
         if not len(points[k]):
             loo.append(float("nan"))
             continue
         try:
-            alone, _ = _field([p for j, p in enumerate(points) if j != k],
-                              [patch for j, patch in enumerate(patches) if j != k], degree, field.extent, offsets)
+            alone = _field([p for j, p in enumerate(points) if j != k],
+                           [patch for j, patch in enumerate(patches) if j != k], field.extent, field.stiffness)
             loo.append(float(points[k][0, 2] - alone(points[k][0, :2])[0]))
         except ValueError:
             loo.append(float("nan"))
     residual = [float(p[0, 2] - field(p[0, :2])[0]) if len(p) else float("nan") for p in points]
-    patch_rms = [float(np.sqrt(np.mean((patch[:, 2] - shift - field(patch[:, :2])) ** 2))) if len(patch)
-                 else float("nan") for patch, shift in zip(patches, shifts, strict=True)]
+    patch_rms = [float(np.sqrt(np.mean((patch[:, 2] - field(patch[:, :2])) ** 2))) if len(patch) else float("nan")
+                 for patch in patches]
     grid = np.stack(np.meshgrid(np.linspace(field.extent[0], field.extent[2], 9),
                                 np.linspace(field.extent[1], field.extent[3], 9)), -1).reshape(-1, 2)
     heights = field(grid)
     along, gauged = None if drawing is None else field(drawing), [float(p[0, 2]) for p in points if len(p)]
-    report = {"degree": field.degree, "points": int(sum(len(p) + len(q) for p, q in zip(points, patches, strict=True))),
+    report = {"stiffness": field.stiffness, "points": int(sum(len(p) + len(q) for p, q in zip(points, patches, strict=True))),
               "holds": len(holds), "gauged": int(sum(len(p) for p in points)), "residual_m": residual,
-              "loo_m": loo, "patch_rms_m": patch_rms, "patch_offset_m": shifts, "relief_extent_m": float(np.ptp(heights)),
+              "loo_m": loo, "patch_rms_m": patch_rms, "relief_extent_m": float(np.ptp(heights)),
               "relief_m": float(np.ptp(heights if along is None else along)), "extent": list(field.extent),
               "drawing_m": None if along is None else [float(along.min()), float(along.max())],
               "gauged_m": gauged and [min(gauged), max(gauged)], "camera_tilt_rad": [float(v) for v in tilt],
@@ -635,19 +580,24 @@ def skin_gap(surface, points) -> float | None:
     if len(pts) < 50:
         return None
     pts = pts[np.linspace(0, len(pts) - 1, min(200, len(pts))).astype(int)]
-    return float(np.median([surface.height_over(p)[0] for p in pts]))
+    return float(np.median(surface.heights_over(pts)))
+
+
+def _stroke_xy(program: dict | None) -> np.ndarray:   # every stroke point (page metres, n x 2)
+    pts = [np.asarray(op["points_m"], float).reshape(-1, 2) for op in (program or {}).get("ops", [])
+           if op.get("op") == "stroke"]
+    return np.concatenate(pts) if pts else np.zeros((0, 2))
+
+
+def _nearest(points, places) -> np.ndarray:   # each point's distance to the nearest place
+    return np.min(np.linalg.norm(points[:, None, :] - places[None, :, :], axis=2), axis=1)
 
 
 def coverage(program: dict | None, holds_xy, reach_m: float) -> float:
     """The farthest a stroke point lies from every hold (page metres): beyond the holds' patches the field is an
     extrapolation."""
-    holds = np.asarray(holds_xy, float).reshape(-1, 2)
-    pts = [np.asarray(op["points_m"], float).reshape(-1, 2) for op in (program or {}).get("ops", [])
-           if op.get("op") == "stroke"]
-    if not pts or not len(holds):
-        return 0.0
-    allp = np.concatenate(pts)
-    return float(np.max(np.min(np.linalg.norm(allp[:, None, :] - holds[None, :, :], axis=2), axis=1)))
+    holds, allp = np.asarray(holds_xy, float).reshape(-1, 2), _stroke_xy(program)
+    return float(np.max(_nearest(allp, holds))) if len(allp) and len(holds) else 0.0
 
 
 def layout(program: dict | None, clear_m, centre=(0.0, 0.0), reach_m: float = 0.020, inset_m=None) -> np.ndarray:
@@ -656,22 +606,54 @@ def layout(program: dict | None, clear_m, centre=(0.0, 0.0), reach_m: float = 0.
     centre goes first: its skin gives the normals the corners are held along (ArmExecutor._first_skin). A drawing those five leave points of farther than `reach_m` from every
     hold gets the centre then a grid over its box spaced so none is (a 75 mm filler: 4 x 4; the corners and centre
     left it 37 mm from every hold and the draw refused, 2026-10-13)."""
-    pts = [np.asarray(op["points_m"], float).reshape(-1, 2) for op in (program or {}).get("ops", [])
-           if op.get("op") == "stroke"]
+    allp = _stroke_xy(program)
     hx, hy = geometry.hold_box(clear_m, inset_m)
-    if not pts:
+    if not len(allp):
         lo, hi = np.array(centre) - 0.012, np.array(centre) + 0.012
     else:
-        allp = np.concatenate(pts)
         lo, hi = allp.min(axis=0), allp.max(axis=0)
     mid = (lo + hi) / 2
     holds = np.array([mid, [lo[0], lo[1]], [hi[0], lo[1]], [hi[0], hi[1]], [lo[0], hi[1]]])
-    if pts and coverage(program, holds, reach_m) > reach_m:
+    if len(allp) and coverage(program, holds, reach_m) > reach_m:
         n = [max(2, int(np.ceil(extent / (reach_m * np.sqrt(2)))) + 1) for extent in hi - lo]
         grid = np.stack(np.meshgrid(np.linspace(lo[0], hi[0], n[0]), np.linspace(lo[1], hi[1], n[1])), -1)
         grid = grid.reshape(-1, 2)
         holds = np.vstack([mid, grid[np.linalg.norm(grid - mid, axis=1) > 1e-9]])
     return np.clip(holds, [-hx, -hy], [hx, hy])
+
+
+REFILL_AVOID_M = 0.006    # a replacement hold keeps this far from every place a hold read nothing at
+REFILL_STEP_M = 0.003     # the replacement holds' candidate places, this far apart
+REFILL_MARGIN_M = 0.002   # their aim inside reach_m: the holds' shift (~1 mm) moves them before _fit_surface's check
+REFILL_POINTS = 2000      # the stroke points weighed for each (an even subset)
+
+
+def refill(program: dict | None, read_xy, failed_xy, reach_m: float, clear_m, inset_m=None) -> np.ndarray | None:
+    """The next hold for a curved page whose holds that read leave stroke points farther than reach_m (less
+    REFILL_MARGIN_M) from every one: the place in the hold box (geometry.hold_box), REFILL_AVOID_M from every place
+    a hold read nothing at, that brings the most of them within it (then the farthest nearest); None when none is
+    left out, or no place brings one nearer. 2026-10-24: three of a design's 25 holds read nothing at any of
+    their places, one left its lettering 23.7 mm from every hold, and the draw refused before a stroke; replayed,
+    two replacements covered it (the farthest point alone took six, three within 4 mm of each other)."""
+    holds, allp = np.asarray(read_xy, float).reshape(-1, 2), _stroke_xy(program)
+    near = _nearest(allp, holds) if len(allp) and len(holds) else np.zeros(0)
+    far = near > reach_m - REFILL_MARGIN_M
+    if not far.any():
+        return None
+    keep = np.linspace(0, far.sum() - 1, min(REFILL_POINTS, int(far.sum()))).astype(int)
+    farp, fard = allp[far][keep], near[far][keep]
+    hx, hy = geometry.hold_box(clear_m, inset_m)
+    lo, hi = np.maximum(farp.min(axis=0) - reach_m, [-hx, -hy]), np.minimum(farp.max(axis=0) + reach_m, [hx, hy])
+    grid = np.stack(np.meshgrid(np.arange(lo[0], hi[0] + 1e-9, REFILL_STEP_M),
+                                np.arange(lo[1], hi[1] + 1e-9, REFILL_STEP_M)), -1).reshape(-1, 2)
+    failed = np.asarray(failed_xy, float).reshape(-1, 2)
+    grid = grid[_nearest(grid, failed) >= REFILL_AVOID_M] if len(failed) and len(grid) else grid
+    if not len(grid):
+        return None
+    dist = np.minimum(fard[None, :], np.linalg.norm(grid[:, None, :] - farp[None, :, :], axis=2))
+    covered, worst = (dist <= reach_m - REFILL_MARGIN_M).sum(axis=1), dist.max(axis=1)
+    best = int(np.lexsort((worst, -covered))[0])
+    return grid[best] if covered[best] or worst[best] < fard.max() - 1e-6 else None
 
 
 def check_points(holds_xy) -> np.ndarray:

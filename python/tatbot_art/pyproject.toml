@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tatbot-art"
+version = "0.1.0"
+description = "Palette-aware art studio: ink gamut, appearance rendering and colour separation for tatbot programs"
+authors = [{ name = "Hugo Ponte" }]
+license = "MIT"
+requires-python = ">=3.11"
+# The shared offline drawing interpreter's set (scripts/lib/drawing_python.py).
+dependencies = ["numpy", "Pillow", "PyYAML", "scipy"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tatbot_art*"]

@@ -1,3 +1,4 @@
+import { takeWidth } from "../src/core/lang.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -7,9 +8,9 @@ import {
 } from "../src/core/lang.ts";
 import requestFixtures from "../../../config/inkmap/examples/scenario-request-fixtures.json" with { type: "json" };
 
-test("the lexicon has the 59 leaf sites of lexicon v0.3", () => {
+test("the lexicon has the 59 leaf sites of lexicon v0.4", () => {
   assert.equal(Object.keys(SITES).length, 59);
-  assert.equal(INKLANG_VERSION, "0.3");
+  assert.equal(INKLANG_VERSION, "0.4");
 });
 
 test("every site is well-formed and every declared aspect is a known aspect", () => {
@@ -44,14 +45,14 @@ test("no phrase resolves to two different things", () => {
 test("the two founding sentences parse exactly", () => {
   const p1 = parseSentence("A fine line octopus on the left knee ditch");
   assert.deepEqual(p1, {
-    inklang: "0.3", motif: "octopus", style: "fine-line", secondary: [],
+    inklang: "0.4", motif: "octopus", style: "fine-line", secondary: [],
     technique: null, color: null,
     site: { id: "knee_ditch", laterality: "left", aspect: null, level: null },
   } satisfies TattooProgram);
 
   const p2 = parseSentence("a watercolor skull with tribal themes on the left inside biceps");
   assert.deepEqual(p2, {
-    inklang: "0.3", motif: "skull", style: "watercolor", secondary: ["tribal"],
+    inklang: "0.4", motif: "skull", style: "watercolor", secondary: ["tribal"],
     technique: null, color: null,
     site: { id: "bicep", laterality: "left", aspect: "inner", level: null },
   } satisfies TattooProgram);
@@ -59,11 +60,11 @@ test("the two founding sentences parse exactly", () => {
 
 test("realize is canonical and parse inverts it", () => {
   const programs: TattooProgram[] = [
-    { inklang: "0.3", motif: "octopus", style: "fine-line", secondary: [], technique: null, color: null, site: { id: "knee_ditch", laterality: "left", aspect: null, level: null } },
-    { inklang: "0.3", motif: "skull", style: "watercolor", secondary: ["tribal"], technique: null, color: null, site: { id: "bicep", laterality: "left", aspect: "inner", level: null } },
-    { inklang: "0.3", motif: "snake wrapped around a dagger", style: null, secondary: [], technique: "dotwork", color: "black-and-grey", site: { id: "forearm", laterality: "right", aspect: "outer", level: null } },
-    { inklang: "0.3", motif: "rose", style: "american-traditional", secondary: ["geometric", "ornamental"], technique: null, color: "full-color", site: { id: "sternum", laterality: null, aspect: null, level: null } },
-    { inklang: "0.3", motif: "koi fish", style: "japanese", secondary: [], technique: null, color: null, site: { id: "full_sleeve", laterality: "right", aspect: null, level: null } },
+    { inklang: "0.4", motif: "octopus", style: "fine-line", secondary: [], technique: null, color: null, site: { id: "knee_ditch", laterality: "left", aspect: null, level: null } },
+    { inklang: "0.4", motif: "skull", style: "watercolor", secondary: ["tribal"], technique: null, color: null, site: { id: "bicep", laterality: "left", aspect: "inner", level: null } },
+    { inklang: "0.4", motif: "snake wrapped around a dagger", style: null, secondary: [], technique: "dotwork", color: "black-and-grey", site: { id: "forearm", laterality: "right", aspect: "outer", level: null } },
+    { inklang: "0.4", motif: "rose", style: "american-traditional", secondary: ["geometric", "ornamental"], technique: null, color: "full-color", site: { id: "sternum", laterality: null, aspect: null, level: null } },
+    { inklang: "0.4", motif: "koi fish", style: "japanese", secondary: [], technique: null, color: null, site: { id: "full_sleeve", laterality: "right", aspect: null, level: null } },
   ];
   for (const p of programs) {
     const s = realize(p);
@@ -104,18 +105,18 @@ test("lies are rejected: laterality and aspect rules, unknown terms", () => {
   assert.throws(() => parseSentence("a rose on the flux capacitor"), /unknown site/);
   assert.throws(() => parseSentence("a rose"), /on the/);
   assert.throws(() => parseSentence("a fine line on the wrist"), /no motif/);
-  const bad: TattooProgram = { inklang: "0.3", motif: "rose", style: "vaporwave" as string, secondary: [], technique: null, color: null, site: { id: "wrist", laterality: null, aspect: null, level: null } };
+  const bad: TattooProgram = { inklang: "0.4", motif: "rose", style: "vaporwave" as string, secondary: [], technique: null, color: null, site: { id: "wrist", laterality: null, aspect: null, level: null } };
   assert.throws(() => validateProgram(bad), /unknown style/);
   assert.throws(() => realize({ ...bad, style: null, site: { id: "knee_ditch", laterality: "center", aspect: null, level: null } }), /sided/);
 });
 
 test("midline sites realize without laterality; sided zones carry it", () => {
   assert.equal(
-    realize({ inklang: "0.3", motif: "serpent", style: null, secondary: [], technique: null, color: null, site: { id: "spine", laterality: null, aspect: null, level: null } }),
+    realize({ inklang: "0.4", motif: "serpent", style: null, secondary: [], technique: null, color: null, site: { id: "spine", laterality: null, aspect: null, level: null } }),
     "a serpent on the spine",
   );
   assert.equal(
-    realize({ inklang: "0.3", motif: "wave", style: null, secondary: [], technique: null, color: null, site: { id: "anklet", laterality: "left", aspect: null, level: null } }),
+    realize({ inklang: "0.4", motif: "wave", style: null, secondary: [], technique: null, color: null, site: { id: "anklet", laterality: "left", aspect: null, level: null } }),
     "a wave on the left anklet",
   );
 });
@@ -127,13 +128,13 @@ test("levels: upper/lower/mid combine with aspects and roundtrip", () => {
   assert.deepEqual(parseSentence("a star on the lower back").site, { id: "lower_back", laterality: null, aspect: null, level: null });
   assert.deepEqual(parseSentence("a star on the lower spine").site, { id: "spine", laterality: null, aspect: null, level: "lower" });
   assert.throws(() => parseSentence("a star on the upper lower thigh"), /conflicting levels/);
-  assert.throws(() => realize({ inklang: "0.3", motif: "wave", style: null, secondary: [], technique: null, color: null, site: { id: "anklet", laterality: "left", aspect: null, level: "upper" } }), /zones take no level/);
+  assert.throws(() => realize({ inklang: "0.4", motif: "wave", style: null, secondary: [], technique: null, color: null, site: { id: "anklet", laterality: "left", aspect: null, level: "upper" } }), /zones take no level/);
 });
 
 test("v0.3 leaves: forehead, throat, nape are real sites now", () => {
   const p = parseSentence("a classic american third eye on the forehead");
   assert.deepEqual(p, {
-    inklang: "0.3", motif: "third eye", style: "american-traditional", secondary: [],
+    inklang: "0.4", motif: "third eye", style: "american-traditional", secondary: [],
     technique: null, color: null,
     site: { id: "forehead", laterality: null, aspect: null, level: null },
   } satisfies TattooProgram);
@@ -205,4 +206,15 @@ test("the 100 typed scenario-request fixtures preserve semantic parse outcomes",
     assert.equal(program.site.laterality, fixture.expected.laterality, fixture.id);
   }
   assert.ok(poses.size >= 4 && supports.size >= 4 && sizes.size >= 5);
+});
+
+test("a size in a sentence comes out as a width, and a distance from somewhere stays in", () => {
+  assert.deepEqual(takeWidth("a 3 inch swallow on my left outer bicep"), { text: "a swallow on my left outer bicep", widthMm: 76.2 });
+  assert.deepEqual(takeWidth("80 mm wide on the left outer bicep"), { text: "on the left outer bicep", widthMm: 80 });
+  assert.equal(takeWidth("a two inch rose on the left forearm").widthMm, 50.8);
+  assert.equal(takeWidth("a 4 cm rose on the left forearm").widthMm, 40);
+  for (const distance of ["two inches above the left elbow", "2 cm below the left collarbone", "3 inches in front of the left ear"]) {
+    assert.deepEqual(takeWidth(distance), { text: distance, widthMm: null }, distance);
+  }
+  assert.deepEqual(takeWidth("on the left forearm"), { text: "on the left forearm", widthMm: null });
 });

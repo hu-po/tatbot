@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
+from tatbot_description import arm_model, names
 
 from tatbot_session import rules
 
@@ -75,6 +76,7 @@ class GaugeRead:
     patch_base: np.ndarray
     raw: tuple | None = None
     further: tuple = ()
+    pen_seen: bool = True   # False: no frame showed the pen; read at its fitted place (gauge.measure fitted_pen)
 
 
 class Sensing(Protocol):
@@ -82,6 +84,21 @@ class Sensing(Protocol):
     wrist: str
     def ready(self, arm: str) -> bool: ...
     def gauge(self, q, tcp, prior, *, curved: bool, count: int, name: str = "") -> GaugeRead | None: ...
+
+
+class WristPort(Protocol):
+    """A wrist camera that is not the rig's D405, for stencil tracking (track.Tracker): a simulator's, rendered
+    where its arm stands. `open` gives a camera with inspect.WristCamera's members a tracker uses (grab_both,
+    raw_depth, depth_metadata, capture_timestamps, close); `calibration` the wrist gauge's for that camera, as
+    gauge.calibration_path's file holds it (None: no tracking); `readers` an executor (submit, shutdown) that runs
+    track._measure on its frames, the print's tile loaded; `grabber` one that grabs a frame while a stroke draws.
+    `turn` is the camera's calibrated turn (curved.load_turn's), None for a camera standing where its model says.
+    When absent, the rig's camera, files and worker processes are used, with sensing.wrist real."""
+    turn: object
+    def open(self, ex): ...
+    def calibration(self, arm: str) -> dict | None: ...
+    def readers(self, ex): ...
+    def grabber(self): ...
 
 
 class NoSensing:
@@ -108,6 +125,7 @@ class NodePort(Protocol):
 class ArmPort(Protocol):
     """The arm members ArmExecutor uses (ArmIO's), and goal_log: the run's goals.jsonl writer, or None."""
     arm: str
+    clock: Clock
     q: np.ndarray | None
     safety: dict
     active: object
@@ -151,14 +169,15 @@ class SafetyReadings:
         return 0 if math.isnan(value) else int(value)
 
     def trip_joints(self) -> np.ndarray | None:
-        q = np.array([self.safety.get(f"trip_q{i}", math.nan) for i in range(7)])
+        q = np.array([self.safety.get(name, math.nan) for name in names.TRIP_JOINTS])
         return None if np.isnan(q).any() else q
 
     def seed(self) -> np.ndarray:
-        """Measured joints with the carriage from the last command (its encoder rests 10-20 um off)."""
+        """Measured joints with a carriage from the last command (its encoder rests 10-20 um off)."""
         q = self.measured()
-        if self.last_command is not None:
-            q[6] = self.last_command[6]
+        carriage = arm_model.for_arm(self.arm).carriage
+        if self.last_command is not None and carriage is not None:
+            q[carriage] = self.last_command[carriage]
         return q
 
 
@@ -204,7 +223,10 @@ def stop_reason(io, watch_latch: bool, should_stop) -> str | None:
 def execute(io, traj, run, refused=None):
     """ArmPort.execute around `run()`, the goal itself: a landed arm is sent nothing (failed; its driver would ignore
     the goal and JTC report a success), nor a way io.clearance refuses (the node's collision guard; `refused(why)`
-    hears it). io.active is the goal's from here."""
+    hears it). io.active is the goal's from here. A goal done waits out the arm model's command_delay_s, so the
+    measured joints read next answer its last command: the xArm's arrive 95 ms late, and a dip's dwell seeded from
+    them held the tool 0.95 mm over its dwell height after a 10 mm/s descent (2026-11-09). The WXAI's is 0. A goal
+    that ends drawing does not wait: a `continues` op goes on pen-down from its end, and a pause there would dot."""
     io.active = traj
     if io.flag("landed"):
         return "failed", 0, rules.landed_refusal(io.arm)
@@ -213,4 +235,23 @@ def execute(io, traj, run, refused=None):
         if refused is not None:
             refused(why)
         return "failed", 0, why
-    return run()
+    result = run()
+    if (result[0] == "ok" and (delay := arm_model.for_arm(io.arm).command_delay_s) > 0
+            and int(traj.phase[-1]) != Phase.PHASE_DRAW):
+        io.clock.sleep(delay)
+    return result
+
+
+class SurfaceSource(Protocol):
+    """Optional observation provider for planning: an immutable surface per plan.
+
+    A snapshot has the tatbot_motion.surface.PageSurface interface (base, flat,
+    lift, foot and height_over). Acquisition belongs to the provider. The
+    optional op identifies continuation chains that must share a surface; the
+    provider freezes them as the tracker freezes its correction. A call without
+    an op is the newest surface: the executor reads it again at dispatch and
+    through a stroke's goal for the skin's rise since the plan
+    (page.surface.source_follow).
+    When absent, the existing camera/gauge path is unchanged.
+    """
+    def snapshot(self, op=None): ...

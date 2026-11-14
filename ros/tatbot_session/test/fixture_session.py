@@ -35,7 +35,7 @@ def install_sensing(stack):
     # The sensor boundary supplies a decoded marker observation; no planner or setup decision is replaced.
     ArmExecutor._view_read = staticmethod(lambda cam, frames, *args: (frames[0], {
         "tx_m": 0.0, "ty_m": 0.0, "theta_rad": 0.0, "sigma": [0.0001] * 3, "sides": [0, 1, 2, 3]}, ""))
-    ros_depth.retain = lambda *args: (None, {"reason": "fixture depth supplied by TruthGauge"}, None)
+    ros_depth.retain = lambda *args, **kwargs: (None, {"reason": "fixture depth supplied by TruthGauge"}, None)
     ros_depth.base_points = lambda cam, depths, base_from_depth: (np.empty((0, 3)), None)   # nor seeds the first hold
     aim = ins.aim
 

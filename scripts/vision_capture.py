@@ -7,7 +7,7 @@ was asked to stamp) followed by capture-<k>.done. docs/surface-formats.md
 "Wrist captures" is the contract; the keys written here are exactly the ones
 listed there.
 
-    vision_capture.py once <dir> --arm right --k 1 --joints j0..j5 --carriage 0.002
+    vision_capture.py once <dir> --arm xarm --k 1 --joints j1..j7 --carriage 0
                                                 # --arm names the physical arm whose wrist
                                                 # cameras answer (never a default);
                                                 # the arm's registry roles must be ones this
@@ -49,6 +49,8 @@ from tatbot_paths import bootstrap  # noqa: E402
 
 bootstrap()
 
+import arm_model  # noqa: E402
+import wrist_claim  # noqa: E402
 from wrist_cameras import capture_roles, optical_frames  # noqa: E402
 
 # Current capture roles are a view of the camera registry, not a fixed list of
@@ -138,8 +140,8 @@ class RealSense:
                 disconnect()
 
 
-# The synthetic plane's tilt per role: the pink wrist's two mounts look at it from either side.
-FAKE_TILT_RAD = {"wrist_upper": 0.12, "wrist_lower": -0.08}
+# The synthetic plane's tilt per role: the xArm's two carriers look at it from either side.
+FAKE_TILT_RAD = {"wrist_2": 0.12, "wrist_1": -0.08}
 
 
 class FakeCamera:
@@ -256,7 +258,7 @@ def capture(cams: list, out_dir: Path, k: int, joints, carriage_m: float, t_wall
         cams.begin_capture(frames)
     arrays: dict[str, np.ndarray] = {
         "camera_roles": np.array(json.dumps([cam.role for cam in cams])),
-        "joints": np.asarray(joints, dtype=np.float64).reshape(6),
+        "joints": np.asarray(joints, dtype=np.float64).reshape(-1),   # the arm's, in its model's order
         "carriage_m": np.float64(carriage_m),
         "k": np.int64(k),
         "t_wall": np.float64(t_wall),
@@ -286,7 +288,8 @@ def main(argv=None) -> int:
     o = sub.add_parser("once", help="one capture without the executor (bench aid)")
     o.add_argument("dir", type=Path)
     o.add_argument("--k", type=int, default=1)
-    o.add_argument("--joints", type=float, nargs=6, default=[0.0] * 6, metavar="J")
+    o.add_argument("--joints", type=float, nargs="+", metavar="J",
+                   help="the arm's joint readings, rad, in its model's order (config/arm-models; default zeros)")
     o.add_argument("--carriage", type=float, default=0.002, help="carriage reading, metres")
     o.add_argument("--arm", choices=tuple(capture_roles(REPO)), required=True,
                    help="the physical arm whose wrist cameras answer (never a default)")
@@ -297,12 +300,22 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.frames < MIN_FRAMES:
         ap.error(f"--frames must be >= {MIN_FRAMES} (docs/surface-formats.md)")
-    cams = open_cameras(a.fake, a.from_owner, a.arm)
+    count = len(arm_model.for_arm(a.arm, REPO).arm)   # the WXAI's six, the xArm's seven
+    joints = a.joints or [0.0] * count
+    if len(joints) != count:
+        ap.error(f"--joints takes the {a.arm} arm's {count} joints, not {len(joints)}")
+    # the devices themselves: claimed first, so the drawing stack's idle viewer feed lets go of them (wrist_claim)
+    claim = None if a.fake or a.from_owner else wrist_claim.Claim()
     try:
-        path = capture(cams, a.dir, a.k, a.joints, a.carriage, time.time(), a.frames)
+        cams = open_cameras(a.fake, a.from_owner, a.arm)
+        try:
+            path = capture(cams, a.dir, a.k, joints, a.carriage, time.time(), a.frames)
+        finally:
+            for c in cams:
+                c.close()
     finally:
-        for c in cams:
-            c.close()
+        if claim is not None:
+            claim.release()
     print(f"wrote {path}")
     return 0
 

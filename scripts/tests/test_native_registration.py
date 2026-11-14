@@ -89,11 +89,11 @@ def test_native_adapter_uses_arm_base_once_and_moves_the_tag_with_carriage(tmp_p
     delta = kin.frame(q, 'right/wrist_tag2')[:3, 3] - kin.frame(np.zeros(7), 'right/wrist_tag2')[:3, 3]
     assert np.linalg.norm(delta) == pytest.approx(.012)
     q[0], q[5] = .3, 1.2
-    values = dict(zip(kin.chain.driver_joint_names('right'), q, strict=True))
+    values = dict(zip(kin.joint_names, q, strict=True))
     expected = np.linalg.inv(kin.chain.link_pose('right/base_link')) @ kin.chain.link_pose('right/wrist_tag2', values)
     assert np.allclose(kin.frame(q, 'right/wrist_tag2'), expected)
     assert not np.allclose(kin.frame(q, 'right/wrist_tag2'), kin.chain.link_pose('right/wrist_tag2', values))
-    with pytest.raises(ValueError, match='seven finite'):
+    with pytest.raises(ValueError, match='one finite measured axis per joint'):
         kin.frame(q[:6], 'right/wrist_tag2')
 
 

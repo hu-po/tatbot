@@ -50,14 +50,10 @@ MARGIN_MM = 1.0               # clear edge above and right of the tile
 RULER_MM = 5.0                # ruler band width
 TICK_MM = 0.5                 # tick line width
 LABEL_MM = 2.2                # label cap height
-LAYOUTS = {
-    "forearm": {"cols": 3, "rows": 4, "cell_mm": 2.0, "pitch_mm": 16.5, "tile_mm": (45.0, 63.0), "anchor_mm": None,
-                "gap_mm": 2.0, "codes": FOREARM_CODES},
-    "forearm18": {"cols": 2, "rows": 3, "cell_mm": 3.0, "pitch_mm": 22.0, "tile_mm": None, "anchor_mm": None,
-                  "gap_mm": 2.0, "codes": FOREARM18_CODES},
-    "silicone": {"cols": 5, "rows": 7, "cell_mm": 3.0, "pitch_mm": 23.25, "tile_mm": None, "anchor_mm": 40.0,
-                 "gap_mm": 4.0},
-}
+# Each layout's geometry is config/stencil-tiles.json's, which Inkmap reads too; its code pool, where it has one, is here.
+_TILES = json.loads((Path(__file__).resolve().parents[2] / "config/stencil-tiles.json").read_text())["tiles"]
+LAYOUTS = {name: {**spec, "codes": {"forearm": FOREARM_CODES, "forearm18": FOREARM18_CODES}.get(name)}
+           for name, spec in _TILES.items()}
 FONTS = ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "DejaVuSans.ttf", "Arial.ttf")
 
 
@@ -104,7 +100,7 @@ def build(layout, seed):
     marks = places(spec)
     grid_w = (spec["cols"] - 1) * pitch + 6 * cell
     grid_h = (spec["rows"] - 1) * pitch + 6 * cell
-    tw, th = spec["tile_mm"] or (grid_w, grid_h)
+    tw, th = spec["tile_mm"]
     ox, oy = (tw - grid_w) / 2, (th - grid_h) / 2
     n_anchor = sum(role == "anchor" for role, *_ in marks)
     codes = choose_codes(layout, seed, len(marks), n_anchor)

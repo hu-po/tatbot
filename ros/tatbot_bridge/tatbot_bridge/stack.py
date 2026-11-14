@@ -30,16 +30,27 @@ def arms(value, stack: dict) -> list[str]:
     """A comma list or a list; '' or empty = stack.yaml arms."""
     if isinstance(value, str):
         value = [a.strip() for a in value.split(",") if a.strip()]
-    return list(value or stack.get("arms") or ["right"])
+    return list(value or stack["arms"])
+
+
+def _scripts_lib() -> None:
+    lib = str(repo_root() / "scripts" / "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
 
 
 def fleet():
     """tatbot_cli.nodes from $TATBOT_REPO/scripts/lib (config/nodes.json is the only place addresses live)."""
-    lib = str(repo_root() / "scripts" / "lib")
-    if lib not in sys.path:
-        sys.path.insert(0, lib)
+    _scripts_lib()
     from tatbot_cli import nodes
     return nodes
+
+
+def log_root() -> Path:
+    """The run logs' root, as the session's (tatbot_runlog from $TATBOT_REPO/scripts/lib)."""
+    _scripts_lib()
+    import tatbot_runlog
+    return Path(tatbot_runlog.log_root(tatbot_runlog.load_config()))
 
 
 def bus_endpoint() -> str:
@@ -74,6 +85,26 @@ def world_from_arm_base(stack: dict, arm: str):
     if path is None or not path.is_file():
         return None
     return np.asarray(registration(path), float)
+
+
+def page_chooser(stack: dict, registrations: dict):
+    """A page.PageChooser starting where the page last stood: the newer of the last accepted touches and the bridge's
+    last choice of a sheet, over these arms (arm -> world_from_arm_base or None)."""
+    from tatbot_bridge import page
+
+    root, found = log_root(), []
+    for arm, matrix in registrations.items():
+        for path, chosen in ((root / f"page-touched-{arm}.json", False), (chosen_path(arm), True)):
+            place = page.page_place(path, matrix)
+            if place is not None:
+                found.append((path.stat().st_mtime, chosen, place))
+    _, chosen, place = max(found, key=lambda f: f[0]) if found else (0.0, False, None)
+    return page.PageChooser(stack["page"]["copies"], place=place, chosen=chosen)
+
+
+def chosen_path(arm: str):
+    """The bridge's record of the sheet last chosen as the page in <arm>'s base (page.page_place reads it)."""
+    return log_root() / f"page-chosen-{arm}.json"
 
 
 def open_bus(endpoint: str):

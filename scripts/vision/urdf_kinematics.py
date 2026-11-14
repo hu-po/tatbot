@@ -16,16 +16,6 @@ from pathlib import Path
 import numpy as np
 
 
-def driver_joint_names(prefix, count=7):
-    """WXAI driver vector order: six arm joints, then left carriage metres."""
-    if not 1 <= count <= 7:
-        raise ValueError(f"unsupported WXAI joint vector length {count}")
-    names = [f"{prefix}/joint_{i}" for i in range(min(count, 6))]
-    if count == 7:
-        names.append(f"{prefix}/left_carriage_joint")
-    return names
-
-
 def _rpy_to_matrix(roll, pitch, yaw):
     cr, sr = np.cos(roll), np.sin(roll)
     cp, sp = np.cos(pitch), np.sin(pitch)
@@ -137,14 +127,6 @@ class UrdfChain:
                 pose = pose @ motion
             # fixed joints contribute only their origin
         return pose
-
-    def arm_joint_names(self, prefix, count=6):
-        """The `prefix/joint_N` names an arm's encoder vector maps onto."""
-        return [f"{prefix}/joint_{i}" for i in range(count)]
-
-    def driver_joint_names(self, prefix, count=7):
-        """All driver joints, including the prismatic gripper carriage."""
-        return driver_joint_names(prefix, count)
 
 
 if __name__ == "__main__":

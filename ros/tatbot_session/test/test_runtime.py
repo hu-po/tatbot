@@ -1,29 +1,12 @@
-"""Runtime provenance rejects stale loaded files and process reuse without changing ordinary draws."""
+"""Runtime provenance: a run's record of its sources and loaded controller code, and what makes it incomplete."""
 from pathlib import Path
 
-import pytest
 from tatbot_session import runtime
 
 
-def test_missing_evidence_only_refuses_research(tmp_path):
-    observed = {'schema': 'tatbot.ros-runtime/2', 'controller': runtime.controller_identity(None)}
-    runtime.validate_research({'ops': []}, observed, observed)
-    with pytest.raises(ValueError, match='identified loaded'):
-        runtime.validate_research({'research': {'trial': '0000'}}, observed, observed)
+def test_a_missing_controller_record_is_incomplete(tmp_path):
+    assert not runtime.controller_identity(None)['complete']
     assert not runtime.controller_identity(tmp_path/'missing.json')['complete']
-    observed['controller'] = {'complete': True, 'files_sha256': 'a'*64}
-    observed['source_status'] = {'complete': True}
-    runtime.validate_research({'research': {'trial': '0000'}}, observed, observed)
-    with pytest.raises(ValueError, match='runtime changed'):
-        runtime.validate_research({'research': {'trial': '0000'}}, observed, {**observed, 'pid': 999})
-
-
-def test_source_drift_refuses_research_without_changing_ordinary_draw_admission():
-    observed = {'schema': 'tatbot.ros-runtime/2', 'controller': {'complete': True},
-                'source_status': {'complete': False, 'reason': 'source changed'}}
-    runtime.validate_research({'ops': []}, observed, observed)
-    with pytest.raises(ValueError, match='source differs'):
-        runtime.validate_research({'research': {'trial': '0000'}}, observed, observed)
 
 
 def test_session_snapshot_covers_shared_and_owner_source_roots(tmp_path, monkeypatch):

@@ -1,15 +1,14 @@
 ---
 summary: Public safety and responsible-testing boundary
 tags: [safety, responsible-use]
-updated: 2026-10-16
+updated: 2026-11-02
 audience: [all]
 ---
 
 # Safety scope
 
 Tatbot is an experimental robot tattoo arm. The ROS 2 drawing stack tattoos
-silicone practice skin and human skin with a needle cartridge, and draws on
-paper with a ballpoint.
+silicone practice skin and human skin with a needle cartridge.
 
 ## Interlocks
 

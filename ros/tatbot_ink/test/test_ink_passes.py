@@ -59,7 +59,7 @@ def test_the_program_and_its_preview_carry_the_passes(tmp_path):
     result = tatbot_ink.compile(write(tmp_path, artwork(program([("pen-1", lines)]))), repo=REPO)
     assert result["stats"]["passes"]["max"] == 3 and result["stats"]["passes"]["mm2_at_least"]["3"] > 4
     svg = tatbot_ink.write_preview(result, tmp_path / "preview.svg").read_text()
-    assert "marks: max 3" in svg and '<g id="passes"' in svg and 'fill="#f59f00"' in svg
+    assert "steady passes) at path-width marks" in svg and '<g id="dose"' in svg and 'fill="#c92a2a"' in svg
 
 
 def test_dots_on_other_ink_are_dropped_and_dots_on_bare_skin_stay(tmp_path):
@@ -78,7 +78,7 @@ def test_dots_on_other_ink_are_dropped_and_dots_on_bare_skin_stay(tmp_path):
     whole = tatbot_ink.compile(path, repo=REPO, min_stroke_m=0)
     assert whole["stats"]["paths"] == 5 and whole["stats"]["dots"]["dropped"] == 0
     assert whole["stats"]["est_s"] > result["stats"]["est_s"]
-    assert result["stats"]["passes"]["max"] >= 2 and " marks: max" in tatbot_ink.write_preview(result, tmp_path / "p.svg").read_text()
+    assert result["stats"]["passes"]["max"] >= 2 and " marks, " in tatbot_ink.write_preview(result, tmp_path / "p.svg").read_text()
     with pytest.raises(tatbot_ink.CompileError, match="min_stroke_m"):
         tatbot_ink.compile(path, repo=REPO, min_stroke_m=float("nan"))
 
@@ -127,9 +127,9 @@ def test_passes_are_counted_at_the_generation_width_or_a_given_mark_and_the_stat
     given = tatbot_ink.compile(path, repo=REPO, inks_path=inks, mark_width_m=0.0008)["stats"]["passes"]
     assert given["marks"] == {"black": {"width_mm": 0.8, "from": "given"}}
     assert given["max"] == 2 and given["mm2_at_least"]["2"] > 4 and given["cell_mm"] == pytest.approx(0.8 / 6, abs=1e-4)
-    # a tool with a line width is counted at it: the ballpoint's 0.5 mm
-    assert passes.mark({"id": "lutin-ballpoint-dot", "line_width_m": 0.0005}) == {
-        "width_mm": 0.5, "from": "lutin-ballpoint-dot line.width_mm"}
+    # a tool with a line width is counted at it: a measured 0.5 mm
+    assert passes.mark({"id": "refill", "line_width_m": 0.0005}) == {
+        "width_mm": 0.5, "from": "refill line.width_mm"}
     # a program prepared before marks is counted at its line width, else the generation width, and says so
     old = {"resources": [{"id": "black", "tool": {"line_width_m": None}}], "ops": [], "stats": {}}
     assert passes.marks(old) == {"black": {"width_mm": None, "from": "generation width"}}

@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 import tatbot_motion as tm
 import yaml
-from tatbot_description import joint_calibration, repo_root
+from tatbot_description import arm_model, kinematic_calibration, repo_root
 from tatbot_motion import timelaw as tl
 from tatbot_motion.clik import clik
 
@@ -48,9 +48,9 @@ def setup():
     tcp = kin.data.oMf[kin.model.getFrameId("right/tcp")]
     link6_from_tcp = link6.inverse() * tcp
     tip = np.array(link6_from_tcp.translation)
-    calibration = joint_calibration()
     workspace = yaml.safe_load((repo_root() / "config/workspace.yaml").read_text())
-    offsets = np.asarray(calibration.validate_offsets(workspace["right"].get(calibration.KEY)))
+    offsets = np.asarray(kinematic_calibration.validate_offsets(workspace["right"].get(kinematic_calibration.KEY),
+                                                                arm_model.for_arm("right")))
     return binary, kin, motion, np.array(link6_from_tcp.rotation), tip, offsets
 
 

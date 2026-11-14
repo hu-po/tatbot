@@ -54,6 +54,31 @@
       "keep_days": 30,
       "keep_runs": 20
     },
+    "//ros": "Past media_days and the newest media_keep_runs a run loses `media` and keeps its text; keep_days and keep_runs stay the whole-run rule.",
+    "ros-draw": {
+      "class": "media",
+      "keep_days": 365,
+      "keep_runs": 500,
+      "media_days": 14,
+      "media_keep_runs": 20,
+      "media": ["bag*", "touches", "track", "locate", "station", "inspect"]
+    },
+    "ros-touch": {
+      "class": "media",
+      "keep_days": 90,
+      "keep_runs": 500,
+      "media_days": 14,
+      "media_keep_runs": 100,
+      "media": ["bag*", "touches", "locate"]
+    },
+    "ros-stack": {
+      "class": "media",
+      "keep_days": 90,
+      "keep_runs": 500,
+      "media_days": 14,
+      "media_keep_runs": 10,
+      "media": ["*-flight.bin", "bag*"]
+    },
     "selftest": {
       "class": "text",
       "keep_days": 1,

@@ -227,11 +227,14 @@ def _git(repo: Path, timeout_s: float) -> dict:
 
 
 def _tool(repo: Path) -> dict[str, str] | None:
-    """The fitted tool each arm's workspace section records, keyed by arm.
+    """The fitted tool each arm's workspace section records, keyed by arm; on a ROS owner, the cartridge fitted
+    there (cartridge_fit) over it.
 
     One section per arm (`right:`, `left:`); a bare first-match regex used to
     answer for whichever section came first, which is wrong the moment a
     second arm carries a tool."""
+    import cartridge_fit
+
     path = repo / "config/workspace.yaml"
     try:
         text = path.read_text()
@@ -249,6 +252,10 @@ def _tool(repo: Path) -> dict[str, str] | None:
             tools[section] = m.group(1)
     if not tools:
         raise ValueError(f"no tool_id in {path}")
+    for arm in tools:
+        record = cartridge_fit.load(repo, arm)
+        if record:
+            tools[arm] = record["tool_id"]
     return tools
 
 
@@ -341,13 +348,11 @@ def _gpu_lease(gpu: dict, timeout_s: float) -> dict:
 
 
 def _fleet_services(repo: Path, nmap: dict, timeout_s: float) -> dict:
-    routers = [n for n in nmap.values() if isinstance(n, dict) and "bus-router" in n.get("roles", [])]
-    if len(routers) != 1:
-        raise ValueError("one bus router is required")
+    endpoint = nodes.bus_endpoint(nmap, address="lan")
     binary = repo / "rust/target/release/fleetctl"
     if not os.access(binary, os.X_OK):
         raise ValueError("fleetctl is not deployed on this node")
-    result = subprocess.run([str(binary), "--connect", "tcp/" + routers[0]["lan"] + ":7447", "services"],
+    result = subprocess.run([str(binary), "--connect", endpoint, "services"],
                             capture_output=True, text=True, timeout=min(5.0, max(0.001, timeout_s)))
     if result.returncode:
         raise ValueError(f"service discovery exit {result.returncode}: {result.stderr.strip()}")
@@ -378,7 +383,7 @@ class _Observer:
             self.complete = self.complete and informational
         elif time.monotonic() >= self.deadline:
             state, value, reason = "unknown", None, "collection deadline expired"
-            self.complete = False
+            self.complete = self.complete and informational
         else:
             try:
                 value = probe()
@@ -525,7 +530,7 @@ def collect_fleet(repo: Path, *, cams: bool = False, timeout_s: float = 15.0, ru
                     'checked_at': _utc(), 'reason': str(exc)}
     def one(node):
         checked = _utc()
-        if node != here and nmap[node].get("checkout") is None:
+        if node != here and "checkout" in nmap[node] and nmap[node]["checkout"] is None:
             return {"node": node, "vantage_node": here, "checked_at": checked,
                     "status": "not_applicable", "reason": "no configured checkout", "complete": True}
         if node != here and not nodes.roles_of(nmap, node):

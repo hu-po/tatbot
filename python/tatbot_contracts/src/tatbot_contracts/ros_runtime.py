@@ -1,7 +1,7 @@
-"""Runtime evidence for paired research: imported Python and the launched controller's mapped code.
+"""Runtime evidence for every run: imported Python and the launched controller's mapped code.
 
-This is provenance, not a motion interlock. Missing or changing evidence makes a research comparison
-inadmissible; ordinary drawing keeps its existing rules.
+This is provenance, not a motion interlock. A run's meta.json records it, and `software_digest` says whether two runs
+drew with the same software (a lab trial finds its run's record by the run id, docs/lab.md).
 """
 from __future__ import annotations
 
@@ -93,10 +93,13 @@ def configuration_digest(stack, description, controllers):
 
 
 def workspace_description(repo, render):
-    path = Path(repo)/'config/workspace.yaml'
-    raw = path.read_bytes()
+    """(the description `render` built, the digest of the workspace it read): config/workspace.yaml and the ROS
+    owner's fitted cartridges beside its repo (scripts/lib/cartridge_fit.py's calib/cartridge-<arm>.json)."""
+    paths = [Path(repo)/'config/workspace.yaml',
+             *sorted((Path(repo).expanduser().resolve().parent/'calib').glob('cartridge-*.json'))]
+    raw = b''.join(path.read_bytes() for path in paths)   # the workspace's alone where nothing is fitted
     description = render()
-    if path.read_bytes() != raw:
+    if b''.join(path.read_bytes() for path in paths) != raw:
         raise ValueError('workspace changed while constructing the launched robot description')
     return description, hashlib.sha256(raw).hexdigest()
 
@@ -106,18 +109,18 @@ def workspace_record(repo):
 
 
 def software_digest(identity):
-    """Compare completed pairs across restarts while retaining process evidence separately."""
+    """One digest for the software a run drew with, the same across restarts; process evidence stays separate."""
     try:
         if identity['schema'] != 'tatbot.ros-runtime/2' or identity['controller']['complete'] is not True:
-            raise ValueError('incomplete research runtime')
+            raise ValueError('incomplete runtime record')
         files = [{'path': item['path'], 'sha256': item['sha256']} for item in identity['controller']['files']]
         if not files or not identity['sources_sha256'] or not identity['configuration_sha256']:
-            raise ValueError('missing research code identity')
+            raise ValueError('missing code identity')
         return canonical_digest({'schema': 'tatbot.ros-software/1',
                                  **{k: identity[k] for k in ('sources_sha256', 'configuration_sha256', 'python', 'numpy')},
                                  'controller_files': sorted(files, key=lambda item: item['path'])})
     except (KeyError, TypeError) as error:
-        raise ValueError('missing research code identity') from error
+        raise ValueError('missing code identity') from error
 
 
 def _sources(roots):

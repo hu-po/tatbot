@@ -16,7 +16,7 @@ use std::{
 };
 use tatbot_bus::{Envelope, Producer, Stamp, service::ServiceLease, transport::Bus};
 use tatbot_visiond::{CalibrationBundle, FrameRecord, ReceivedFrameSet};
-use trackd::{evidence::RollingEvidence, worker::Worker};
+use trackd::{evidence::RollingEvidence, now_unix_ns, p95, worker::Worker};
 
 /// Recent sets kept per owner socket while a turn is paced.
 const RING: usize = 8;
@@ -309,12 +309,6 @@ fn publications(
     Ok(out)
 }
 
-fn now_unix_ns() -> Result<i128> {
-    Ok(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_nanos() as i128)
-}
-
 type Ring = Arc<Mutex<VecDeque<ReceivedFrameSet>>>;
 
 #[derive(Clone, Default, Serialize)]
@@ -385,8 +379,9 @@ fn subscribe(
     socket: &Path,
     errors: Arc<Mutex<BTreeMap<String, String>>>,
 ) -> Result<(Ring, Arc<Mutex<SocketDelivery>>)> {
-    // The capture owner is ordered first by the unit, but `After=` only
-    // sequences process starts: absorb its binding window here rather than
+    // The capture owner is ordered first by the unit, and its `Type=notify`
+    // unit reports ready only once bound; an owner started by hand or
+    // restarted may still be binding, so absorb that gap here rather than
     // exiting and leaning on `Restart=`.
     let mut client =
         tatbot_visiond::UnixFrameClient::connect_within(socket, tatbot_visiond::CONNECT_WINDOW)?;
@@ -509,7 +504,6 @@ fn main() -> Result<()> {
                         "world_from_base": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]},
                     "observer_epoch": format!("{}-{}", std::process::id(), now_unix_ns()?),
                     "evidence_kind": "live-rgbd",
-                    "publish_targets_only": true,
                 }))?,
             )?;
             match Worker::start(&args.python, &args.observer, &[&binding, &args.work], &stop) {
@@ -521,10 +515,6 @@ fn main() -> Result<()> {
             }
         }
         {
-            let mut sorted = latencies.iter().copied().collect::<Vec<f64>>();
-            sorted.sort_by(f64::total_cmp);
-            let mut ages = publication_ages.iter().copied().collect::<Vec<f64>>();
-            ages.sort_by(f64::total_cmp);
             *lease.metrics.lock().unwrap() = BTreeMap::from([
                 ("references".into(), references as f64),
                 ("turns".into(), turns as f64),
@@ -536,20 +526,12 @@ fn main() -> Result<()> {
                 ("capture_to_publication_ms".into(), last_publication_age_ms),
                 (
                     "capture_to_publication_p95_ms".into(),
-                    ages.get(ages.len().saturating_sub(1) * 95 / 100)
-                        .copied()
-                        .unwrap_or(0.0),
+                    p95(&publication_ages),
                 ),
                 ("capture_write_ms".into(), last_capture_write_ms),
                 ("estimator_ms".into(), last_estimator_ms),
                 ("publish_ms".into(), last_publish_ms),
-                (
-                    "processing_p95_ms".into(),
-                    sorted
-                        .get(sorted.len().saturating_sub(1) * 95 / 100)
-                        .copied()
-                        .unwrap_or(0.0),
-                ),
+                ("processing_p95_ms".into(), p95(&latencies)),
                 ("estimator_up".into(), f64::from(u8::from(worker.is_some()))),
                 ("updated_unix_ms".into(), now_unix_ns()? as f64 / 1e6),
             ]);

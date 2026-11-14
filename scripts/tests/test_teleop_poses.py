@@ -14,21 +14,23 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO / 'scripts/vision'), str(REPO / 'scripts/lib')]
 import arm_kinematics as kin  # noqa: E402
-import ballpoint_fixture  # noqa: E402
+import arm_model  # noqa: E402
 import kinematic_calibration  # noqa: E402
+import needle_fixture  # noqa: E402
 import tool_spec  # noqa: E402
 from teleop_poses import export  # noqa: E402
 from urdf_kinematics import UrdfChain  # noqa: E402
 
-# 2026-10-04's adopted pink offsets: the test's own, whatever config/workspace.yaml holds today.
+# 2026-10-04's adopted WXAI follower offsets: the test's own, whatever config/workspace.yaml holds today.
 OFFSETS = [0., .0098, .0003, -.0195, -.0023, 0., 0.]
+TOOL = needle_fixture.TOOL
 
 
 def inputs(tmp_path):
     model = tmp_path / 'model.urdf'
     model.write_bytes((REPO / 'urdf/tatbot.urdf').read_bytes())
     workspace = tmp_path / 'workspace.yaml'
-    workspace.write_text(ballpoint_fixture.workspace_text())
+    workspace.write_text(needle_fixture.workspace_text())
     rows = np.zeros((3, 47))
     rows[:, :5] = [[0., .0001, .0002, .0003, .0004],
                    [.0025, .0026, .0027, .0028, .0029],
@@ -48,7 +50,7 @@ def inputs(tmp_path):
 def calibrated_chain(tmp_path, model, offsets, arm='right'):
     """The model as the drawing stack carries it: joint origins turned by the encoder-zero offsets."""
     tree = ET.parse(model)
-    kinematic_calibration.apply_origins(tree.getroot().findall('joint'), arm, offsets)
+    kinematic_calibration.apply_origins(tree.getroot().findall('joint'), arm, offsets, arm_model.for_arm(arm))
     path = tmp_path / f'calibrated-{arm}.urdf'
     tree.write(path)
     return UrdfChain(path)
@@ -69,8 +71,8 @@ def with_offsets(text: str, offsets) -> str:
 def fault_touchoff(text: str, field: str, value: str) -> str:
     """Set the right arm's touch-off `field` to `value`, whatever today's calibration measured.
 
-    The workspace copy is the repository's live one while the ballpoint is
-    fitted, so a literal number here lasts exactly until the next touch-off.
+    The workspace copy carries needle_fixture's receipt, whose numbers are
+    not this test's to pin.
     """
     right, sep, left = text.partition('\nleft:')
     changed = re.sub(rf'^(\s+{field}: ).*$', rf'\g<1>{value}', right, count=1, flags=re.M)
@@ -81,7 +83,7 @@ def fault_touchoff(text: str, field: str, value: str) -> str:
 def test_actual_follower_carriage_tip_axes_and_integer_read_time(tmp_path):
     log, model, workspace, rows = inputs(tmp_path)
     out = tmp_path / 'out'
-    report = export(log, out, model, workspace, 'lutin-ballpoint-dot')
+    report = export(log, out, model, workspace, TOOL)
     data = np.load(out / 'poses.npz', allow_pickle=False)
     np.testing.assert_array_equal(data['follower_positions'], rows[:, 19:26])
     np.testing.assert_array_equal(data['follower_read_unix_ns'],
@@ -90,7 +92,7 @@ def test_actual_follower_carriage_tip_axes_and_integer_read_time(tmp_path):
     np.testing.assert_allclose(link6[0], link6[1], atol=1e-12)
     np.testing.assert_allclose(tcp[1, :3, 3]-tcp[0, :3, 3], link6[0, :3, :3] @ [0, .002, 0], atol=1e-12)
     chain = calibrated_chain(tmp_path, model, workspace_offsets(workspace))
-    mount = chain.link_pose('right/tool_mount', kin.ArmModel('right').joint_map(rows[0, 19:25], 0))
+    mount = chain.link_pose('right/tool_mount', kin.ArmFrames('right').joint_map(rows[0, 19:25], 0))
     tip = tool_spec.tip_offset_m(tool_spec.parse_simple_yaml(workspace.read_text()))
     np.testing.assert_allclose(tcp[0, :3, 3], mount[:3, 3] + mount[:3, :3] @ tip)
     np.testing.assert_allclose(tcp[0, :3, :3], mount[:3, :3])
@@ -106,14 +108,14 @@ def test_poses_carry_the_workspace_joint_offsets(tmp_path):
     URDF; the npz keeps the joints as read and the manifest names the offsets."""
     log, model, workspace, rows = inputs(tmp_path)
     workspace.write_text(with_offsets(workspace.read_text(), OFFSETS))
-    report = export(log, tmp_path / 'out', model, workspace, 'lutin-ballpoint-dot')
+    report = export(log, tmp_path / 'out', model, workspace, TOOL)
     assert report['joint_offsets_rad'] == OFFSETS
     data = np.load(tmp_path / 'out/poses.npz', allow_pickle=False)
     np.testing.assert_array_equal(data['follower_positions'], rows[:, 19:26])
     calibrated, nominal = calibrated_chain(tmp_path, model, OFFSETS), UrdfChain(model)
     tip = tool_spec.tip_offset_m(tool_spec.parse_simple_yaml(workspace.read_text()))
     for i in range(len(rows)):
-        values = kin.ArmModel('right').joint_map(rows[i, 19:25], rows[i, 25])
+        values = kin.ArmFrames('right').joint_map(rows[i, 19:25], rows[i, 25])
         mount = calibrated.link_pose('right/tool_mount', values)
         np.testing.assert_allclose(data['root_from_link6'][i], calibrated.link_pose('right/link_6', values), atol=1e-12)
         np.testing.assert_allclose(data['root_from_tcp'][i, :3, 3], mount[:3, :3] @ tip + mount[:3, 3], atol=1e-12)
@@ -126,14 +128,14 @@ def test_poses_carry_the_workspace_joint_offsets(tmp_path):
 def test_invalid_or_incomplete_inputs_refuse_before_output(tmp_path, fault):
     log, model, workspace, rows = inputs(tmp_path)
     out = tmp_path / 'out'
-    tool = 'lutin-ballpoint-dot'
+    tool = TOOL
     if fault == 'truncated':
         log.write_bytes(log.read_bytes()[:-8])
     elif fault in ('nonfinite', 'unordered'):
         rows[1, 19 if fault == 'nonfinite' else 3] = float('nan') if fault == 'nonfinite' else 0.
         log.write_bytes(log.read_bytes()[:64] + rows.astype('<f8').tobytes())
     elif fault == 'missing_tip':
-        workspace.write_text('right:\n  tool_id: lutin-ballpoint-dot\n')
+        workspace.write_text('right:\n  tool_id: lutin-3rl-bugpin\n')
     elif fault == 'nonfinite_calibration':
         workspace.write_text(fault_touchoff(workspace.read_text(), 'residual_mm', 'nan'))
     elif fault == 'joint_offsets':  # the controller's yaw joint has no model correction
@@ -154,7 +156,7 @@ def test_invalid_or_incomplete_inputs_refuse_before_output(tmp_path, fault):
 
 
 def test_cli_requires_explicit_inputs_and_registers_offline_verb(tmp_path):
-    command = [str(REPO / 'scripts/tatbot'), '--ee-tool', 'lutin-ballpoint-dot',
+    command = [str(REPO / 'scripts/tatbot'), '--ee-tool', TOOL,
                'teleop', 'poses']
     result = subprocess.run(command + ['--help'], capture_output=True, text=True)
     assert result.returncode == 0
@@ -177,11 +179,11 @@ def test_cli_requires_explicit_inputs_and_registers_offline_verb(tmp_path):
 
 def test_explicit_urdf_geometry_is_used_instead_of_default(tmp_path):
     log, model, workspace, _ = inputs(tmp_path)
-    export(log, tmp_path / 'first', model, workspace, 'lutin-ballpoint-dot')
+    export(log, tmp_path / 'first', model, workspace, TOOL)
     text = model.read_text()
     assert 'xyz="0 -0.2675 0"' in text
     model.write_text(text.replace('xyz="0 -0.2675 0"', 'xyz="0 -0.1675 0"', 1))
-    export(log, tmp_path / 'second', model, workspace, 'lutin-ballpoint-dot')
+    export(log, tmp_path / 'second', model, workspace, TOOL)
     a = np.load(tmp_path / 'first/poses.npz', allow_pickle=False)['root_from_tcp']
     b = np.load(tmp_path / 'second/poses.npz', allow_pickle=False)['root_from_tcp']
     np.testing.assert_allclose(b[:, :3, 3] - a[:, :3, 3], np.tile([0., .1, 0.], (len(a), 1)), atol=1e-12)
@@ -213,7 +215,7 @@ def test_malformed_kinematic_ancestry_refuses(tmp_path, fault):
         ET.SubElement(extra, 'child', {'link': 'right/link_6'})
     tree.write(model)
     with pytest.raises(ValueError):
-        export(log, tmp_path / 'out', model, workspace, 'lutin-ballpoint-dot')
+        export(log, tmp_path / 'out', model, workspace, TOOL)
     assert not (tmp_path / 'out').exists()
 
 
@@ -223,7 +225,7 @@ def test_source_or_tool_change_during_computation_refuses(tmp_path, monkeypatch,
     log, model, workspace, _ = inputs(tmp_path)
     read = teleop_poses._read
     target = (Path(teleop_poses.__file__) if changed == 'source'
-              else REPO / 'config/tools/lutin-ballpoint-dot.yaml')
+              else REPO / f'config/tools/{TOOL}.yaml')
     seen = 0
     def changed_read(path, limit):
         nonlocal seen
@@ -235,7 +237,7 @@ def test_source_or_tool_change_during_computation_refuses(tmp_path, monkeypatch,
         return data
     monkeypatch.setattr(teleop_poses, '_read', changed_read)
     with pytest.raises(ValueError, match='changed during export'):
-        export(log, tmp_path / 'out', model, workspace, 'lutin-ballpoint-dot')
+        export(log, tmp_path / 'out', model, workspace, TOOL)
     assert not (tmp_path / 'out').exists()
 
 
@@ -245,7 +247,7 @@ def test_malformed_xml_cli_refuses_without_partial_output(tmp_path):
     out = tmp_path / 'out'
     result = subprocess.run([sys.executable, str(REPO / 'scripts/vision/teleop_poses.py'),
         str(log), '--out', str(out), '--urdf', str(model), '--workspace', str(workspace),
-        '--ee-tool', 'lutin-ballpoint-dot'], capture_output=True, text=True)
+        '--ee-tool', TOOL], capture_output=True, text=True)
     assert result.returncode == 3 and 'pose export refused:' in result.stderr
     assert not out.exists()
 
@@ -253,7 +255,7 @@ def test_malformed_xml_cli_refuses_without_partial_output(tmp_path):
 def test_output_in_repository_refuses(tmp_path):
     log, model, workspace, _ = inputs(tmp_path)
     with pytest.raises(ValueError, match='outside the repository'):
-        export(log, REPO / 'never-write-poses-here', model, workspace, 'lutin-ballpoint-dot')
+        export(log, REPO / 'never-write-poses-here', model, workspace, TOOL)
 
 
 @pytest.mark.parametrize('fault', ['right_scalar', 'touch_scalar', 'infinite_count', 'negative_count',
@@ -267,13 +269,13 @@ def test_malformed_calibration_cli_refuses_before_output(tmp_path, fault):
     if fault == 'right_scalar':
         text = 'right: wrong\n'
     elif fault == 'touch_scalar':
-        text = 'right:\n  tool_id: lutin-ballpoint-dot\n  touchoff: wrong\n'
+        text = 'right:\n  tool_id: lutin-3rl-bugpin\n  touchoff: wrong\n'
     else:
         text = fault_touchoff(text, *changes[fault])
     workspace.write_text(text)
     out = tmp_path / 'out'
     result = subprocess.run([sys.executable, str(REPO / 'scripts/vision/teleop_poses.py'),
         str(log), '--out', str(out), '--urdf', str(model), '--workspace', str(workspace),
-        '--ee-tool', 'lutin-ballpoint-dot'], capture_output=True, text=True)
+        '--ee-tool', TOOL], capture_output=True, text=True)
     assert result.returncode == 3 and 'pose export refused:' in result.stderr
     assert 'Traceback' not in result.stderr and not out.exists()

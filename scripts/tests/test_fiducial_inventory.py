@@ -25,8 +25,11 @@ def test_repository_inventory_is_complete_and_explicit():
     assert inventory.target("wrist").ids == (2, 3, 4)
     assert inventory.target("wrist").edge_m == pytest.approx(0.047)
     assert inventory.owners(3) == ("wrist",)
-    assert inventory.ids_by_family() == {"apriltag_36h11": frozenset({0, 2, 3, 4})}
-    assert set(inventory.targets) == {"wrist", "palette"}   # the blue arm's wrist_left went with it (2026-10-23)
+    assert inventory.ids_by_family() == {"apriltag_36h11": frozenset({0, 2, 3, 4, 5, 30})}
+    # the blue arm's wrist_left went with it (2026-10-23); the xArm's cube carries its 5 and 30, and a 4
+    assert set(inventory.targets) == {"wrist", "palette", "xarm_cube"}
+    assert inventory.target("xarm_cube").ids == (5, 30, 4)
+    assert inventory.target("xarm_cube").parent_frame == "xarm/end_effector"
     # the v11 palette's roof sticker: its black square triangulates to 46 mm
     assert inventory.target("palette").ids == (0,)
     assert inventory.target("palette").edge_m == pytest.approx(0.046)
@@ -34,7 +37,7 @@ def test_repository_inventory_is_complete_and_explicit():
     assert inventory.target("wrist").minimum_calibration_poses_per_id == 3
     assert inventory.target("wrist").max_calibration_parent_distance_mm == 225.0
     assert inventory.target("wrist").parent_frame == "right/gripper_left"
-    groups = {inventory.target(name).ambiguity_group for name in ("wrist", "palette")}
+    groups = {inventory.target(name).ambiguity_group for name in ("wrist", "palette", "xarm_cube")}
     assert groups == {"phase_separated_calibration_ids"}
 
 
@@ -197,9 +200,19 @@ def test_wrist_publish_requires_solve_in_configured_parent(tmp_path):
     assert record["parent_frame"] == "right/gripper_left"
 
 
-def test_checked_in_layout_matches_inventory():
-    raw = json.loads((ROOT / "config" / "wrist_tags_measured.json").read_text())
-    assert tuple(raw["target_ids"]) == load_inventory().target("wrist").ids
+@pytest.mark.parametrize("target_name", ["wrist", "xarm_cube"])
+def test_checked_in_layout_matches_inventory(target_name):
+    target = load_inventory().target(target_name)
+    raw = json.loads((ROOT / target.layout).read_text())
+    assert tuple(raw["target_ids"]) == target.ids
+    assert raw["parent_frame"] == target.parent_frame
+
+
+def test_each_layout_renders_into_its_arms_urdf():
+    from export_wrist_tags import target_urdf
+    inventory = load_inventory()
+    assert target_urdf(inventory, "wrist") == ROOT / "urdf/tatbot.urdf"
+    assert target_urdf(inventory, "xarm_cube") == ROOT / "urdf/xarm7.urdf"
 
 
 def test_foamcore_mount_envelope_accepts_offset_but_still_rejects_far_tag(tmp_path):
@@ -234,7 +247,38 @@ def test_pending_layout_does_not_render_old_mount_tag_frames():
     assert 'meshes/tags/36h11_002_47mm/tag.glb' in block
 
 
-@pytest.mark.parametrize("target_name", ["wrist", "palette"])
+def test_a_nominal_layout_renders_its_tag_frames():
+    """The xArm's cube is placed from CAD until a registration measures it, and a registration needs its frames."""
+    from export_wrist_tags import render_urdf_block
+    record = json.loads((ROOT / "config/xarm_cube_tags.json").read_text())
+    assert record["calibration_status"] == "nominal"
+    block = render_urdf_block(record, "synthetic", "xarm_cube")
+    assert block.count('<joint') == 3
+    assert '<parent link="xarm/end_effector"/>' in block
+    assert 'meshes/tags/36h11_030_46mm/tag.glb' in block
+
+
+@pytest.mark.parametrize("pitch", [np.pi / 2, -np.pi / 2, 0.3])
+def test_urdf_roll_pitch_yaw_gives_back_the_rotation_at_any_pitch(pitch):
+    from export_wrist_tags import rpy_extrinsic_xyz
+    from scipy.spatial.transform import Rotation
+
+    for yaw, roll in ((np.pi, 0.0), (0.4, -1.1), (-2.0, 2.5)):
+        rotation = Rotation.from_euler("xyz", (roll, pitch, yaw)).as_matrix()   # extrinsic x, y, z: Rz Ry Rx
+        back = Rotation.from_euler("xyz", rpy_extrinsic_xyz(np.round(rotation, 9))).as_matrix()
+        assert np.allclose(back, rotation, atol=1e-6)
+
+
+def test_a_targets_first_block_closes_the_robot_and_regeneration_keeps_it():
+    from urdf_wrist_blocks import replace_urdf_block, urdf_blocks
+    block = "  <!-- BEGIN GENERATED WRIST FIDUCIALS target=cube layout_sha256=x -->\n  <!-- END GENERATED WRIST FIDUCIALS -->\n"
+    text = replace_urdf_block('<robot name="r">\n  <link name="a"/>\n</robot>\n', block, "cube")
+    assert text.endswith(block + "</robot>\n")
+    assert urdf_blocks(text) == block
+    assert replace_urdf_block(text, block.replace("=x", "=y"), "cube").count("BEGIN") == 1
+
+
+@pytest.mark.parametrize("target_name", ["wrist", "palette", "xarm_cube"])
 def test_viewer_assets_encode_the_canonical_fiducial_ids(target_name):
     inventory = load_inventory()
     target = inventory.target(target_name)
@@ -319,8 +363,8 @@ def test_both_families_keep_corner_order_under_rotation(tmp_path, family, tag_id
 def test_mixed_scene_keeps_only_the_inventorys_family_and_ids():
     frame = cv2.imread(str(ROOT / 'scripts/tests/fixtures/fiducials/mixed.png'))
     found = FiducialDetector.from_inventory(load_inventory()).detect('synthetic', frame, 1)
-    # The scene's 16h5 tag is another family, and its 36h11 tag 5 is in no target.
-    assert sorted((d.family, d.tag_id) for d in found) == [("apriltag_36h11", 3)]
+    # The scene's 16h5 tag is another family; its 36h11 tag 5 is the xArm cube's.
+    assert sorted((d.family, d.tag_id) for d in found) == [("apriltag_36h11", 3), ("apriltag_36h11", 5)]
     pink = FiducialDetector.from_inventory(load_inventory(), target='wrist').detect('synthetic', frame, 1)
     assert [d.tag_id for d in pink] == [3]
 

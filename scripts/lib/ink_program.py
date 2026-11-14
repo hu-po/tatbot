@@ -14,7 +14,6 @@ import ink_spec
 
 TOOL_CLASS_BY_ID = {
     "lutin-3rl-bugpin": "tattoo-needle",
-    "lutin-ballpoint-dot": "ballpoint",
     "picosecond-laser-pen": "non-contact-laser",
 }
 
@@ -167,7 +166,6 @@ def resolve_dips(
     palette: dict[str, ink_spec.PaletteSlot],
     load: dict[str, ink_spec.SlotLoad],
     *,
-    arm: str = "right",
     tool_id: str = "tool",
     inks: dict[str, ink_spec.Ink] | None = None,
 ) -> list[ResolvedDip]:
@@ -197,7 +195,6 @@ def resolve_dips(
             policy,
             palette,
             load,
-            arm=arm,
             initial_charge_ul=initial_charge,
             initial_ink=initial["ink_id"],
             tool_id=tool_id,

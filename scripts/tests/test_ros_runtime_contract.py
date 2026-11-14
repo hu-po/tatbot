@@ -177,7 +177,7 @@ def test_completed_pair_software_identity_ignores_process_and_inode_but_not_code
     assert runtime.software_digest(original) == runtime.software_digest(restarted)
     restarted['controller']['files'][0]['sha256'] = 'b'*64
     assert runtime.software_digest(original) != runtime.software_digest(restarted)
-    with pytest.raises(ValueError, match='missing research'):
+    with pytest.raises(ValueError, match='missing code identity'):
         runtime.software_digest({'schema': 'tatbot.ros-runtime/2', 'controller': {'complete': True}})
 
 
@@ -211,3 +211,24 @@ def test_launched_geometry_carries_workspace_bytes_and_refuses_an_edit_during_re
 
     with pytest.raises(ValueError, match='workspace changed'):
         runtime.workspace_description(tmp_path, edit)
+
+
+def test_a_ros_owners_fitted_cartridge_is_in_the_launched_workspace_digest(tmp_path):
+    """The record beside the deployed repo is what the description's tip came from, so the digest carries it and a
+    fit during the render refuses as an edit does."""
+    repo, calib = tmp_path/'repo', tmp_path/'calib'
+    (repo/'config').mkdir(parents=True)
+    calib.mkdir()
+    (repo/'config/workspace.yaml').write_bytes(b'xarm: {}\n')
+    bare = runtime.workspace_description(repo, lambda: '<robot/>')[1]
+    (calib/'cartridge-xarm.json').write_text('{"tool_id": "a"}')
+    (calib/'cartridge-xarm.json.replaced-20261110T000000Z').write_text('{"tool_id": "old"}')
+    fitted = runtime.workspace_description(repo, lambda: '<robot/>')[1]
+    assert fitted != bare
+
+    def fit():
+        (calib/'cartridge-xarm.json').write_text('{"tool_id": "b"}')
+        return '<robot/>'
+
+    with pytest.raises(ValueError, match='workspace changed'):
+        runtime.workspace_description(repo, fit)

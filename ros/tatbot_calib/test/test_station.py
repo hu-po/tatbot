@@ -126,10 +126,16 @@ def seen(base_from_palette, noise_px=0.0, seed=0):
 
 
 def test_the_tag_hangs_where_the_palette_urdf_puts_it():
+    """Merged palette v9's sticker on the base top: within 1.5 mm of its CAD seat, at the turn the palette's design
+    records (the D555's depth confirmed the quarter turn, 2026-11-08; the wrist hand-eye measured it 1.48 deg on,
+    2026-11-09)."""
+    import json
+
     tag = station.palette_from_tag(PALETTE)
-    assert np.allclose(tag[:3, 3], [0.068, -0.026, 0.0082])
-    # the pattern's +x 135 degrees from the palette's +x, as the D555 found it on the seat (2026-09-30)
-    assert np.allclose(tag[:3, :3] @ [1.0, 0.0, 0.0], [-2**-0.5, 2**-0.5, 0.0], atol=1e-9)
+    assert np.linalg.norm(tag[:3, 3] - [0.1145, -0.1115, -0.007]) < 0.0015
+    design = json.loads((repo_root(None) / "cad" / "merged-palette-v9" / "design.json").read_text())
+    yaw = math.radians(design["runtime"]["installed_tag"]["yaw_deg"])
+    assert np.allclose(tag[:3, :3] @ [1.0, 0.0, 0.0], [math.cos(yaw), math.sin(yaw), 0.0], atol=1e-9)
 
 
 def test_a_small_tag_seen_by_the_d555_places_the_level_palette_and_its_ball():
@@ -255,8 +261,8 @@ def test_hardware_station_cannot_use_an_unconfirmed_tag_frame(tmp_path):
 
 def test_estop_keep_out_covers_the_bottom_of_the_installed_housing():
     _, centre, radius, _ = next(part for part in station.parts(np.eye(4)) if part[0] == "palette_estop")
-    # v11 panel Z32, housing radius 22, bottom Z-20.4 (mm).
-    for xy in ((0.096, 0.040), (0.052, 0.040), (0.074, 0.062), (0.074, 0.018)):
-        assert np.linalg.norm(np.array([*xy, -0.0204]) - centre) <= radius
-    # The actuator reaches Z42 with radius 16.
-    assert np.linalg.norm(np.array([0.090, 0.040, 0.042]) - centre) <= radius
+    # merged palette v9: the housing (radius 22) stands from the base top, Z-7, to its panel, Z37 (mm).
+    for xy in ((0.150, -0.051), (0.106, -0.051), (0.128, -0.029), (0.128, -0.073)):
+        assert np.linalg.norm(np.array([*xy, -0.007]) - centre) <= radius
+    # The actuator reaches Z47 with radius 16.
+    assert np.linalg.norm(np.array([0.144, -0.051, 0.047]) - centre) <= radius

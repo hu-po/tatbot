@@ -133,8 +133,10 @@ def test_open_starts_one_transient_window_unit_and_leaves_a_running_one_alone(tm
     argv = calls.read_text().splitlines()
     assert argv[:5] == ['--user', '--quiet', '--collect', '--unit', 'tatbot-viewer-window']
     assert argv[5:7] == ['-p', 'MemoryMax=5120M'] and '--setenv=WAYLAND_DISPLAY=wayland-test' in argv
-    assert argv[argv.index('/opt/rerun'):] == ['/opt/rerun', '--connect', 'rerun+http://192.0.2.7:9876/proxy',
-                                               '--memory-limit', '4GB', '--hide-welcome-screen']
+    assert '--setenv=RERUN_BIN=/opt/rerun' in argv  # the unit runs the binary this shell resolved
+    viewer = str(SESSION.parents[1] / 'viewer.sh')
+    assert argv[argv.index(viewer):] == [viewer, 'window', '--connect', 'rerun+http://192.0.2.7:9876/proxy',
+                                         '--memory-limit', '4GB']
     calls.unlink()
     again = _session('rerun_session::open_window 4GB rerun+http://192.0.2.7:9876/proxy',
                      {**env, 'FAKE_ACTIVE': '0'}, tmp_path)
@@ -220,3 +222,68 @@ def test_a_restart_waits_for_the_stopped_window_unit_to_unload(tmp_path):
     _fake(tmp_path, 'pkill', 'exit 0')
     r = _session('rerun_session::close_window', {'RERUN_RUNTIME_DIR': str(tmp_path / 'rt')}, tmp_path)
     assert r.returncode == 0 and loads.read_text().strip() == '0', r.stderr
+
+
+def _keep_window(tmp_path, args, rerun_body, connected, run_s):
+    """Run the window unit's loop for up to run_s against a fake hub (always answering) and a fake `rerun`;
+    return (the run, the pids each window started under, each window_state call, the ss argv)."""
+    starts, states, ss_argv = tmp_path / 'starts', tmp_path / 'states', tmp_path / 'ss.argv'
+    rerun = _fake(tmp_path, 'fake-rerun', f'echo $$ >> "{starts}"\n{rerun_body}')
+    line = 'echo "0 0 192.0.2.1:40000 192.0.2.7:9876"' if connected else 'true'
+    _fake(tmp_path, 'ss', f'printf "%s\\n" "$@" > "{ss_argv}"\n{line}')
+    script = ('rerun_session::reachable() { return 0; }\n'
+              f'rerun_session::window_state() {{ echo "$*" >> "{states}"; }}\n'
+              f'rerun_session::keep_window {args} & sup=$!\n'
+              f'for _ in $(seq {int(run_s * 10)}); do kill -0 $sup 2>/dev/null || break; sleep 0.1; done\n'
+              'kill $sup 2>/dev/null; wait $sup; echo "rc=$?"\n'
+              f'for p in $(cat "{starts}" 2>/dev/null); do kill -- -$p 2>/dev/null; done; true')
+    r = _session(script, {'RERUN_BIN': str(rerun), 'WINDOW_CHECK_S': '0.1', 'WINDOW_LOST_S': '1'}, tmp_path)
+    read = lambda p: p.read_text().splitlines() if p.exists() else []  # noqa: E731
+    return r, read(starts), read(states), read(ss_argv)
+
+
+def _alive(pid):
+    import os
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def test_a_window_off_its_hub_is_closed_whole_and_reopened_behind_the_focus(tmp_path):
+    """2026-11-08: a hub restart left the station's window on stale data, then closed, for 18 h. The `rerun` entry
+    point is Python waiting on the native viewer, so the close has to reach the child too."""
+    children = tmp_path / 'children'
+    r, starts, states, ss_argv = _keep_window(
+        tmp_path, '--connect rerun+http://192.0.2.7:9876/proxy --memory-limit 4GB',
+        f'sleep 30 & echo $! >> "{children}"; wait', connected=False, run_s=3.5)
+    assert len(starts) >= 2, r.stdout + r.stderr
+    assert 'window: off the hub at rerun+http://192.0.2.7:9876/proxy' in r.stdout
+    assert r.stdout.count('off the hub') <= len(starts)  # one close per window, then the next opens
+    assert not _alive(children.read_text().split()[0])  # the first window's child went with it
+    assert states[:2] == ['maximized ', 'maximized behind']
+    assert ss_argv[ss_argv.index('cgroup') + 2:] == ['dst', '192.0.2.7:9876']
+
+
+def test_a_window_on_its_hub_is_left_alone(tmp_path):
+    r, starts, states, _ = _keep_window(tmp_path, '--connect rerun+http://192.0.2.7:9876/proxy',
+                                        'exec sleep 30', connected=True, run_s=2.5)
+    assert len(starts) == 1 and states == ['maximized '] and 'off the hub' not in r.stdout, r.stdout + r.stderr
+
+
+def test_a_closed_window_stays_closed_except_the_demo_page(tmp_path):
+    r, starts, _, _ = _keep_window(tmp_path, '--connect rerun+http://192.0.2.7:9876/proxy', 'exit 0',
+                                   connected=True, run_s=2)
+    assert len(starts) == 1 and 'window: closed (exit 0)' in r.stdout and 'rc=0' in r.stdout, r.stdout + r.stderr
+    (tmp_path / 'starts').unlink()
+    (tmp_path / 'states').unlink()
+    r, starts, states, _ = _keep_window(tmp_path, '--connect rerun+http://192.0.2.7:9876/proxy --fullscreen',
+                                        'exit 0', connected=True, run_s=1.5)
+    assert len(starts) >= 2 and 'the demo page ended (exit 0); opening it again' in r.stdout, r.stdout + r.stderr
+    assert states[0] == 'fullscreen ' and states[1] == 'fullscreen behind'
+
+
+@pytest.mark.parametrize('args', ['', '--connect', '--memory-limit 4GB', '--connect x --restart'])
+def test_the_window_loop_refuses_what_it_does_not_take(args):
+    assert _session(f'rerun_session::keep_window {args}').returncode == 2

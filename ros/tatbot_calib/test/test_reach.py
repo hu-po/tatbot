@@ -1,13 +1,15 @@
-"""The arm at the demo station, with the pink arm's own kinematics: the base heading whose attitudes it reaches, and
+"""The arm at the demo station, with the WXAI's own kinematics: the base heading whose attitudes it reaches, and
 its wrist against the post the overhead D555 stands on. On 2026-09-29 the S1 view turned to +30 degrees put the wrist
 tag cube against that post (operator); the view at -30 touched nothing. The model says both."""
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 from tatbot_calib import halo, program, reach
+from tatbot_description import arm_model
 
 tatbot_motion = pytest.importorskip("tatbot_motion")
 
@@ -33,11 +35,22 @@ def kin():
 
 def test_the_wrist_met_the_post_turned_to_30_degrees(kin):
     post, bodies = reach.overhead_post(CAMERA), reach.wrist_bodies(kin, "right")
-    assert {name for name, _ in bodies} >= {"right/link_6", "right/realsense_color_optical_frame", "right/wrist_tag4",
-                                           "right/realsense_lower_color_optical_frame"}   # both wrist D405s
+    assert {name for name, _ in bodies} >= {"right/link_6", "right/realsense_link", "right/wrist_tag4",
+                                           "right/realsense_lower_link"}   # both wrist D405s
     gaps = {turn: reach.wrist_clearance(kin, q, bodies, [post]) for turn, q in VIEWS.items()}
     assert gaps[30.0] < -0.05 and gaps[30.0] < gaps[0.0] < gaps[-30.0]      # the cube on the post, deepest at +30
     assert reach.wrist_clearance(kin, VIEWS[30.0], bodies, []) == math.inf  # no post, nothing to meet
+
+
+def test_the_xarms_wrist_bodies_are_its_cube_its_cameras_and_its_models_links():
+    from tatbot_description import robot_description
+
+    xarm = tatbot_motion.Kinematics(robot_description(None, arms=("xarm",)), "xarm")
+    bodies = dict(reach.wrist_bodies(xarm, "xarm"))
+    assert {"xarm/wrist_tag5", "xarm/wrist_tag30", "xarm/wrist_tag4", "xarm/realsense1_link", "xarm/realsense2_link",
+            "xarm/link7", "xarm/link6", "xarm/link5", "xarm/link4"} == set(bodies)
+    for name in bodies:   # every one is a frame of its description
+        xarm.frame(reach.rest(xarm), name)
 
 
 def test_the_wrist_is_checked_along_the_way_the_executor_plans(kin):
@@ -54,11 +67,11 @@ def test_the_wrist_is_checked_along_the_way_the_executor_plans(kin):
     over = MOVED_BALL + [0.0, 0.0, 0.030]
 
     def rows_at(turn):
-        return reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(turn)))
+        return reach.planned_path(kin, motion, reach.rest(kin), halo.tool_pose(over, math.radians(turn)))
     gaps = {}
     for turn in (-30.0, -15.0, 0.0):
-        rows = reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(turn)))
-        assert np.allclose(rows[0], reach.REST) and np.linalg.norm(kin.fk(rows[-1])[:3, 3] - over) < 1e-3
+        rows = reach.planned_path(kin, motion, reach.rest(kin), halo.tool_pose(over, math.radians(turn)))
+        assert np.allclose(rows[0], reach.rest(kin)) and np.linalg.norm(kin.fk(rows[-1])[:3, 3] - over) < 1e-3
         gaps[turn] = reach.path_clearance(kin, rows, bodies, [post])[0]
     assert min(gaps[-15.0], gaps[0.0]) >= reach.CLEARANCE_M, gaps
     # -30 cleared it by 44 mm until the lower wrist D405 (2026-10-23), which it takes within 2.4 mm of the post
@@ -72,7 +85,7 @@ def test_the_wrist_is_checked_along_the_way_the_executor_plans(kin):
     # wrist meets the post instead)
     for turn in (20.0, 30.0):
         try:
-            rows = reach.planned_path(kin, motion, reach.REST, halo.tool_pose(over, math.radians(turn)))
+            rows = reach.planned_path(kin, motion, reach.rest(kin), halo.tool_pose(over, math.radians(turn)))
         except ValueError as error:
             assert "would take the tip down" in str(error)
             continue
@@ -87,7 +100,7 @@ def test_a_goal_into_the_post_or_without_a_plan_is_not_sent(kin):
     from tatbot_description import repo_root
     from tatbot_motion import load_motion
 
-    joints = {"q": reach.REST}
+    joints = {"q": reach.rest(kin)}
     rig = SimpleNamespace(joints=lambda: np.asarray(joints["q"], float))
     cal = program.Calibration(rig, SimpleNamespace(dir=None), repo_root(None), "right",
                               halo.Halo(0.00135, 0.0004, 0.0007, 0.002), 0.0, kin)
@@ -121,7 +134,7 @@ def test_the_base_heading_reaches_the_attitudes_and_keeps_the_wrist_off_the_post
     assert (0.0, 0.0) not in unreached and len(kept) >= 2
     for yaw, tilt in kept:
         q = ready.solve_ik_seeded(kin, halo.tool_pose(MOVED_BALL, math.radians(heading + yaw), math.radians(tilt)),
-                                  reach.REST)
+                                  reach.rest(kin))
         assert reach.wrist_clearance(kin, q, bodies, [post]) >= reach.CLEARANCE_M, (heading, yaw, tilt)
     with pytest.raises(RuntimeError, match="no heading"):
         reach.choose_heading(kin, "right", np.array([0.90, 0.50, 0.05]), attitudes, 0.0333)
@@ -148,7 +161,7 @@ def test_the_heading_keeps_the_arms_bodies_clear_of_the_station(kin):
 def ready_q(kin, heading):
     from tatbot_session import ready
 
-    return ready.solve_ik_seeded(kin, halo.tool_pose(BALL, math.radians(heading)), reach.REST)
+    return ready.solve_ik_seeded(kin, halo.tool_pose(BALL, math.radians(heading)), reach.rest(kin))
 
 
 def test_holds_are_visited_nearest_first_among_those_still_wanted_and_the_pools_first_are_kept(monkeypatch):
@@ -160,7 +173,8 @@ def test_holds_are_visited_nearest_first_among_those_still_wanted_and_the_pools_
     monkeypatch.setattr(ready, "solve_ik_seeded", lambda kin, pose, q: np.asarray(pose, float))
     pool = [np.full(7, x) for x in (0.9, 0.1, 0.5, 0.2, 0.3)]
     at, kept, visits = {"q": np.zeros(7)}, [], []
-    for i, pose in reach.nearest_first(object(), lambda: at["q"], pool, lambda: 3 - len(kept)):
+    wxai = SimpleNamespace(revolute=arm_model.load("trossen-wxai").arm_index)   # the turn is the revolute chain's
+    for i, pose in reach.nearest_first(wxai, lambda: at["q"], pool, lambda: 3 - len(kept)):
         at["q"] = pose
         visits.append(i)
         if i != 1:   # the nearest fails
@@ -171,7 +185,7 @@ def test_holds_are_visited_nearest_first_among_those_still_wanted_and_the_pools_
 
 
 def test_a_hold_clear_of_the_stylus_goes_by_one_joint_move_and_one_near_it_by_the_stations_way(kin):
-    """Calibration.go_to on the pink arm at the moved station: a view 0.12 m over the ball sends Touch MODE_VIEW,
+    """Calibration.go_to on the WXAI follower at the moved station: a view 0.12 m over the ball sends Touch MODE_VIEW,
     one joint move; a view whose move brings the tool within clearance_m of the stylus (a column about the ball to
     that far over its top) goes by the station's way, up, across and down, through way_check."""
     from types import SimpleNamespace
@@ -200,7 +214,7 @@ def test_a_hold_clear_of_the_stylus_goes_by_one_joint_move_and_one_near_it_by_th
     cal.way_check = lambda label, poses: checked.append(label)
     high = [halo.tool_pose(MOVED_BALL + offset, math.radians(turn)) for offset, turn in
             (([0.0, -0.05, 0.12], 0.0), ([0.05, -0.05, 0.12], 30.0))]
-    joints["q"] = ready.solve_ik_seeded(kin, high[0], reach.REST)
+    joints["q"] = ready.solve_ik_seeded(kin, high[0], reach.rest(kin))
     assert cal.view_way("high", high[1]) is None
     cal.go_to("high", high[1])
     assert sent == ["view"] and checked == []

@@ -15,18 +15,26 @@ from pathlib import Path
 
 import ink_spec
 
-ALIASES = {alias: 'inkcap_'+name for alias, name in (
-    ('L1', 'large_1'), ('M1', 'medium_1'), ('S1', 'small_1'),
-    ('S2', 'small_2'), ('M2', 'medium_2'), ('L2', 'large_2'))}
+
+def alias(slot: str) -> str:
+    """A cap's short name: its size's initial and its number (inkcap_large_1 -> L1, inkcap_small_10 -> S10), as the
+    scene labels it."""
+    name = slot.removeprefix('inkcap_')
+    return f"{name[0].upper()}{name.rsplit('_', 1)[-1]}"
+
+
+def aliases(palette) -> dict[str, str]:
+    """{short name: slot} for every cap of the installed palette (config/palette.yaml)."""
+    return {alias(slot): slot for slot in palette}
 
 
 def _assignments(values, palette):
-    out = {}
+    out, names = {}, aliases(palette)
     for value in values:
         slot, separator, content = value.partition('=')
-        slot = ALIASES.get(slot, slot)
+        slot = names.get(slot, slot)
         if not separator or not content or slot not in palette or slot in out:
-            raise ValueError(f'{value!r}: use SLOT=VALUE once per slot, SLOT a cap or one of {", ".join(ALIASES)}')
+            raise ValueError(f'{value!r}: use SLOT=VALUE once per slot, SLOT a cap or one of {", ".join(names)}')
         out[slot] = content
     return out
 

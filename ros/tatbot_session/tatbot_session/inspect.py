@@ -1,7 +1,9 @@
 """Wrist camera observation, page-depth fitting and print/ink inspection; see ros/README.md."""
 from __future__ import annotations
 
+import functools
 import itertools
+import re
 import sys
 import threading
 import time
@@ -11,10 +13,13 @@ from tatbot_description import repo_root
 from tatbot_description.transforms import rpy_matrix
 
 sys.path.insert(0, str(repo_root(None) / "scripts/lib"))
+import wrist_claim  # noqa: E402
 import wrist_tap  # noqa: E402,F401  (the executor's tap factory)
 from rgbd_geometry import depth_points, page_height_from_depth  # noqa: E402,F401
 
-CAMERA_FRAME = "{arm}/realsense_color_optical_frame"   # optical: z forward, x right, y down
+# The stock chain's optical frames (z forward, x right, y down): the session camera's on an arm vision.toml mounts no
+# wrist camera on (a simulator's, a test's); camera_frame finds a mounted one's.
+CAMERA_FRAME = "{arm}/realsense_color_optical_frame"
 
 
 def page_extent(size_m, more_m: float = 0.010) -> tuple[float, float, float, float]:
@@ -23,8 +28,24 @@ def page_extent(size_m, more_m: float = 0.010) -> tuple[float, float, float, flo
     return (-hx, -hy, hx, hy)
 
 
-def camera_frame(arm: str) -> str:
-    return CAMERA_FRAME.format(arm=arm)
+def camera_frame(arm: str, stream: str = "color") -> str:
+    """The session camera's optical frame on `arm` (`stream` color or depth): the one vision.toml binds to the role
+    stack.yaml page.locate.camera names, when that camera rides `arm` (the xArm's xarm/realsense2_*, the WXAI wrist's
+    right/realsense_*); else the stock chain's (CAMERA_FRAME, DEPTH_FRAME)."""
+    import wrist_cameras
+    from tatbot_description import load_stack
+
+    role = (load_stack()["page"].get("locate") or {}).get("camera")
+    bound = _bound_frames(str(wrist_cameras.registry_path(repo_root())), arm, stream) if role else {}
+    return bound.get(role) or (CAMERA_FRAME if stream == "color" else DEPTH_FRAME).format(arm=arm)
+
+
+@functools.lru_cache(maxsize=None)
+def _bound_frames(registry: str, arm: str, stream: str) -> dict:
+    """{role: optical frame} of the wrist cameras the registry at `registry` mounts on `arm` (its path keys the cache)."""
+    import wrist_cameras
+
+    return wrist_cameras.optical_frames(repo_root(), arm=arm, stream=stream)
 
 
 def look_at(base_from_page: np.ndarray, xy, *, tilt_rad: float, azimuth_rad: float, distance_m: float,
@@ -53,30 +74,53 @@ def tcp_target(base_from_camera: np.ndarray, tcp_from_camera: np.ndarray) -> np.
     return np.asarray(base_from_camera) @ np.linalg.inv(tcp_from_camera)
 
 
-REST = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 1.5707963267948966, 0.0])   # the landing sleep pose
-JOINT_WEIGHTS = np.array([1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 0.0])            # wrist moves cost more
+# The landing's rest pose, a view move's joint weights and the wrist's ranges are the arm's model's
+# (config/arm-models/<model>.yaml: rest, view_weights, wrist_range_rad), read through kin.arm_model.
 
 
 SIDE_LINKS = ("{arm}/link_3", "{arm}/link_4", "{arm}/link_5", "{arm}/link_6")
-# The wrist's own bodies, which the pen's clearance says nothing about: the fiducial cube's tag faces, the
-# cameras (the lower D405 under the wrist since 2026-10-23) and the tool mount. A view keeps each on the arm's side
+# The wrist's own bodies, which the pen's clearance says nothing about (wrist_bodies): the fiducial cube's tag faces,
+# the wrist cameras (on the xArm since 2026-11-08) and the tool mount. A view keeps each on the arm's side
 # and BODY_CLEARANCE_M over the page: the last post-draw view (roll 90) put the cube's lowest tag face 33 mm over
 # the table and 140-180 mm past the camera toward the palette (2026-09-30). The cube's tags are 47 mm, so 70 mm to
 # a face centre keeps its corners clear. Over 51 locate views of 2026-10-23 the lower camera stood 141 mm over the
 # page at least and up to 69 mm past its centre line: within a top-down view's TOP_DOWN_SIDE_M (41 of 42 were).
-WRIST_BODY = ("{arm}/wrist_tag2", "{arm}/wrist_tag3", "{arm}/wrist_tag4", "{arm}/realsense_link",
-              "{arm}/realsense_lower_link", "{arm}/tool_mount")
+CAMERA_LINK = r"realsense\w*_link"   # a wrist D405's camera link in the stock chain, however its prefix names it
 BODY_CLEARANCE_M = 0.070
 # A view stays near the pen-down pose over its target, not the folded sleep pose: scored from the sleep pose, the
 # chooser picked contortions, and one folded the wrist's fiducial cube into the arm's own upper link (2026-09-30).
 # The pen within MAX_PEN_TILT_DEG of straight down into the page, each wrist joint within MAX_WRIST_RAD of the
 # reference, and the cube's tag faces CUBE_UP_M or more over the tool mount along the page normal.
-CUBE = ("{arm}/wrist_tag2", "{arm}/wrist_tag3", "{arm}/wrist_tag4")
+WRIST_TAG = r"wrist_tag\d+"
+
+
+def _frames_named(kin, pattern: str) -> list[str]:
+    """The frames of the arm's description named `<arm>/<pattern>`, in its order."""
+    return [f.name for f in kin.model.frames if re.fullmatch(rf"{re.escape(kin.arm)}/{pattern}", f.name)]
+
+
+def cube_frames(kin) -> list[str]:
+    """The wrist cube's tag faces: every generated wrist fiducial on the arm (the WXAI's 2, 3 and 4, the xArm's 5, 30
+    and 4)."""
+    return _frames_named(kin, WRIST_TAG)
+
+
+def camera_links(kin) -> list[str]:
+    """Each wrist D405's camera link on the arm (the WXAI wrist's realsense_link and realsense_lower_link, the xArm's
+    realsense1_link and realsense2_link)."""
+    return _frames_named(kin, CAMERA_LINK)
+
+
+def wrist_bodies(kin) -> list[str]:
+    """The wrist's own bodies: the cube's tag faces, each wrist camera's link and the tool mount."""
+    return cube_frames(kin) + camera_links(kin) + _frames_named(kin, "tool_mount")
 MAX_PEN_TILT_DEG = 30.0
 MAX_WRIST_RAD = 0.7         # 40 deg
 CUBE_UP_M = 0.030
+# Each wrist joint keeps to its model's wrist_range_rad for inspect's own moves (the wrist carries the cables), and
+# MAX_WRIST_RAD bends with the page.
 HOVER_M = 0.120          # the reference: the pen straight down this high over the target
-# The locate looks straight down on the page first (owner, 2026-10-21: views 35-40 deg off from 0.18-0.22 m saw a
+# The locate looks straight down on the page first (2026-10-21: views 35-40 deg off from 0.18-0.22 m saw a
 # forearm print's 12 mm markers 20-35 px and squashed, and read none; hovers facing them read 40-53 px). The D405's
 # colour fx is ~651 px at 1280x720, so a 12 mm marker spans 41 px from TOP_DOWN_M; the tip, on the camera's axis
 # 159 mm out, then stands 31 mm over the target. The D405 sits 48 deg off the pen, so a camera within 10 deg of the
@@ -155,12 +199,15 @@ def top_down_distances(tile, fx: float) -> tuple[float, ...]:
     return (TOP_DOWN_M, far) if far > TOP_DOWN_M + 0.01 else (TOP_DOWN_M,)
 
 
-def pen_down_reference(kin, solve_ik, page, xy, rest=REST, height_m: float = HOVER_M):
+def pen_down_reference(kin, solve_ik, page, xy, rest=None, height_m: float = HOVER_M):
     """Joints with the pen straight down over page point xy at `height_m`, at the pen heading (its turn about its
-    own axis, free for a round ballpoint) that keeps every joint farthest from its limits; None if none solves."""
+    own axis, free for a round tool) that keeps every joint farthest from its limits, solved from `rest` (None: the
+    arm's model's); None if none solves."""
     from tatbot_session import geometry
 
-    lower, upper = np.asarray(kin.lower)[:6], np.asarray(kin.upper)[:6]
+    rest = kin.arm_model.rest if rest is None else rest
+    r = kin.revolute
+    lower, upper = np.asarray(kin.lower)[r], np.asarray(kin.upper)[r]
     best = None
     for yaw in np.radians(np.arange(0.0, 360.0, 30.0)):
         heading = np.eye(4)
@@ -169,19 +216,30 @@ def pen_down_reference(kin, solve_ik, page, xy, rest=REST, height_m: float = HOV
             q = solve_ik(kin, geometry.tool_down_pose(page, xy, height_m, heading), np.asarray(rest, float))
         except ValueError:
             continue
-        margin = float(np.min(np.minimum(q[:6] - lower, upper - q[:6])))
+        margin = float(np.min(np.minimum(q[r] - lower, upper - q[r])))
         if best is None or margin > best[0]:
             best = (margin, np.asarray(q, float))
     return None if best is None else best[1]
 
 
+def wrist_in_range(kin, q) -> bool:
+    """Whether the wrist joints stand inside their model's wrist_range_rad."""
+    low, high = np.asarray(kin.arm_model.wrist_range_rad).T
+    wrist = np.asarray(q, dtype=float)[list(kin.arm_model.wrist)]
+    return bool(np.all((wrist >= low) & (wrist <= high)))
+
+
 def upright(kin, q, ref, page, cube, mount, *, max_pen_tilt_deg: float = MAX_PEN_TILT_DEG,
             max_wrist_rad: float = MAX_WRIST_RAD, cube_up_m: float = CUBE_UP_M) -> bool:
-    """The pen mostly down, the wrist joints near the pen-down reference `ref`, the cube over the tool mount."""
+    """The pen mostly down, the wrist joints in their range and near the pen-down reference `ref`, the cube over the
+    tool mount."""
+    if not wrist_in_range(kin, q):
+        return False
     down = kin.fk(ref)[:3, 2]
     if float(np.degrees(np.arccos(np.clip(kin.fk(q)[:3, 2] @ down, -1.0, 1.0)))) > max_pen_tilt_deg:
         return False
-    if np.any(np.abs(np.asarray(q)[3:6] - np.asarray(ref)[3:6]) > max_wrist_rad):
+    wrist = list(kin.arm_model.wrist)
+    if np.any(np.abs(np.asarray(q)[wrist] - np.asarray(ref)[wrist]) > max_wrist_rad):
         return False
     if not cube or not mount:
         return True
@@ -210,7 +268,8 @@ def view_clear(kin, q, page, *, margin_rad: float, clearance_m: float, body, bod
                max_y: float | None, posture=None) -> bool:
     """A view's joints clear of their limits, the pen `clearance_m` and the wrist's bodies `body_clearance_m`
     over the page, the side frames at base y <= max_y, and `posture(q)` (upright) when given."""
-    if np.any(q[:6] < np.asarray(kin.lower)[:6] + margin_rad) or np.any(q[:6] > np.asarray(kin.upper)[:6] - margin_rad):
+    r = kin.revolute
+    if np.any(q[r] < np.asarray(kin.lower)[r] + margin_rad) or np.any(q[r] > np.asarray(kin.upper)[r] - margin_rad):
         return False
     if posture is not None and not posture(q):
         return False
@@ -254,15 +313,15 @@ def view_targets(page, xy, tcp_from_cam, down, *, tilts_deg, distances_m, azimut
 
 def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: float, azimuths=None,
         tilts_deg=(20, 30, 35, 40, 45, 50), distances_m=(0.18, 0.20, 0.22, 0.24), rolls_deg=range(0, 360, 45),
-        rest=REST, max_y: float | None = None, margin_rad: float = 0.0667, body_clearance_m: float = BODY_CLEARANCE_M,
+        rest=None, max_y: float | None = None, margin_rad: float = 0.0667, body_clearance_m: float = BODY_CLEARANCE_M,
         reference=None, self_gap=None, max_pen_tilt_deg: float = MAX_PEN_TILT_DEG, cube_up_m: float = CUBE_UP_M,
         max_arm_rad: float | None = None, see=None, around=((0.0, 0.0),)):
     """Joints that point the camera at page point xy with the pen at least `clearance_m` over the page: the
     least contorted of every reachable view, tilt x azimuth (default every 15 deg) x distance x roll about the
     view axis (rectification does not care which way the image is turned).
 
-    A view stays upright (upright): the pen within `max_pen_tilt_deg` of straight down, each wrist joint within
-    MAX_WRIST_RAD of the pen-down `reference` over xy (pen_down_reference, solved from `rest`), and the wrist's
+    A view stays upright (upright): the pen within `max_pen_tilt_deg` of straight down, each wrist joint inside
+    its model's wrist_range_rad and within MAX_WRIST_RAD of the pen-down `reference` over xy (pen_down_reference, solved from `rest`), and the wrist's
     fiducial cube `cube_up_m` over the tool mount. It is seeded at the reference and scored by the weighted
     joint distance from it: scored from the folded sleep pose, the chooser picked contortions, and one folded
     the cube into the arm's own upper link (2026-09-30). With `self_gap` (Guard.self_gap for this arm) the view
@@ -270,7 +329,7 @@ def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: f
     The right wrist D405 sits ~48 deg off the pen axis; the pen reaches ~160 mm past it, so the nearest pose
     with the pen 15 mm clear is ~180 mm out (~3.7 px/mm). With `max_y`, the camera and the wrist links stay at
     base y <= max_y, so the right arm keeps to its own side of the table, clear of the palette mid-table; the
-    wrist's bodies (WRIST_BODY) keep to it too, and stay `body_clearance_m` over the page wherever the pen is.
+    wrist's bodies (wrist_bodies) keep to it too, and stay `body_clearance_m` over the page wherever the pen is.
     A view whose revolute joints come within `margin_rad` of their limits is skipped (ready.MARGIN_RAD, twice
     the planner's guard): the next plan starts from it, and one left joint_1 at -0.004 rad, which the planner
     refused to leave (bench 2026-09-27). With `max_arm_rad`, joint_0-joint_2 within it of the reference too.
@@ -279,19 +338,22 @@ def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: f
     Returns (q, {"tilt_deg", "azimuth_deg", "distance_m", "roll_deg", "aside_m", "seen", "cost"}) or None."""
     page = np.asarray(base_from_page, dtype=float)
     tcp_from_cam = np.linalg.inv(kin.fk(q_seed)) @ kin.frame(q_seed, frame)
-    body = frames_of(kin, q_seed, WRIST_BODY)
-    side = [frame] + [f.format(arm=kin.arm) for f in SIDE_LINKS] + body
+    body = wrist_bodies(kin)
+    side = [frame] + frames_of(kin, q_seed, SIDE_LINKS) + body   # the xArm's are its wrist bodies
     azimuths = np.radians(np.arange(0, 360, 15)) if azimuths is None else np.asarray(azimuths, dtype=float)
     ref = pen_down_reference(kin, solve_ik, page, xy, rest) if reference is None else np.asarray(reference, float)
     if ref is None:
         return None
     seed = ref.copy()
-    seed[6] = q_seed[6]
-    cube, mount = frames_of(kin, q_seed, CUBE), (frames_of(kin, q_seed, ("{arm}/tool_mount",)) or [None])[0]
+    if kin.carriage is not None:
+        seed[kin.carriage] = q_seed[kin.carriage]
+    placing = list(kin.arm_model.of_roles("base", "shoulder", "elbow"))   # the arm, not its wrist
+    weights = np.asarray(kin.arm_model.view_weights)
+    cube, mount = cube_frames(kin), (frames_of(kin, q_seed, ("{arm}/tool_mount",)) or [None])[0]
 
     def accept(q):
         return (upright(kin, q, seed, page, cube, mount, max_pen_tilt_deg=max_pen_tilt_deg, cube_up_m=cube_up_m)
-                and (max_arm_rad is None or float(np.max(np.abs(q[:3] - seed[:3]))) <= max_arm_rad)
+                and (max_arm_rad is None or float(np.max(np.abs(q[placing] - seed[placing]))) <= max_arm_rad)
                 and (self_gap is None or path_clear(self_gap, q_seed, q)))
 
     views = list(view_targets(page, xy, tcp_from_cam, kin.fk(seed)[:3, 2], tilts_deg=tilts_deg, distances_m=distances_m,
@@ -309,7 +371,7 @@ def aim(kin, solve_ik, base_from_page, xy, q_seed, *, frame: str, clearance_m: f
         if not view_clear(kin, q, page, margin_rad=margin_rad, clearance_m=clearance_m, body=body,
                           body_clearance_m=body_clearance_m, side=side, max_y=max_y, posture=accept):
             continue
-        cost = float(np.sum(JOINT_WEIGHTS * (q - seed) ** 2))
+        cost = float(np.sum(weights * (q - seed) ** 2))
         if best is None or cost < best[1]["cost"]:
             best = (q, {**view, "cost": cost})
     return best
@@ -336,7 +398,7 @@ def top_down(kin, solve_ik, base_from_page, xy, q_seed, *, max_y: float | None =
 
 
 def over_centre(kin, solve_ik, base_from_page, xy, q_seed, heading, *, frame: str, clearance_m: float,
-                height_m: float, seed=REST, margin_rad: float = 0.0667, body_clearance_m: float = BODY_CLEARANCE_M,
+                height_m: float, seed=None, margin_rad: float = 0.0667, body_clearance_m: float = BODY_CLEARANCE_M,
                 self_gap=None, see=None):
     """Joints with the pen square to the page `height_m` over page point xy at `heading` (a tcp pose whose x axis is
     the pen's heading), solved from `seed`, as a locate view: clear of the limits, the pen and the wrist's bodies over
@@ -346,13 +408,14 @@ def over_centre(kin, solve_ik, base_from_page, xy, q_seed, heading, *, frame: st
     from tatbot_session import geometry
 
     page = np.asarray(base_from_page, float)
-    start = np.asarray(seed, float).copy()
-    start[6] = q_seed[6]
+    start = np.asarray(kin.arm_model.rest if seed is None else seed, float).copy()
+    if kin.carriage is not None:
+        start[kin.carriage] = q_seed[kin.carriage]
     try:
         q = np.asarray(solve_ik(kin, geometry.tool_down_pose(page, xy, height_m, heading), start), float)
     except ValueError:
         return None
-    body = frames_of(kin, q_seed, WRIST_BODY)
+    body = wrist_bodies(kin)
     if not view_clear(kin, q, page, margin_rad=margin_rad, clearance_m=clearance_m, body=body,
                       body_clearance_m=body_clearance_m, side=[], max_y=None,
                       posture=None if self_gap is None else (lambda v: path_clear(self_gap, q_seed, v))):
@@ -524,21 +587,22 @@ class WristCamera:
     """Exclusive ROS wrist D405: colour and optional native or colour-aligned depth in metres; with no `serial`, the one
     stack.yaml names by role (configured_serial). `tap` (wrist_tap) republishes each grab_both's last frames for display; `lock`
     is held while the pipeline is read (the tap's poll). `preview` (wrist_tap.previews) opens display-only D405s beside
-    it, closed with it."""
+    it, closed with it. Open, it claims the wrist cameras (wrist_claim.Claim: the idle feed lets go of them first);
+    the idle feed's own cameras pass claim=False."""
 
     def __init__(self, serial: str = "", width: int = 1280, height: int = 720, fps: int = 30, depth: bool = False,
-                 aligned: bool = False, tap=None, preview=None):
+                 aligned: bool = False, tap=None, preview=None, claim: bool = True):
         import pyrealsense2 as rs
 
         self.rs = rs
+        self.claim = wrist_claim.Claim() if claim else None
         self.pipe = rs.pipeline()
-        cfg = rs.config()
-        if serial := serial or configured_serial():
-            cfg.enable_device(serial)
-        cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
-        if depth:
-            cfg.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
-        profile = self.pipe.start(cfg)
+        serial = serial or configured_serial()
+        try:
+            profile, fps = self._start(serial, width, height, fps, depth)
+        except BaseException:
+            self._release_claim()
+            raise
         intr = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
         self.k = np.array([[intr.fx, 0, intr.ppx], [0, intr.fy, intr.ppy], [0, 0, 1]])
         self.dist = np.array(intr.coeffs[:5], dtype=float)
@@ -564,6 +628,43 @@ class WristCamera:
         self.tap = tap(self) if tap else None
         self.preview = preview() if preview else None
 
+    # Slower rates a D405 offers at a size when its link cannot carry the asked one: on USB 2.1 it streams colour and
+    # depth at 1280x720 only at 5 fps. Both wrist D405s share one cable and hub on the xArm, and one of them came up
+    # on USB 2.1 each time it was plugged (2026-11-08): the size, which the readings' geometry rests on, is kept.
+    SLOWER_FPS = (15, 5)
+    USB2_SEEN: set[str] = set()   # cameras whose link this process has reported: the idle feed reopens them often
+
+    def _start(self, serial: str, width: int, height: int, fps: int, depth: bool):
+        """The started pipeline's profile and its rate: `fps`, else the fastest of SLOWER_FPS the link carries."""
+        rates = (fps, *(r for r in self.SLOWER_FPS if r < fps))
+        for rate in rates[:-1]:
+            try:
+                return self._open(serial, width, height, rate, depth, fps), rate
+            except RuntimeError:   # "Couldn't resolve requests": not at this rate on this link
+                continue
+        return self._open(serial, width, height, rates[-1], depth, fps), rates[-1]
+
+    def _open(self, serial: str, width: int, height: int, rate: int, depth: bool, asked: int):
+        rs = self.rs
+        cfg = rs.config()
+        if serial:
+            cfg.enable_device(serial)
+        cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, rate)
+        if depth:
+            cfg.enable_stream(rs.stream.depth, width, height, rs.format.z16, rate)
+        profile = self.pipe.start(cfg)
+        device = profile.get_device()
+        usb = (device.get_info(rs.camera_info.usb_type_descriptor)
+               if device.supports(rs.camera_info.usb_type_descriptor) else "unknown")
+        name = f"wrist D405 {device.get_info(rs.camera_info.serial_number)}"
+        if rate != asked:
+            print(f"{name}: {width}x{height} at {rate} fps, not {asked}, on its USB {usb} link", file=sys.stderr, flush=True)
+        elif usb.startswith("2") and name not in self.USB2_SEEN:   # a small preview streams there as asked
+            print(f"{name}: on a USB {usb} link, not USB 3: {width}x{height} at {rate} fps as asked, but 1280x720 "
+                  f"colour and depth only at {self.SLOWER_FPS[-1]} fps", file=sys.stderr, flush=True)
+        self.USB2_SEEN.add(name)
+        return profile
+
     def grab(self, n: int) -> list[np.ndarray]:
         return self.grab_both(n)[0]
 
@@ -578,6 +679,7 @@ class WristCamera:
                 pass
             for _ in range(n):
                 fs = self.pipe.wait_for_frames(5000)
+                received_at_ns, received_mono = time.time_ns(), time.monotonic()
                 if self.align is not None:
                     fs = self.align.process(fs)
                 colors.append(np.asanyarray(fs.get_color_frame().get_data()).copy())
@@ -585,8 +687,10 @@ class WristCamera:
                     frame = fs.get_depth_frame()
                     self.raw_depth.append(np.asanyarray(frame.get_data()).copy())
                     depths.append(self.raw_depth[-1].astype(np.float32) * self.depth_scale)
-                    self.capture_timestamps.append({"received_at_ns": time.time_ns(), "depth_ms": frame.get_timestamp(),
-                                                    "received_monotonic_s": time.monotonic(),
+                    self.capture_timestamps.append({"received_at_ns": received_at_ns, "depth_ms": frame.get_timestamp(),
+                                                    "received_monotonic_s": received_mono,
+                                                    "color_frame_number": getattr(fs.get_color_frame(), 'get_frame_number', lambda: None)(),
+                                                    "depth_frame_number": getattr(frame, 'get_frame_number', lambda: None)(),
                                                     "joints": None if observe is None else observe(),
                                                     "depth_domain": str(frame.get_frame_timestamp_domain()),
                                                     "color_ms": fs.get_color_frame().get_timestamp(),
@@ -605,6 +709,11 @@ class WristCamera:
             self.tap.close()
         with self.lock:
             self.pipe.stop()
+        self._release_claim()
+
+    def _release_claim(self) -> None:
+        if self.claim is not None:
+            self.claim.release()
 
 
 DEPTH_FRAME = "{arm}/realsense_depth_optical_frame"
@@ -978,7 +1087,7 @@ def analyse(views, program: dict, clear_m, extent_m, px_per_mm: float, *, tile, 
                      "sigma_m": border["sigma"][:2] if border is not None else [float("nan")] * 2,
                      "views": len(pairs)}
     result = {"border": border, "border_per_pose": borders, "ink": ink, "ink_per_pose": inks, "placement": placement}
-    if program.get("research") or program.get('version') == 2:
+    if program.get('version') == 2:
         from tatbot_session.fidelity import analyse as fidelity
 
         result["fidelity"] = fidelity(views, program, borders, centre_m, extent_m, px_per_mm)

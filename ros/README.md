@@ -7,14 +7,14 @@ to the arm that will draw, and executes the program with that arm. A program
 can use several resources (tools and inks): at a tool change the arm lands for
 the operator to swap the cartridge, and a dipping tool dips at the palette (§6).
 
-Status: the pink arm draws. On 2026-09-26 `tatbot ros draw` located the
-stencil page (overhead cameras fused with the wrist D405), touched it three
-times, drew the coffee cup with 71% of the plan inked, inspected it with the
-wrist camera and returned to rest. On 2026-09-27 the palette e-stop button,
-relayed from the palette Pi, held the pink arm on a press and on relay
-silence. Not yet run: dipping. This page is the design
-that code in this folder must follow. Update it in the same commit as any
-code that changes it.
+Status: the xArm draws, dipping included: on 2026-11-10 it drew a two-ink
+piece on silicone. On 2026-09-26, on the WXAI follower, `tatbot ros draw`
+located the stencil page (overhead cameras fused with the wrist D405),
+touched it three times, drew the coffee cup with 71% of the plan inked,
+inspected it with the wrist camera and returned to rest. On 2026-09-27 the
+palette e-stop button, relayed from the palette Pi, held that arm on a press
+and on relay silence. This page is the design that code in this folder must
+follow. Update it in the same commit as any code that changes it.
 
 ## 1. Rules for this folder
 
@@ -59,7 +59,11 @@ code that changes it.
      beside it; `use` takes the page from the gauge and makes no descent.
      The fit expires when the tool moves in the gripper or its cartridge is
      swapped, and nothing checks for that yet: the wrist depth that `planes:`
-     compares with the gauge rides link 6 too.
+     compares with the gauge rides link 6 too. A hold whose frames all miss
+     the pen (a clean cartridge's clear nozzle against lit skin) is read at
+     the pen's fitted place once a hold of the same setup saw it there; the
+     tip's height is the fitted tip's either way, and on 2026-10-24's holds
+     the two readings agreed within 0.1 mm.
    - The same frames say where the tip stands on the print (`page.locate.holds`,
      `inspect.hold_tip`): the gauge's surface plane, the print's markers read
      on it, the gauge's tip point carried into the print's frame, again with
@@ -69,7 +73,7 @@ code that changes it.
      onto the print by the median (`page.json` `holds`; a hold votes once, by
      its last reading, as the field and the track's seed take it: a curved
      hold reads again as it steps, from 5-10 mm higher; with
-     `page.locate.cameras`, the lower wrist D405, each further camera reads
+     `page.locate.cameras` (D405-1, `wrist_1`), each further camera reads
      the hold too, on its own gauge calibration and URDF pose, and the hold
      votes once: both readings averaged where both read the print by three
      markers or more (their offset kept, `offsets_m`), else the session
@@ -91,8 +95,8 @@ code that changes it.
      confirmed move), and it leaves the field less (2026-10-19: the hovers'
      median residual 1.45 -> 0.71 mm). `page.trim` adds to it. A shift past
      30 mm (a curved page's past 12 mm, `HOLD_SHIFT_CURVED_M`; the agreement
-     and the confirmation below twice what they were before the owner doubled
-     every stop, 2026-10-20, the curved limit 12 mm, not 18: past it nothing
+     and the confirmation below twice what they were before every stop was
+     doubled, 2026-10-20, the curved limit 12 mm, not 18: past it nothing
      stops, the check holds cross-check the move, and that day's shifts read
      7.9 mm at most) leaves the set-up's page, except on a curved page whose
      holds agree:
@@ -143,101 +147,7 @@ code that changes it.
 6. **Calibration is data, never code.** Tool tips, page, station and camera
    poses live in `config/workspace.yaml` and become static transforms.
 7. **A code change reaches the arm in under a minute.**
-8. **Budgets:**
-   - about 21k lines of code (raised from 20k on 2026-10-18 for the simulator's hardware backend and batch ports,
-     to 21,074 on 2026-10-20 for a curved setup's adaptive surface check and overhead-seeded first hold, and to
-     21,084 the same day for curved holds that step toward the skin only on agreeing frames, checks over the field,
-     to 21,103 for a curved page's holds that agree past their limit and the locate's tilt cap, to 21,113 for
-     what those holds must agree on and a move no check holds confirmed carried no further, to 21,123 for a
-     curved page set up afresh on the overhead's own page and one vote a hold, to 21,244 for a person's skin
-     followed by the overhead's markers and set up again only for a move that lasts, in place of operator pauses,
-     to 21,267 for a continue that lifts and measures the skin again and a snag trip whose needle comes out at
-     once, to 21,327 for a shorter setup: one wrist camera read behind the holds' steps, the locate's view
-     hint, later holds over the first's skin and one check hold where the holds agree, to 21,357 for a
-     watch that reads a move off the followed page however long ago it came, a wait out of the overhead's view,
-     and a curved follow checked against a print turned round the arm, and to 21,413 for a page the wrist and
-     the gauge holds place when the overhead reads no print, its readings off the page left out, and a locate
-     that sets aside an overhead pose two wrist views read past three sigmas, to 21,488 for the owner's doubled
-     stops: a dip return judged once the arm settles and planned again instead of ending the run, a dip phase
-     off its place dipped again with no key, a palette's small move carried, strokes at the dips' heading and
-     the skin watch judged net of the operator's trim, and to 21,506 for a blind set-up that starts a resume
-     15 mm up, rises with the skin its locate views read and carries the gauge tip's offset into its
-     holds, the overhead's readings of a limb's own move up to 0.2 m past the print, to 21,510 for a page
-     its check holds did not confirm set up again once instead of inked on, to 21,538 for a swing to rest
-     the snag guard does not watch, a withdraw that holds when it cannot be planned, and the holds' offset
-     a set-up carries turned with the pen's heading, to 21,637 for a curved inking stroke that rides
-     higher by the skin its hovers read, a fresh page's first hover read and never set up for, and hovers
-     kept for the skin when the print reads nowhere, to 21,649 for two unread hovers in a row going on
-     over a page the wrist placed blind, to 21,658 for a stroke that lifts at its end when the charge dips
-     before its continuation, to 21,670 for a lift the arm cannot follow along the skin's normal tried
-     along the pen and at half the distance, to 21,686 for each wrist reading handing the markers it
-     decoded to the wrist tap for the demo viewer, to 21,814 for dot-sized paths dropped where other ink
-     lays them and the pen's passes over each spot counted, planned and drawn, to 21,818 for the pen
-     trim's limit said with it, the skin watch's set-up for the pen's own ride and the status board's
-     trim bar, to 21,899 for smoother moves between scan positions: one move up and over between
-     gauge holds, joint moves under acceleration and jerk caps, and a hover travel that starts where the
-     arm stands, to 21,945 for kinematics whose pinocchio data is the thread's own (a lift planned
-     beside the stroke pre-planner had read its placements) and a landing's lift tried in steps along
-     the pen that holds the needles off the sweep when none plans, to 21,975 for a dot dropped
-     only on its own ink's line and the pen's passes counted at the tool's mark width, to 21,977
-     for the skin watch judging the skin's part alike at every trim and saying what the ride lifts
-     and the keys press, to 21,982 for a joint move from rest that lifts off slowly before it
-     speeds up, to 21,995 for a held landing that no automatic land starts from, only a person's
-     decide, and a gauge hold's hop from the stand its travel commanded, every hop not taken said,
-     to 22,011 for a landing held where the driver keeps its latch or a pen's withdraw falls
-     short, a snag's needle lifted on clear of the skin, and a hold said to a person before their
-     land starts from it, to 22,040 for a stroke's pre-plan sent by its own ride's change along
-     the depth axis, as the trim is, instead of planned again at the hover, to 22,106 for a
-     keep region: a part of a design compiled on the whole design's placement, to be drawn again
-     over its own lines, to 22,137 for a needle stroke's trim no deeper than skin_stop_m past
-     the skin read along it, a set-up's or resume's trim eased back to it, and the depth a stroke
-     holds the keys at shown and said, to 22,153 for a landing that withdraws and holds only
-     over the print and LAND_CLEAR_M round it (the cameras' page standing in for a page not yet
-     set up), and a session client whose exit is its verb's when the middleware fails to close,
-     and to 22,233 for a locate that looks straight down first and a blind locate whose
-     views read no marker searching on over the skin the overhead's depth reads, and to 22,256
-     for a curved liftoff with no foot under the tip, a print read on the plane past the field,
-     and a field's relief reported along the strokes, and to 22,427 for a stroke that rides the
-     skin its hover read along its own path (and its blind start the page's last minute's), not one
-     reading about the tip, and to 22,497 for a print placed by its markers' lifted corners in 3-D,
-     read in each of a view's frames, and a search about the skin nearest a moved limb, and to 22,542
-     for a transfer that gives with the skin read by each place a code reads at, every miss said, and to
-     22,590 for locate views chosen by the print's markers they see past the tool, straight down from as
-     high as its smallest marker keeps 40 px and aside of it, and to 22,607 for that tool's footprint standing
-     on the gauge's measured tip and a marker hidden by the needle across its middle, and to 22,675 for the
-     palette camera's sweep measuring the tip's length by tilts about the installed tip, the tip found in focus, and to
-     23,158 for the overhead's registration through the wrist D405, not the wrist cube, to 23,161 for S1's seed
-     held to the registration its touch was made in, to 23,174 for that registration's capture landing and
-     waking the arm between its regions, so the holder's views plan from rest, to 23,247 for calibration views by
-     one joint move where it keeps clear of the station and the stylus, the roof-tag holds and S4's yaws visited
-     nearest first, and a goal's first knot sent 50 ms in, to 23,264 for the wrist gauge reading the probe's top
-     square to the pen, not the body's wall, to 23,280 for its holds tried only where the camera sees that top
-     across the probe, to 23,291 for a gain profile chosen when the stack starts, which calibration runs on, to
-     23,299 for a registration holding one connection to the stack through its run, to 23,304 for a gauge
-     correction past 3 mm refused as the known heights' error, not the gauge's, to 23,335 for the palette
-     camera's tip taken where two finders agree or else the lower, a park on the ball stopped, and a height the
-     overhead fix refutes refused, to 23,366 for the overhead's holder placed by the wrist's depth from views
-     aimed at the bridge's page where the D555 reads no tile, to 23,369 for the palette camera's change grown
-     from its sure part through the weaker, to 23,373 for a page surface's foot found when its fixed point
-     runs away, and every safety command carrying the guard level asked last, to 23,389 for the print under
-     the Demo's design map, to 23,401 for every wrist D405 opener taking the camera stack.yaml names by its
-     vision.toml role, as a second D405 shares the ros node's USB, to 23,576 for the print's offset as one
-     filter of the wrist's fits and the overhead's marker moves, `page.track.estimator`, to 23,580 for
-     `tatbot ros up --estimator`, so a rehearsal runs the filter while the default stays the field, to
-     23,592 for the second wrist D405's preview: opened beside the session's camera and closed with it, and
-     drawn by the bridge beside the first, to 23,657 for the filter reading that second D405 at every hover
-     and lift, with an offset state of its own and its calibration carried by the URDF, to 23,674 for
-     each stop's error shared by the cameras that read it, so a second view never counts a stop twice, to
-     23,678 for those readings' markers drawn on that D405's own pane, under a reading name the pane does not
-     repeat its camera in, to 23,769 for both wrist D405s at the set-up too: each locate view and each gauge
-     hold read by the lower as well, a hold's print one vote of both, its heights the lower's only where they
-     agree, to 23,777 for the page filter taking whole a slide the overhead holds over three readings rather
-     than weighing it down as a misread, to 23,782 for a hold's two cameras averaged only where both read the
-     print by three markers or more, the offset between them kept, to 23,783 for the lower wrist D405 among
-     the wrist's bodies a locate view keeps on its side and over the page, to 23,846 for the filter's wrist
-     reading while a stroke draws, every half second besides its stops, to 23,850 for its line a stroke
-     measured from the plan's line, not a point the pen trails, and to 23,867 for wrist readings that keep
-     pulling one way taken as the sheet's move);
+8. **Limits:** lines of code are not capped (2026-11-02); the stack keeps
    - at most 8 custom interface types;
    - at most 3 launch files;
    - no versioned schema zoo.
@@ -251,7 +161,7 @@ operator node                         arm node (aarch64, real time)
 ─────────────                         ─────────────────────────────────────────────────
 tatbot CLI ── role routing ────────▶  tatbot_session (rclpy orchestrator, one executor per arm)
 tatbot_ink compile                      │  program → per-op Cartesian plan → CLIK → FollowJointTrajectory
-  (inkmap-design.json → program.json)   │  stroke ledger (JSONL), palette lock, continue/land decisions
+  (artwork.json → program.json)         │  stroke ledger (JSONL), palette lock, continue/land decisions
 tatbot_calib solves                     ▼
                                       controller_manager @ 400 Hz (SCHED_FIFO, pinned cores)
                                         ├─ joint_trajectory_controller  ×2  (position + velocity FF)
@@ -292,18 +202,18 @@ launch file.
 
 ### Packages
 
-| Package | Language | Responsibility | Lines (v1 budget) |
-|---|---|---|---|
-| `tatbot_hardware` | C++ | ros2_control `SystemInterface` per arm on the Trossen SDK. Owns the e-stop/probe serial reader, hold latch, guards, carriage trip-retract and flight ring. A framework-free core plus a thin adapter; this is the only code that talks to the SDK. | 1,800 |
-| `tatbot_description` | xacro/YAML | Two-arm URDF (carriage as a prismatic joint, tool mount frames), `ros2_control` tags, controller config; palette-station frames at M2. The palette geometry itself is `urdf/palette.urdf`, the v11 CAD build's scene asset | 600 |
-| `tatbot_interfaces` | IDL | The custom interfaces in §9 | 150 |
-| `tatbot_ink` | Python, no ROS | Acquired paths → program: rigid placement, ink bindings, timed chunks, preview | 1,800 |
-| `tatbot_motion` | Python, no ROS | Shared station observation geometry; program op → Cartesian samples (time laws, approach/descent/lift, dips) → joints (CLIK on pinocchio) | 1,500 |
-| `tatbot_session` | Python (rclpy) | Orchestrator: per-arm executors, ledger, registration flow, palette lock, e-stop continue/land | 1,500 |
-| `tatbot_calib` | Python | Station fix, arm registration, tool tips across the axis (probe touches, or the palette camera's joint-6 sweep); candidate → apply | 3,200 |
-| `tatbot_bridge` | Python | Shared overhead capture/station producer; zenoh → ROS stencil page poses from `stencild` → `/tatbot/page` and tf `world → page/<pattern_id>` | 300 |
-| `tatbot_bringup` | launch/YAML | Launch files, `rmw_zenoh` config, systemd templates | 300 |
-| `tatbot_rerun` | Python | ROS → Rerun bridge for the fleet viewer's demo page: robot, strokes, design map, page, palette, wrist cloud, status board (§13 Graph). Its pure models are in `tatbot_contracts` (`ros_scene`, `ros_status`) | 300 (about 410 since the demo viewer) |
+| Package | Language | Responsibility |
+|---|---|---|
+| `tatbot_hardware` | C++ | ros2_control `SystemInterface` per arm on the Trossen SDK. Owns the e-stop/probe serial reader, hold latch, guards, carriage trip-retract and flight ring. A framework-free core plus a thin adapter; this is the only code that talks to the SDK. |
+| `tatbot_description` | xacro/YAML | Two-arm URDF (carriage as a prismatic joint, tool mount frames), `ros2_control` tags, controller config; palette-station frames at M2. The palette geometry itself is `urdf/palette.urdf`, the v11 CAD build's scene asset |
+| `tatbot_interfaces` | IDL | The custom interfaces in §9 |
+| `tatbot_ink` | Python, no ROS | Acquired paths → program: rigid placement, ink bindings, timed chunks, preview |
+| `tatbot_motion` | Python, no ROS | Shared station observation geometry; program op → Cartesian samples (time laws, approach/descent/lift, dips) → joints (CLIK on pinocchio) |
+| `tatbot_session` | Python (rclpy) | Orchestrator: per-arm executors, ledger, registration flow, palette lock, e-stop continue/land |
+| `tatbot_calib` | Python | Station fix, arm registration, tool tips across the axis (probe touches, or the palette camera's joint-6 sweep); candidate → apply |
+| `tatbot_bridge` | Python | Shared overhead capture/station producer; zenoh → ROS stencil page poses from `stencild` → `/tatbot/page` and tf `world → page/<pattern_id>` |
+| `tatbot_bringup` | launch/YAML | Launch files, `rmw_zenoh` config, systemd templates |
+| `tatbot_rerun` | Python | ROS → Rerun bridge for the fleet viewer's demo page: robot, strokes, design map, page, palette, wrist cloud, status board (§13 Graph). Its pure models are in `tatbot_contracts` (`ros_scene`, `ros_status`) |
 
 `tatbot_ink` and `tatbot_motion` import without ROS, so the operator node, the
 tests and the arm node all run the same compile and planning code.
@@ -315,61 +225,91 @@ tests and the arm node all run the same compile and planning code.
 | `world` | The fixed-camera world that `stencild` publishes page poses in: on the demo stack the overhead D555's colour optical frame | The camera bundle `tatbot ros register` writes with each arm's registration (docs/vision.md, Calibration) |
 | `<arm>/base_link` | Root of the `left` or `right` arm subtree, placed in `world` by that arm's registration | Adopted per-arm registration → fixed joint `world → <arm>/base_link` in the generated description (`tatbot_description`), published by `robot_state_publisher` |
 | `<arm>/tool_mount` | Printed mount on the finger carriage; rides the carriage joint | URDF |
-| `<arm>/tcp` | Working point of the fitted tool (ballpoint ball contact; laser working point 10 mm past the nose) | `workspace.yaml`, from the probe station |
-| `page/<pattern_id>` | The printed stencil page: origin at the page centre, x along its 100 mm edge (stencil u, rightward), y along its 150 mm edge toward the top of the print (−v), z out of the paper. This is also Inkmap's chart frame for the stencil fixture. | `stencild` pose via `tatbot_bridge`, then height and tilt from touches (§4.3). A test pins the u/v conversion, and prints transferred mirrored are declared in `tracking.json`. |
+| `<arm>/tcp` | Working point of the fitted tool (a needle cartridge's tube end, its centre; laser working point 10 mm past the nose) | The fitted cartridge's tip (§6, Cartridge swaps), from the probe station or the sweep |
+| `page/<pattern_id>` | The printed stencil page: origin at the page centre, x along its 100 mm edge (stencil u, rightward), y along its 150 mm edge toward the top of the print (−v), z out of the paper. | `stencild` pose via `tatbot_bridge`, then height and tilt from touches (§4.3). A test pins the u/v conversion, and prints transferred mirrored are declared in `tracking.json`. |
 | `<arm>/station` | Palette station = `palette_root` of `urdf/palette.urdf`, the v11 CAD frame: z = 0 at the rail tops, origin on the probe axis, +x toward the camera and the e-stop enclosure, +y transverse to the rail | Registered per arm (§7), M2 |
 | `station/inkcap_<size>_<n>` | Cap support floors, the `inkcap_*` links of `urdf/palette.urdf`: `inkcap_large_1`, `inkcap_medium_1`, `inkcap_small_1`, `inkcap_small_2`, `inkcap_medium_2`, `inkcap_large_2`, the L-M-S-S-M-L crescent from +y to −y. A rim is the floor plus the cap's outside height (`config/palette.yaml`), 32 mm above the rail tops. Programs abbreviate the slots `L1 M1 S1 S2 M2 L2` in the same order (`M1` = `inkcap_medium_1`). | CAD offsets in `urdf/palette.urdf` |
 
 Arms are named `left` and `right` only. Leader/follower is a teleop role, and
 tape colours are labels, not identifiers.
 
-## 4. From acquired DBV3 artwork to paper
+## 4. From acquired DBV3 artwork to skin
 
 ### 4.1 Generate and place
 
 `tatbot drawingbot generate` acquires ordered metric paths at the intended
 physical dimensions and generation pen width. It produces shared
-`tatbot.inkmap-artwork/2` with a frozen recipe identity. Inkmap imports that
-record for review and rigid placement and exports `tatbot.inkmap-design/1`.
-The public SVG tracer is separate from production robot preparation.
+`tatbot.inkmap-artwork/2` with a frozen recipe identity: the only input
+preparation reads, one `artwork.json` or several (one per pen) drawn as layers.
+Inkmap designs are not compiled. The public SVG tracer is separate from
+production robot preparation.
 
-Preparation places artwork on the nominal stencil page, 128 × 172 mm with a
-90 × 134 mm clear centre. Both the rotated canvas and the stroke footprint
-must fit. A fiducial-tile print (docs/stencil-frames.md; the silicone layout is
-111 × 157.5 mm) is drawn on as it was generated: the session takes the page's
-size and clear centre from the installed print (§4.3, Page) and refuses,
-before the arm moves, a drawing whose lines leave that print's clear centre. Translation, rotation and
-mirror reuse acquired paths. A size change requires DBV3 regeneration; an
-editor resize preview cannot silently become a scaled robot drawing.
-Generation pen width and measured deposited tool width remain separate.
+Preparation centres the artwork's canvas on the nominal stencil page, 128 ×
+172 mm with a 90 × 134 mm clear centre, or at `--at`. Both the canvas and the
+stroke footprint must fit. A fiducial-tile print (docs/stencil-frames.md; the
+silicone layout is 111 × 157.5 mm) is drawn on as it was generated: `--stencil`
+places the artwork inside that print's clear centre, and the session takes the
+page's size and clear centre from the installed print (§4.3, Page) and refuses,
+before the arm moves, a drawing whose lines leave it. Translation reuses the
+acquired paths. A size change requires DBV3 regeneration. Generation pen width
+and measured deposited tool width remain separate.
 
 ### 4.2 Prepare: `tatbot_ink`
 
 ```sh
 tatbot ros compile artwork.json --at=0,0 --width 20 --speed 3.5 -o prepared
-# Or prepare an Inkmap design containing those same acquired artworks.
+# Or one acquired artwork per pen, drawn as layers in the order given.
+tatbot ros compile outline.json fill.json --inks resources.yaml --stencil PRINT -o prepared
 tatbot ros draw prepared/program.json
 ```
 
 `--at` is the canvas centre in page millimetres (x right, y toward the top of
 the print). `--width` asserts the acquired canvas width in millimetres; it
-does not rescale. `--stencil DIR` names the generated print the design is
+does not rescale. `--stencil DIR` names the generated print the artwork is
 drawn on (its directory, with `tracking.json` and `settings.json`): the
-program's page and clear centre are that print's, so a design that does not
-fit is refused here rather than at the arm. `ros draw` takes the same flags
-when it prepares a design. `--speed` sets `draw_speed_m_s` after converting mm/s to m/s.
+program's page and clear centre are that print's, so artwork that does not
+fit is refused here rather than at the arm. Layers share one origin and move
+together. `ros draw` takes the same flags when it prepares artwork. `--speed`
+sets `draw_speed_m_s` after converting mm/s to m/s.
+On a fiducial-tile print the compile also keeps a **marker budget**
+(`tatbot_ink.markers`, `stack.yaml` `page.markers`). A design drawn over the
+tile covers the markers the cameras track the print by, so the program's ink
+is drawn over the print's `stencil.png` as the cameras see it (each stroke its
+mark plus the ink smeared beside it) and read with the stack's own detector:
+at the overhead's scale once each ink is drawn, at the wrist's every few
+strokes. `stats.markers` records what is left: the markers the overhead reads
+after each ink and which it lost, and the fewest readable markers within a
+wrist view of a stroke's start. The budget is `overhead_min` markers after
+every ink, `anchors_min` of them corner anchors where the layout has anchors,
+and `wrist_min` at every stroke. With `page.markers.enforce` a program under it
+is refused, naming the stage and the markers lost, and the draw on the real
+rig repeats the check against the installed print; `--allow-marker-loss` prepares it anyway,
+for a sheet fixed on its mount (`page.static_run`). Without `enforce` both
+only say so (`stats.notes`, the session's log). The ink of a program already
+drawn on the print (`--after PROGRAM`, §6) counts too, wiped since or not. The
+model's values and the
+recorded frames they were fitted to are beside the budget in `stack.yaml`.
+This part needs OpenCV, which the drawing environment and the ROS node have;
+where the count cannot be made, a program the budget would not refuse is
+prepared with a note. `tatbot art separate --fit` sizes a design by the same
+count (`docs/art.md`). With `page.markers.order: spare` the compile also
+reorders each ink's paths (the one exception to source order below): the path
+whose ink reaches the fewest markers not yet reached goes first, the nearest
+to the last path's end among equals, so the markers a design must cover are
+covered late; `preparation.stroke_order` records it. The default, `source`,
+keeps the artwork's order.
+
 Preparation is offline Python with NumPy, PyYAML and the shared stdlib
-contract package. The local CLI resolves the [locked drawing environment](../docs/drawingbot.md#prepare-and-review)
+contract package. The local CLI resolves the [locked drawing environment](../docs/drawingbot.md#prepare)
 through `uv`, then executes its interpreter directly; no separate package
 installation or activated test environment is required. It imports no ROS
 runtime, simulator, Java or Node. Deployed ROS processes keep their own runtime.
 
-1. Verify the frozen artwork/program, design and placement digests before
-   applying command-line placement overrides. Admit DBV3 unfilled metric
-   paths only. Reject unresolved paint, masks, variable deposition and curved
-   targets. All placements share one plane page.
-2. Place each path in source order with
-   `p = anchor + Rot(rotation) · Mirror · (q − canvas/2)`.
+1. Verify the frozen artwork and program digests before applying
+   command-line placement. Admit DBV3 unfilled metric paths only. Reject
+   unresolved paint, masks and variable deposition. Layers drawn together share
+   one canvas size and one page.
+2. Place each path in source order with `p = at + (q − canvas/2)`.
    Preserve direction, pen/layer/path IDs, closedness and repeated passes.
    No secondary fill, simplification or scheduling occurs. One deduplication
    does: a dot-sized path (every two of its points within `--min-stroke-mm`,
@@ -393,7 +333,6 @@ runtime, simulator, Java or Node. Deployed ROS processes keep their own runtime.
    its palette cap (its dip settings are the datasheet's). A `tool_change` op starts each
    resource's run of strokes; a dipping resource also gets a `dip` before its
    first stroke and whenever the next contact would pass its `mm_per_dip`.
-   Ballpoints carry their own ink and get no dips.
 4. Split computational chunks using the planner's Cartesian time law,
    including easing, corners, speed caps and control ticks. The default
    budget is 60 seconds. Each chunk retains the source path ID and arc
@@ -403,12 +342,29 @@ runtime, simulator, Java or Node. Deployed ROS processes keep their own runtime.
    or ink replenishment. IK can add execution time beyond this model.
 5. Write `program.json` (`tatbot-program` v2) and `preview.svg`. Each stroke
    retains `points_m`, `closed`, `continues`, unique `id`, physical ink and
-   source identity. The source addresses are
+   source identity, and a `deposition` per point where its path fades (below). The source addresses are
    `src.{placement,artwork_sha256,program_sha256,layer,path,pen,closed,arc_m}`.
    A chunk-relative arc `a` maps to source arc `src.arc_m[0] + a`.
    Points remain double-precision page metres; splitting preserves shared
    endpoints exactly. An unsplit closed path retains `closed: true`; split
    pieces explicitly include the closing segment.
+
+**Deposition.** An acquired path may fade: its `deposition`, one value in (0, 1] or
+one per point in [0, 1], is the share of full ink it lays there. `tatbot art shade`
+makes such paths (`tatbot-art-shade/1`, whip and pendulum shading; docs/art.md). The
+compiler carries it through placement, a keep region's cut and every chunk,
+interpolated by arc so a cut point has one value on both sides, and writes it on
+each fading stroke. A stroke at full ink carries none, so other programs keep their
+digests. A fading path compiles only for a tool whose datasheet records
+`fade_lift_mm` (docs/tools.md): the planner rides each point `(1 - deposition)` of
+it higher than the pen's path, along the normal on a curved page, so deposition 0
+lifts the mark out. The lift only ever rises: no fade goes deeper than the plan, the
+trim and its cap already allow. The 3RL records 0.7 mm, from a fade ladder on the
+silicone skin (2026-11-03); no other cartridge records one until a ladder finds
+where its mark stops. A build before deposition ignores the field and draws a fading stroke at
+full depth: deploy before drawing one. Its arc addresses run along the lifted path,
+a few percent longer than the print's over a ramp; the skin ride and the charge count
+the print's.
 
 The program retains input-file identity, actual placement, source/recipe/
 artwork identities, tool datasheet hash, generation widths, ink bindings,
@@ -431,38 +387,29 @@ mark width away (a retrace, another stroke). The mark width is
 width (0.3 mm for the 3RL, whose mark on skin is not measured);
 `stats.passes.marks` names it per resource. It gives the most and the 95th
 percentile per inked cell, the mm² at 2, 3 and 5 or more passes and the five
-densest 1 mm squares by mean passes; `preview.svg` shades 3 or more under the
-strokes. A run records the same for what it drew (§4.5). Tracking only.
+densest 1 mm squares by mean passes. A run records the same for what it drew
+(§4.5). Tracking only.
 
-An explicit resource binding file (illustrative catalog/tool IDs):
+`stats.dose` (`tatbot_ink.dose`) counts what the pen does while it is there:
+needle pokes, the planner's own time law for each stroke
+(`tatbot_motion.dose`, no IK) times the machine's rate (`motion.yaml`
+`machine.rate_hz`, a recorded value). It gives the steady dose (14.6 pokes a
+millimetre at 51 Hz and 3.5 mm/s); for every stroke the pokes per millimetre
+of its first and last millimetre, its middle and its densest tenth of a
+millimetre at a slowed corner, its share of line over twice the steady dose,
+and the pokes on the spot where the pen comes down and where it lifts with the
+machine running (`strokes`: one row a stroke op); their spread over the
+program; and `cells`, the pokes each cell of the passes' grid takes and how
+many steady passes that is (a cell's passes times its strokes' pokes there
+over the steady dose, and each dwell over a steady pass across the mark).
+`preview.svg` shades cells at 3 or more steady passes under the strokes. With
+stopping ends a long stroke's first millimetre takes about 27 pokes and each
+descent and lift about 54 on one spot; `ends` and `ends_drawn` say how the
+ends were counted (`stop`, `fly`, or `join` where an op continues pen-down).
+It counts pokes, not ink: how dark a poke leaves the skin is the lab's.
 
-```yaml
-format: tatbot-inks
-version: 3
-substrate: paper_pad
-resources:
-  - id: black
-    tool_id: black-ballpoint
-    ink_id: black
-    pen_mode: press
-    activation: {method: manual, action: exchange}
-  - id: red
-    tool_id: red-ballpoint
-    ink_id: red
-    pen_mode: press
-    activation: {method: manual, action: exchange}
-bindings:
-  - {artwork_sha256: "<exact artwork digest>", pen_id: pen-1, resource_id: black}
-  - {artwork_sha256: "<exact artwork digest>", pen_id: pen-2, resource_id: red}
-```
-
-`substrate` names a `config/substrates.yaml` entry that every resource's tool
-datasheet admits (`substrates:`): `paper_pad` or `paper_cylinder` for the
-ballpoint, `silicon_skin` or `human_skin` for the needle cartridges. The
-substrate is recorded in the program and changes nothing else: a needle
-cartridge rides, dips and moves the same on human skin as on silicone, and its
-depth is trimmed live from the station keyboard. A one-pen draw without
-`--inks` names no substrate. For the 3RL on a person's forearm:
+An explicit resource binding file, for the 3RL on a person's forearm (one
+resource per acquired pen; a binding names the artwork by its digest):
 
 ```yaml
 format: tatbot-inks
@@ -479,8 +426,21 @@ bindings:
   - {artwork_sha256: "<exact artwork digest>", pen_id: pen-1, resource_id: black}
 ```
 
+A dipping resource may set its own `dip: {mm_per_dip, dwell_s, above_ink_m,
+drain_s, drain_above_rim_m}`, any of them, over its tool datasheet's (the per-ink measured `mm_per_dip`
+included); the rest of the dip, and a rinse's first-dip multiple of the dwell,
+follow. The program carries each resource's resolved dip, so the session dips
+by it. `tatbot lab` gives every trial its own resource this way.
+
+`substrate` names a `config/substrates.yaml` entry that every resource's tool
+datasheet admits (`substrates:`): `silicon_skin` or `human_skin` for the
+needle cartridges. The substrate is recorded in the program and changes
+nothing else: a needle cartridge rides, dips and moves the same on human skin
+as on silicone, and its depth is trimmed live from the station keyboard. A
+one-pen draw without `--inks` names no substrate.
+
 Compile with `tatbot ros compile artwork.json --inks resources.yaml -o prepared`,
-then `tatbot ros draw prepared/program.json --arm right`. The first resource is
+then `tatbot ros draw prepared/program.json`. The first resource is
 the one the run starts with: load its cartridge first. At a tool change to
 another resource the arm lands and the run stops, naming the cartridge to fit;
 fit it and resume with `--resume <run-id>`, which keeps the run's measured page
@@ -509,8 +469,7 @@ behavior. Physical qualification remains a separate DBV3 A/A drawing trial.
 Draw runs record monotonic attempt durations in `run.jsonl`, with a
 `draw_timing` summary in `meta.json`. Resumes aggregate all completed attempts;
 missing attempt evidence leaves the total unknown. These measure action time,
-not physical contact time. The research cost fields are defined in
-[`docs/research.md`](../docs/research.md).
+not physical contact time.
 
 ### 4.3 Register
 
@@ -519,15 +478,17 @@ and lands the arm: a restart with a fixed page and the probe, the arm's registra
 wrist tags the D555 sees at rest (`register --prior rest`, nothing from an earlier layout), a restart on the
 stencil, the D555 registered again through the wrist camera (`calib overhead --adopt`, aimed by the tags' one,
 which it replaces), the station touch (`calib run --station-only`), the ball's height (`calib height`), the wrist
-gauge (`calib gauge`) and the page set-up (`touch`). It prints each step's time. The steps before the page run on
+gauge (`calib gauge`, after `calib wristcam --adopt` writes a camera's first gauge file) and the page set-up (`touch`). It prints each step's time. The steps before the page run on
 the `calibration` gains (below, ros2_control), and a restart puts the role's own in before the page. A setup that
 stops early lands the arm and restarts the stack on those too, so no draw starts on the calibration gains.
+The gauge reads the probe's white top by its colour and the wrist D405's stereo, and both need light: in a dark
+room none of its holds read, the installed gauge stays, and the step says its frames are dark.
 It always runs in its own session and the command follows its log, so a closed terminal or an agent's tool
 timeout stops only the following, never the setup; `--detach` returns at once instead. `tatbot ros draw` runs
 the same way, with `tatbot ros draw --progress` counting the strokes done. `tatbot ros setup
 --progress` reads the newest one, running or finished, in a few lines.
 
-- **Arm:** `tatbot ros register --arm right --adopt`, with the stack up on
+- **Arm:** `tatbot ros register --adopt`, with the stack up on
   the arm, places the arm's base in the overhead D555's frame from its wrist
   tags (docs/vision.md, Calibration). A Touch MODE_MOVE without a guard takes
   the arm through the holds. Each hold is a Cartesian travel, or a joint-space
@@ -542,9 +503,10 @@ the same way, with `tatbot ros draw --progress` counting the strokes done. `tatb
   run's `chain` reports what the rigid fit leaves: the wrist tags' seat and
   joints 1–4's offsets. `tatbot ros chain <run-id>...` pools registrations
   of one arm (docs/vision.md, Calibration).
-- **Tool:** the fitted tool's TCP comes from `config/workspace.yaml`, written
-  by the probe-station calibration (§7). The stated `--ee-tool` must equal the
-  fitted tool, or the run refuses before connecting.
+- **Tool:** the fitted cartridge and its TCP, which `tatbot ros cartridge fit`
+  and `tatbot ros calib apply` record on the ROS owner over
+  `config/workspace.yaml`'s (§6, Cartridge swaps; §7). The stated `--ee-tool`
+  must equal the fitted tool, or the run refuses before connecting.
 - **Page** (per run, per arm):
   - The operator puts a printed fiducial-tile page (docs/stencil-frames.md)
     in front of the arm and installs its reference (`tatbot vision stencil
@@ -558,7 +520,26 @@ the same way, with `tatbot ros draw --progress` counting the strokes done. `tatb
     D555 sees it and the arm reaches, and it may move a little during a run.
   - `stencild` places it each turn by its markers in the D555's RGB-D
     (docs/vision.md): every marker names its place on the print, so the pose
-    carries no identity guess and no search region. The wrist camera and the
+    carries no identity guess and no search region. Spares on the table and the
+    next rig's page read the same markers, so it places every sheet of the print
+    in view, and `tatbot_bridge` publishes the one that is the page by where it
+    stands (`tatbot_bridge.page.PageChooser`, `page.copies` in stack.yaml). That
+    is the sheet within `same_m` of where the page last stood, however few
+    markers the arm leaves it; after a restart, where the newer of the last
+    accepted touches and the last choice put it. With none there the page stands
+    lost, and another sheet never stands in for it: the arm hiding the page
+    never hands it to the next mount. Only on a rig with one sheet does the page
+    follow it anywhere: while the overhead has never read two at once and no
+    sheet was ever chosen, which says the table has others. Mounts carry no
+    identity, so any number of them may move, come and go; which one is the page
+    is chosen: `tatbot ros page` says where each sheet in view stands in the
+    arm's base, and `ros draw` or `ros touch --sheet-at=X,Y` makes the sheet
+    nearest that point the page (the bridge's `page_at` parameter, recorded in
+    `page-chosen-<arm>.json`). The client waits for the bridge to measure the
+    chosen sheet before the run starts. With several in view and none ever
+    chosen there is no page. A sheet put down where the page stood is the page,
+    whatever it was before. A set-up's page event says how far the others
+    stand. The wrist camera and the
     touches then measure it. `tatbot_bridge` publishes the page pose, its
     covariance, and the print ID. The arm resting over the page after a touch
     hides most of its markers from the D555; a draw needs it measured within
@@ -728,7 +709,7 @@ the same way, with `tatbot ros draw --progress` counting the strokes done. `tatb
     from 8.6 to 1.3 mm by the replay's measure; those two and a silicone
     run's four fuse as they did. The run's
     `page.json` keeps both and the fused pose; `locate/` keeps the views.
-    Each view is read by `page.locate.cameras` too (the lower wrist D405,
+    Each view is read by `page.locate.cameras` too (D405-1, `wrist_1`,
     through the session camera's preview, at its own URDF pose): its fit
     joins the views' in the median, is recorded under the locate's
     `further`, and one that reads the print counts as the view reading it
@@ -817,7 +798,7 @@ the same way, with `tatbot ros draw --progress` counting the strokes done. `tatb
 ### 4.4 Execute: `tatbot_session`
 
 ```
-tatbot ros draw program.json --arm right
+tatbot ros draw program.json
 ```
 
 Each arm runs its own executor through its program. The next op is always
@@ -842,16 +823,22 @@ stencil follow and set-ups again as with ink, every resource hovering
 (`tatbot_contracts.ros_program.rehearsal`).
 
 ```sh
-tatbot ros up --hardware real --estop udp --page stencil --arms right --probe --surface fitted
-tatbot ros draw prepared/program.json --arm right --rehearse                    # 6 mm over the skin
-tatbot ros draw prepared/program.json --arm right --rehearse --standoff-mm 8    # higher
-for i in 1 2 3; do tatbot ros draw prepared/program.json --arm right --rehearse || break; done
+tatbot ros up --hardware real --estop udp --page stencil --probe --surface fitted
+tatbot ros draw prepared/program.json --rehearse                    # 6 mm over the skin
+tatbot ros draw prepared/program.json --rehearse --standoff-mm 8    # higher
+for i in 1 2 3; do tatbot ros draw prepared/program.json --rehearse || break; done
 ```
 
 - Dips are skipped: a rehearsal drops every `dip` op and palette cap, and a
   rinse becomes a manual change. Resources of one tool become one ink, so
   their tool changes go on without landing. A cartridge swap to another tool
-  still lands.
+  still lands. `--dry-dips CAP` keeps the dips instead, each a dry one at that
+  cap (declared present, whatever it holds): the approach to its hover, its
+  drop included, and the return, never into the cap and the machine never on,
+  so a dip's travel is measured without ink. `--real-dips` keeps every dip and
+  rinse as the program has them instead, each into its own cap (`dip_in_cap`),
+  the machine off: the dips practised over empty caps, which must be declared
+  with their inks and levels as for an inked run (`tatbot ros palette load`).
 - The tattoo machine stays off and the snag guard is not armed; the pen trim
   keys still move the path.
 - The post-draw inspection is skipped. The arm lands after each run unless
@@ -867,18 +854,24 @@ for i in 1 2 3; do tatbot ros draw prepared/program.json --arm right --rehearse 
 
 **The pen trim** (`tatbot_motion.trim`, `motion.yaml` `pen.trim`). The
 operator's drawing keys on the station keyboard move the pen-down path along its depth
-axis while the arm draws: Fn+W lifts it one `step_m` (0.1 mm, lighter), Fn+S
+axis while the arm draws: Fn+W lifts it one `step_m` (0.25 mm, lighter), Fn+S
 presses it one step, Fn+X sets it back to 0, within ±`limit_m` (4 mm; the
 Demo page's trim bar shows it, yellow at the limit). A held key steps once.
 At −4 mm the 3RL's tube rides 1.0 mm over the gauge-measured skin and its
 needles reach 3.0 mm past it by the datasheet (ride 5.0 mm, reach 4.0 mm).
 The 2 mm limit held a forearm tattoo at −2 mm for 141 presses where the
 wrist read the skin up to 4.06 mm under the field (2026-10-20). The trim
-belongs to the cartridge on the arm (the program resource) for the whole
-run: each change is a `pen_trim` ledger row and a `pen_trim` event, and a
-resume starts each cartridge at its last one; a new run starts at 0.
+belongs to the cartridge on the arm (the resource's tool) for the whole
+run, so a rinse carries it to the next colour (2026-11-02; it was the
+resource's, and every colour change started the depth over): each change is a
+`pen_trim` ledger row naming its `cartridge` and the resource on it, and a
+`pen_trim` event, and a resume starts each cartridge at its last one; a new run
+starts at 0, or at `tatbot ros draw --trim-mm=-1.75`, which the run writes as its
+first `pen_trim` row, within the limit, so nobody races Fn+S before the first
+stroke (at 0 the 3RL rode ~2 mm over the silicone, 2026-11-03).
 - A needle cartridge's stroke takes the trim no deeper than
-  `page.surface.rigid.skin_stop_m` (2.5 mm, the operator's deepest 3RL rung)
+  `page.surface.rigid.trim_stop_m` (3.3 mm; 2.5 mm, `skin_stop_m`, until it
+  was raised at the first depth holds, 2026-11-11)
   past its plan over the highest skin read along it, less the `rise_m` it
   rides by: its own hover's readings and, past its ring, those near its path
   (the ride's, below); a stroke whose own hover read no skin counts the field:
@@ -887,7 +880,7 @@ resume starts each cartridge at its last one; a new run starts at 0.
   only as far as the stroke's hovers read the skin sunk; the keys' own trim
   stays theirs, a press past the cap moves nothing on the arm and says where
   the stroke holds it, and a stroke it holds says so (a `pen_trim` event).
-  A set-up and a resume ease a trim kept deeper than `skin_stop_m` back to
+  A set-up and a resume ease a trim kept deeper than `trim_stop_m` back to
   it (a `pen_trim` row with `eased_from_m`, and an event). With one trim per
   cartridge, depth keyed for one sunk stretch of a forearm otherwise carried
   onto strokes, fresh fields and resumes it was never pressed for, up to the
@@ -895,14 +888,13 @@ resume starts each cartridge at its last one; a new run starts at 0.
   that tattoo's last presses at ±4 mm: 41 presses on a stroke read 0.15 mm
   under the field held at −2.65 mm instead of −4.0, the resume's −4.0 went
   back to −2.5, the strokes read 4.06 and 3.69 mm under took the keys'
-  −4.0, and nine earlier strokes held 0.06-0.24 mm. A ballpoint takes the
-  keys as they are.
+  −4.0, and nine earlier strokes held 0.06-0.24 mm.
 - Every stroke plan carries, per knot, its depth axis (the page normal: a
   surface would give each knot its own) and `dq_dh`, the joints per metre
   along it with the tool's rotation and the carriage held
   (`clik.depth_sensitivity`). A trim h is added as `q + h·dq_dh` when the
   goal is sent: no new IK, and never off the plan's IK branch (§1, rule 4).
-  On the pink arm's drawing poses that lands within 4 µm of the target at
+  On the WXAI follower's drawing poses that lands within 4 µm of the target at
   1 mm and 18 µm at 2 mm (2026-10-04), and over a forearm tattoo's 959
   drawing poses within 13 µm at 2 mm and 53 µm at 4 mm (2026-10-20); a full
   re-plan of a 40 s stroke takes 4-9 s.
@@ -914,13 +906,34 @@ resume starts each cartridge at its last one; a new run starts at 0.
   running goal's until the change starts. One change eases in at a time; one
   that would not settle before the goal ends waits for the next goal.
 - The pre-planned next stroke starts at the trim the last goal ended at. A
-  plan from the measured joints (a resume, a drifted pre-plan) eases its trim
-  in from 0; a resume trimmed more than `resume_reapproach_m` re-approaches.
+  plan from the measured joints (a resume, a drifted pre-plan, every stroke
+  after a hover stop) eases its trim in from 0, and has it in by the time its
+  descent enters its last `approach.final_m`: the pen is in the air until
+  then, so the ease may run faster than the keys' `speed_m_s`, and the slow
+  stretch runs at its own 3 mm/s. A resume trimmed more than
+  `resume_reapproach_m` re-approaches.
 - Fn+Enter (`enter`) answers a waiting pause or latch with `continue`. After a cartridge
   swap lands the arm, `client draw` waits for it, wakes the arm and resumes
   the run (Ctrl-C there leaves it to resume by hand).
 - Fn+E (`dip`) dips now and makes every later dip a step sooner; Fn+Q
   (`fewer_dips`) makes them a step later: the dip scale of a dipping cartridge (§6).
+- **The depth hold** (`pen.trim.hold`). On a person the depth is the
+  operator's to see. A program whose `substrate` is in `hold.substrates`
+  (`human_skin`) holds before a needle cartridge's first dip: the pen goes to
+  its first stroke's start as that stroke would (page checks, hover, ride and
+  the trim's cap alike), the machine running and no ink on the needles, at
+  the cartridge's trim, or `hold.start_m` (+1 mm) when it has none, and stays
+  there. Fn+S and Fn+W trim it as in a stroke; Fn+E takes the depth, without
+  a step of the dip scale. The machine stops, the pen lifts, the cap is
+  dipped and the run draws at that trim, which the keys still move. A hold
+  nobody takes goes on in another `window_s` goal; a land, a latch or a
+  cancel ends it untaken, and the run holds again when it goes on. Its
+  `depth_hold` ledger rows (`holding`, then `taken` or `left`) keep a resume
+  from asking again and give the viewer's trim cell its text while it waits:
+  `depth +0.75 · Fn+E takes`, yellow, or `depth -2.75 held -2.50 mm` when
+  the skin read holds the keys back. A rehearsal (the machine off) and a
+  program for silicone hold nothing; to practise on silicone, compile the
+  design with `--ink-substrate human_skin`.
 - The keys are F13-F18, which no typing sends, so the keyboard is never
   grabbed. Fn never reaches the host: the keyboard's own keymap (VIA) puts
   F13-F18 on Fn+W, S, X, E, Q and Enter. `ros/tatbot_keys_relay` on the station node reads every keyboard's
@@ -930,7 +943,8 @@ resume starts each cartridge at its last one; a new run starts at 0.
   `/tatbot/keys/<arm>`. A held key sends once; no other key is sent. The
   keypad takes datagrams from `keypad.from_addr` alone, which `tatbot ros up`
   resolves to the station node's `lan` (unset: this host only), as the e-stop
-  reader takes its relay's frames alone.
+  reader takes its relay's frames alone. The keys are the drawing arm's, the one
+  arm `stack.yaml` `arms` drives.
 
 A riding stencil diagnostic can carry `writing_height_reference`: a completed
 run id, the digest of a `page` that run measured and a positive lift of at most
@@ -945,7 +959,9 @@ local writing experiment, never an adopted TCP or page calibration.
 
 **The tattoo machine** runs only inside a riding draw's op loop. The switch is
 `stack.yaml` `machine`: `pi`, the palette Pi's machine relay (§7), or `sim` on
-mock and fake hardware, for the arm it names.
+mock and fake hardware, for the drawing arm, the one arm `stack.yaml` `arms`
+drives. With a machine switch or a keypad, the launch refuses a stack that
+drives more than one arm.
 - **On** before each stroke goal is sent, which the switch must report within
   `machine.confirm_s` (2 s); the pen-up travel and descent that follow give it
   time to spin up. A machine not reported running pauses the run with the
@@ -1055,7 +1071,15 @@ surface (`tatbot_motion.surface.PageSurface`, `tatbot_session.curved`):
   after a reading within 1.5 mm of where the last aimed. On a forearm's
   flank (2026-10-20) readings 7.9-19.7 mm apart had taken the tip 8.7 mm down
   by their median, to 4.8-7.1 mm over the skin by its fields.
-- The holds after a setup's first fly there open-loop and unguarded. Inside
+- The holds after a setup's first fly there open-loop and unguarded. Each
+  starts 0.5 mm (`HOLD_NEAR_SKIN_M`) over the skin the nearest firm reading of
+  the setup put within 28 mm (`HOLD_NEAR_M`, one grid step; `_skin_near`):
+  one taken before the hold the pen stands at when one is that near, as the
+  hop planned ahead from that hold saw (planned afresh after the hold's own
+  reading moved the start, ~1.2 s, 13-15 holds a setup), else that hold's
+  own. On the bef888 silicone (2026-10-25) a 21-hold setup's re-holds went
+  from 12-13 to 1-2; replayed over 83 curved setups (638 later holds),
+  218 to 137, starts under 7 mm 52 to 27. Without such a reading, inside
   the patch of the first hold that read firm (its convex hull over the page)
   each starts `touch.start_above_m` and 1.5 mm (`HOLD_SKIN_M`) over that
   hold's own skin, a quadric through its patch (`_first_skin`), along its
@@ -1077,14 +1101,16 @@ surface (`tatbot_motion.surface.PageSurface`, `tatbot_session.curved`):
   under 9.1 mm over its field (by the stand rule alone: 8.1; median 12.2,
   was 15.8); no step toward the skin was taken on frames that disagree.
 - The skin each hold sees, carried into the base by its pose and pinned at
-  the tip, is fitted as a degree-4 height field over the page set up, skin
+  the tip, is fitted as a spline height field over the page set up (as stiff
+  as the holds' own skin allows: each hold is predicted from the others), skin
   past the print (the mat) left out; the page record holds it, a resume
   restores it and its re-gauge refits it. Its set-up line gives the field's
   relief along the program's strokes, beside the gauge points' span, and
   over all the skin fitted: that skin reaches the forearm's flanks, and a
   14 mm heart's fields spanned 0.8 mm along its strokes where their extent
   read 18-24 mm (2026-10-21). The page plane through the gauge points is
-  only the field's base frame: the field's own constant and slope terms
+  only the field's base frame (points in a line, under one stroke, fix only
+  the tilt along it: about it the plane keeps the overhead's, `fit_plane`): the field's own constant and slope terms
   carry the height and strokes are lifted off the field alone; only a
   clearance past the field's extent (a liftoff, `height_over`) measures
   from the plane. A field held to its holds' span would be wrong on a
@@ -1120,7 +1146,10 @@ surface (`tatbot_motion.surface.PageSurface`, `tatbot_session.curved`):
   absent surface plans exactly as the plane.
 - A stroke point farther than `page.surface.reach_m` (20 mm) from every hold
   (its gauge point where the page in use puts it, moved by the holds' shift)
-  is refused (an extrapolation), and with `check` holds at the
+  is refused (an extrapolation). A hold that reads nothing at any of its
+  three places first gets replacements after the last hold (`curved.refill`,
+  up to 6): each 6 mm clear of every place that read nothing, where it brings
+  the most stroke points within 18 mm of a hold that read. With `check`, holds at the
   corner edges' midpoints read the skin against the field before any stroke,
   each 10 mm over the field just fitted along the holds' page normal (at the
   holds' depth over a page tilted off a forearm's flank they stood 5.6-7.9 mm
@@ -1172,7 +1201,7 @@ surface (`tatbot_motion.surface.PageSurface`, `tatbot_session.curved`):
   ride along the drawing (`curved.turned_lift`: linear between the two,
   held beyond, never deeper; `page.surface.turned`), and the skin watch and
   the ride take it out where they read, as they take out `rise_m`.
-  `tatbot ros touch --arm right` runs the setup alone (its holds about the
+  `tatbot ros touch` runs the setup alone (its holds about the
   page centre).
   - Five holds carry a human forearm under a 30 x 30 mm design. Synthetic
     arms of 30-60 mm radius, tapering 3%/cm, their axis tilted 10-15° along
@@ -1203,8 +1232,8 @@ surface (`tatbot_motion.surface.PageSurface`, `tatbot_session.curved`):
     `ambiguity_m` (1 mm) or `ambiguity_rad` (0.1) apart at the design's
     points, the holds decide. Along the arm the two agree. Across a 30-40 mm
     arm, a move of two or three millimetres sets the page up again. (Each of
-    these, and each stop below, twice what it was before the owner doubled
-    every stop, 2026-10-20.)
+    these, and each stop below, twice what it was before every stop was
+    doubled, 2026-10-20.)
   - Each curved hover also reads the skin about the tip (five pooled frames,
     the ring 8-20 mm from it) against the surface in use: the needle's ride
     off its plan if the stroke went down now, net of what the pen already
@@ -1230,7 +1259,7 @@ surface (`tatbot_motion.surface.PageSurface`, `tatbot_session.curved`):
     a robust line over 3 mm of arc either side (`curved.ride_profile`). The
     stroke and the continuations it joins ride that profile point by point
     (`curved.Ridden`, a `sent` row's `ride_m` its least): rising freely,
-    under its plan at most `profile_lower_m` (1 mm, owner). Where its own
+    under its plan at most `profile_lower_m` (1 mm). Where its own
     views read no skin (the 8 mm the pen hides: most of a 10 mm stroke) it
     borrows the skin the page's frames of earlier strokes read (hovers, second
     views, lifts; carried by their own poses alike), newest first, within
@@ -1276,7 +1305,7 @@ surface (`tatbot_motion.surface.PageSurface`, `tatbot_session.curved`):
     tattoo 17 of 34 hovers read the skin 1.0-2.3 mm over the field, under the
     stop, and each of those strokes went in that much past its plan; the
     operator's trims there (+0.7 to +1.0 mm) did by hand what this does, so a
-    resume keeping them rides twice. The deeper side is not the owner's 5 mm: the
+    resume keeping them rides twice. The deeper side is not the 5 mm first asked for: the
     3RL rides its tube 5 mm over the field and its needles reach 4, so a skin
     5 mm over would take the whole reach; 2.5 mm is the operator's deepest
     rung (1.5 mm in). Judged gross at 2 mm, the watch stopped a forearm
@@ -1466,13 +1495,14 @@ read near its printed place):
       one marker a reading, went in a little at a time over some 17 s; now in
       about 2. Over every recorded run it fires three times and moves no
       stroke end: a correction applies only at a stroke's start.
-    - With `cameras` (`wrist_lower`, the D405 mounted under the pink wrist
-      turned 180°), each hover and lift also reads the print through that
+    - With `cameras` (`wrist_1`, the second wrist D405, turned 180° from
+      the session camera), each hover and lift also reads the print through that
       camera, as the session camera's `wrist_tap.preview` has it open
       (640x360, 15 fps), and the filter takes it with an offset of its own:
       the mount stands where the URDF puts it until its gauge is calibrated
-      (`wrist-gauge-<arm>-<role>.json`; until then the session camera's
-      calibration, carried by the URDF). The stroke ends, the skin and the
+      (`wrist-gauge-<arm>-<role>.json`, from `calib wristcam --camera <role>
+      --adopt` and `calib gauge --camera <role>`; until then the session
+      camera's calibration, carried by the URDF). The stroke ends, the skin and the
       print's reads stay the session camera's, and a stop's verdict is the
       best of its views', so a print one camera misses on the curve but the
       other reads goes on.
@@ -1497,7 +1527,55 @@ read near its printed place):
     checks between strokes (the sheet followed, or the page set up again),
     with no decision asked. A silicone skin pushed ~30 mm round a bottle
     mid-stroke (2026-10-24) was read by the overhead and four wrist readings
-    within 5 s and drawn on 8 s more, until the e-stop.
+    within 5 s and drawn on 8 s more, until the e-stop. A reading that puts
+    the print that far from where the filter has it, held for a second to
+    agree, stops the stroke too: the pen does not ink on while it waits, and
+    the hover it lifts to looks again. A held reading stops one stroke; one
+    the hover does not confirm stops no more.
+  - **A move the wrist reads past `stop_m` moves the page.** When a hover's
+    reading is taken and the filter's sheet then stands the drawing past
+    `page.track.stop_m` from where the page has it, the page in use follows
+    the filter's sheet at once, its skin's field with it, and the hover is
+    measured again on it; no overhead reading is waited for. Under `stop_m`
+    the filter's correction moves the strokes' points, as before. On a
+    curved page a stroke whose points alone moved 30 mm rode the skin where
+    the holds measured it. A print that slid over a skin that stayed is told
+    by that hover's skin reading, which sets the page up. In the simulator
+    (`xarm-mount-shove`, the fixture pushed 30 mm and turned 0.1 rad while a
+    stroke's goal runs, 0.6 s before its line) the stroke stops 0.8 s after
+    the push begins, 0.6 mm of line lie off the design, and the strokes
+    after land within 0.7 mm of it, the first of them drawing 10 s after
+    the push. A push that begins 0.2 s before the line is read too late to
+    stop that stroke: its readings of the moved print are not accepted
+    until the stroke after, and 7 mm of line lie off the design. Without the stop no stroke
+    stopped, 13 mm lay off it, the strokes after stood 3-4 mm off and the
+    first on the design drew after 26 s. Pushed while the pen comes down
+    (`xarm-mount-shove-late`), the goal stops before the line starts and no
+    ink lies off the design. A stroke stopped on a held reading looks from
+    the second view first; the filter opens to the size of the jump two
+    readings agree on (at `open_m` alone it took 23 mm of the 30); the
+    wrist reads the print through a stroke's descent and settle as well as
+    its line; and what the tracker read in the arm base before the page
+    followed (the skin about the tip and along the strokes) is dropped,
+    as a re-track drops it. In the simulator a page set up again mid-draw
+    is set up where the scenario first put it: a set-up after a shove is
+    not simulated yet. On the rig (2026-11-12, a hover rehearsal on the
+    silicone skin, the holder pushed 19 mm and turned 7 deg while the pen
+    came down) the goal stopped a second after the first reading, before
+    its line, and the page stood within 0.5 mm 15 s after the stop. The
+    overhead's readings from before the push then stood a stroke's stop off
+    the followed page and re-tracked it, 26 s more: since then the
+    overhead's watch and its follow judge only the readings taken after a
+    wrist-led follow: the next pushes of about 2 cm resumed 15 to 17 s
+    after their stops. A push of 5 cm and 19 deg between strokes left the
+    wrist no print to read and was set up afresh, 2 min 43 s. One of 17 mm
+    with a 13 deg turn was followed by its slide alone (a reading is the
+    residual at one point) and stopped again 30 mm on, when the turn had
+    shown: a reading of three markers or more now also gives the filter the
+    print's own turn on the page (`PageFilter.turn`), taken only past
+    `turn_gate_rad` (0.08). Still open: after a push that leaves one marker
+    in the wrist's view (22 mm and 22 deg) every reading is refused as one
+    marker alone, nothing stops the stroke, and the page is set up afresh.
   - A pen-down chain keeps one snapshot of the filter. A pre-plan whose correction moved more
     than `replan_m` (1 mm) by its dispatch is planned again: at 0.3 mm the
     wrist's own scatter re-planned 3-6 strokes of each still silicone run,
@@ -1539,7 +1617,7 @@ on three forearm sessions (2026-10-19/20, the overhead at 1 Hz) breathing
 moved the print only 0.1-0.3 mm, but it swayed 0.4-0.9 mm (sd) over ~20 s,
 drifted 0.5-1.5 mm/min one way for up to 17 min, and stepped 1-4 mm, most
 steps staying put. So the page follows the drift and is set up again only for
-a move that lasts, with no operator in the loop (owner, 2026-10-20: "I prefer
+a move that lasts, with no operator in the loop (2026-10-20: "I prefer
 automatic"):
 - **The drift is followed.** Before a stroke descends, its pen lifted, the
   median of the newest 20 s of readings (`follow_s`; through a gap, while the
@@ -1557,8 +1635,8 @@ automatic"):
   person took back is none, and one that stays is off the page until it is
   set up, however long ago it came (a pause, two minutes or more without a
   stroke). The page lags the sheet up to `follow_m`; at 3 mm three of 31
-  references on a lively forearm fired on that lag and sway, and the owner
-  doubled each of these on 2026-10-20 ("if it's 1 millimeter, make it 2")
+  references on a lively forearm fired on that lag and sway, and each of
+  these was doubled on 2026-10-20 ("if it's 1 millimeter, make it 2")
   but `rise_m`: a rise is depth, and a hover whose gauge reads no skin has
   no other bound on it, the 3RL's needles reaching 4 mm from a tube 5 mm over
   the field (a rise alone set none of that day's runs up again). A move read but
@@ -1588,7 +1666,32 @@ automatic"):
   (the skin's shape under the strokes is the holds'; a 15 mm slide put a
   turned print 2 mm off) or past
   `page.replan_translation_m`/`replan_rotation_rad` (50 mm, 0.17 rad) of a
-  flat one (owner, 2026-10-19: "big move should set up again").
+  flat one (2026-10-19: "big move should set up again").
+- **Such a move is first re-tracked** (`_retrack`, `page.track.retrack_m`
+  50 mm; 0 always sets up afresh): for the watch's moves and a hover's that
+  lost the print, once the overhead's newest five readings of the markers
+  agree (each within 2 mm and 2° of their median at the drawing; waited for up
+  to 15 s, the view cleared for them), the page in use is carried by their
+  move in its plane and along its normal, its skin's field riding on it, from
+  the page as set up. The watch starts again from those readings, the
+  filter's sheet within the carry's error (3 mm, 3°) while its arm's part
+  and the cameras' offsets stand, and the next hover's wrist reading must be
+  taken on it before the stroke goes down; one that is not, an unsettled
+  move, one past `retrack_m` or 20°, markers bent past `bend_m`, or an inking
+  pen's print that would turn round the arm (`_rolled`) sets the page up
+  afresh. Replayed on the corpus's 20 mid-run set-ups (2026-10-24), the 12
+  whose moves settled under 50 mm carried the page 0.7-4.4 mm (median 1.9)
+  from where the set-up's holds put it at the drawing's corners, 1.9 mm along
+  the normal at most (up to 9 mm without the rise) and 5°; the rest moved on,
+  moved 76 mm (10 mm off), or read a second copy of the print 154 mm off. The
+  first five readings after the call, unsettled, put one limb 32 mm off.
+  Turns carried as well as slides: 15° (a mount, 2026-10-24, first refused at
+  10°) and 19.6° stood 1.4 and 0.8 mm off the holds' page; none turned more. A
+  rise also reads as a slide across the overhead's rays (h tan of its view);
+  taken out, the carries stood farther from the holds (median 3.4 mm against
+  2.6), so it stays in for the hover's reading to take. A forearm's 45 mm,
+  8 mm-deep move set up afresh took 2 min 27 s, 53 s of it holds that placed
+  no print.
 - Replayed through the stroke loop (`refresh_page`, `_off_plan`,
   `_watch_sheet`, the tracker's field) over the 2026-10-19/20 runs: no set-up
   and no pause on still silicone (four runs). The left forearm's 9 strokes:
@@ -1634,7 +1737,13 @@ past `page.replan_*`. A set-up:
   stopped a draw while its markers' pixels stayed within 1.2 px.
 - The reference (`ArmExecutor._mark_reference`, the page row's
   `overhead_marks`) is each marker corner's median over the overhead's
-  newest 20 s of readings during setup, kept after the last hold, with the
+  newest 20 s of readings up to the holds that place the page, and the watch
+  reads from those holds on, so a sheet moved under the set-up's checks after
+  them reads as a move (2026-10-24: a silicone mount slid 65 mm under a curved
+  page's check holds was the reference taken at the set-up's end, and its
+  first stroke went down 65 mm off; replayed from the holds, the first
+  stroke's watch fires, and 60 still set-ups of the corpus drift 0.1-1.6 mm
+  between their holds and their end with no watch firing). It takes the
   markers those lacked from the setup's other readings that read the sheet
   where they do (within `follow_m`, `follow_rad` and `rise_m`,
   `geometry.marks_extended`). Past the arm the overhead reads two or three of
@@ -1704,8 +1813,9 @@ down. Smaller moves are the watch's and the hover's: the tracking jumped ~13 mm
 twice while the arm was over the page (2026-09-26).
 - The arm hides the page for up to 105 s. While it is hidden, the last
   measured pose stands.
-- Motion during a stroke is logged, never a reason to stop: page motion is
-  tracked and followed, and contact force is capped mechanically. Every op is planned from the arm's measured
+- Page motion is tracked and followed, and a sheet that moves under a stroke
+  past `page.track.stop_m` stops it (§4.4); contact force is capped
+  mechanically. Every op is planned from the arm's measured
 joints while the previous op is still running, then checked against the
 measured pose at dispatch:
 
@@ -1721,7 +1831,7 @@ at 400 Hz.
 
 | Op | Motion (initial values; the tuning source is `tatbot_motion/config/motion.yaml`) |
 |---|---|
-| `stroke` | 1. Pen-up travel to 10 mm above the start: tip ≤ 120 mm/s, joints ≤ 1.0 rad/s, one accelerate/cruise/decelerate profile.<br>2. Descend at 10 mm/s; the last 5 mm at 3 mm/s.<br>3. Settle at touchdown: 1 s pressing, 0 s riding.<br>4. Draw at the program speed (3.5 mm/s default; tip ≤ 20 mm/s, joints ≤ 0.375 rad/s) with quintic end eases and corner slow-downs (velocity-change budget 10 mm/s², S-curve ramps 0.2 s).<br>5. Lift 10 mm at 10 mm/s.<br>An op with `continues` starts pen-down where the previous op ended: the previous op skips step 5 and this op skips steps 1–3. |
+| `stroke` | 1. Pen-up travel to 10 mm above the start: tip ≤ 120 mm/s, joints ≤ 1.0 rad/s, one accelerate/cruise/decelerate profile.<br>2. Descend at up to 30 mm/s; the last 5 mm (`approach.final_m`) at 3 mm/s, which a needle cartridge's running needles first meet the skin inside at every trim the depth keys reach.<br>3. Settle at touchdown: 1 s pressing, 0 s riding.<br>4. Draw at the program speed (3.5 mm/s default; tip ≤ 20 mm/s, joints ≤ 0.375 rad/s) with quintic end eases and corner slow-downs (velocity-change budget 50 mm/s², S-curve ramps 0.2 s), each point of a fading stroke `(1 - deposition)` of the tool's `fade_lift_mm` higher (4.2).<br>5. Lift 10 mm: the first 3 mm (`approach.lift_first_m`) gently, then at up to 30 mm/s.<br>An op with `continues` starts pen-down where the previous op ended: the previous op skips step 5 and this op skips steps 1–3.<br>With `motion.yaml` `draw.ends: fly` (default `stop`, the recipe above) an end where the pen comes down or lifts is drawn moving: the descent of step 2 ends `draw.fly` `band_m + clear_m` (2 mm) over the path and that far behind the first point along the stroke's tangent that the pen, eased from rest there over `ease_s`, is at the draw speed before it comes down through the marking band over `glide_m`, reaching its path `inset_m` inside the stroke; the end mirrors it and step 5 lifts from that height. The eases are off the skin and nothing dwells in the band. An end joined to its neighbour or resumed part-way, a stroke shorter than its flying ends' insets, an end whose run would leave the page's clear area, and a flying plan the planner or the collision guard refuses all stop as above; the plan's `info["ends"]` and the op's `op_sent` line say which. `tatbot ros draw --ends stop|fly` sets one run's ends over the stack's `motion.yaml` (the program's `draw_ends`; its `stats.dose` stays as it was compiled). `corners.blend_radius_m` (default 0) cuts each pen-down corner by an arc of that radius, at most half the stroke's generation width. |
 | `tool_change` | Nothing, or land for the operator to fit the next cartridge (below). |
 | `dip` | Lift from the page, rise over the station, travel to the cap's hover, descend along its axis, dwell, withdraw along the axis, return to the page standoff (§6). |
 
@@ -1753,9 +1863,9 @@ at 400 Hz.
   says which cartridge to fit and lands the arm (the driver's sleep pose, controller
   idle); the goal ends `landed`. The operator fits it and resumes the run:
   a `sent` tool change at the head of a resume is taken as made. Another tool
-  (not just another ink) must first be fitted in `config/workspace.yaml`,
-  deployed and calibrated; the executor refuses a resource whose tool is not
-  the fitted one.
+  (not just another ink) must first be fitted (`tatbot ros cartridge fit`) and
+  its tip measured; the executor refuses a resource whose tool is not the
+  fitted one.
 - **Retained page.** Every page setup writes a `page` row (the page record and
   the arm's `workspace.yaml` section). A resume with the same fitted tool and
   calibration uses that page again, after a fresh camera pose shows the sheet
@@ -1826,9 +1936,14 @@ mapped onto the page plane at 10 px/mm through FK of
 (the plan and the clear-centre outline on it). The pose is the reachable one
 nearest the sleep pose, with free roll about the view axis, keeping the camera
 and wrist links on the arm's own side of the design (base −y), clear of the
-palette mid-table. The camera sits ~48° off the pen, ~160 mm short of the tip, so the
+palette mid-table. Its moves do not go through the session's guarded goals, so
+every view and close-up hold keeps the wrist inside the fixed
+`inspect.WRIST_RANGE_RAD`, which needs no page to be right: past it a view is
+skipped and a hold stops before it moves. The camera sits ~48° off the pen, ~160 mm short of the tip, so the
 nearest pose with the pen 15 mm clear is ~180 mm out: ~3.7 px/mm, enough for
-gaps, blobs and placement. `analysis.json` holds where the print is against
+gaps, blobs and placement. Its ink share is a coverage check, not a measurement:
+it counts dark print markers as ink and does not resolve thin or wet lines (53-66%
+on a fade ladder the eye read as 14-21%, 2026-11-03). `analysis.json` holds where the print is against
 the page the run used (`border`, for its readers: each view's tile markers,
 `fiducials.stencil.fit`, combined over poses as §4.3's locate combines them),
 the ink's shift against the plan, measured about the design centre the views
@@ -1864,10 +1979,29 @@ bridge shows the same data live.
 
 ## 5. One arm
 
-The stack drives the pink (right) arm alone (`tatbot_description.names.ARMS`).
-The blue (left) arm is the teleop leader on the arm node (cpp/teleop), never on
-this stack, and nothing here models it: no description, controller, collision
-body or wrist target.
+The stack drives one arm, `stack.yaml arms`: the xArm 7 (`xarm`), which the
+file names, or the WXAI follower (`right`), the arms of
+`tatbot_description.names.ARMS`, which programs may name too
+(`tatbot_contracts.ros_program.ARMS`).
+
+**That line is the one place that says which arm draws.** Its first entry is
+the drawing arm, and everything that is given no arm reads it there: `tatbot
+ros up` brings that arm up, every `tatbot ros` verb's `--arm` defaults to it
+(`tatbot_cli.stack.drawing_arm`), as do the stack's own commands (`client`,
+`page_watch`, `register`, `mock_check.py`: `tatbot_description.drawing_arm`),
+`tatbot ros status` reports it as `arm`, which is how the station's agent
+knows whose `SafetyState` to read and which arm to land, and `tatbot rig
+check` expects that arm's controller to answer the ros node. To draw with the
+WXAI follower, name it: `tatbot ros up --arms right`, then `--arm right` on
+each verb (a program is prepared for one arm, and a draw refuses another's);
+to make it the default again, change the line. A stack brought up for one arm
+does not take a goal for the other. What each joint is, its rest,
+posture and guard delay come from its model (`config/arm-models/`), its
+description from the model's URDF, and its page, trim and registration from its
+own `stack.yaml` keys. `real` hardware takes the model's `controller`:
+Trossen's SDK or UFACTORY's (`XArmBackend`). The blue (left) arm is the
+teleop leader on the arm node (cpp/teleop), never on this stack, and nothing
+here models it: no description, controller, collision body or wrist target.
 
 ## 6. Ink and dipping
 
@@ -1876,28 +2010,103 @@ Every tool datasheet declares how it gets ink:
 | Supply | Tools | In a program |
 |---|---|---|
 | `none` | laser prop | No ink ops. |
-| `cartridge` | ballpoint | No dips. Another ink is a `tool_change`: the arm lands and the operator swaps the cartridge. |
+| `cartridge` | a self-inking cartridge (none in `config/tools/` today) | No dips. Another ink is a `tool_change`: the arm lands and the operator swaps the cartridge. |
 | `dip` (`ink.mode: real`) | 3RL needle cartridge | A `dip` before its first stroke and whenever the next contact would pass its `mm_per_dip`; the operator's dip scale moves them while it draws (below). A one-pen program for the fitted tool names no cap and never dips (a dry pass). |
+
+**Ink order.** A lighter ink is never drawn over a darker one's mark. Needles
+that run through wet darker ink smear it into their own line and carry it back
+to their cap at the next dip: a red drawn along the black laid before it turned
+the red cap dark (2026-11-10). The compile takes the inks in the order they
+draw, each at its mark (the width the passes are counted at), and refuses a
+lighter ink (10 or more L\* lighter) whose mark overlaps a darker one drawn
+before it by more than 0.5 mm². `stats.ink_order` records the order and each
+such pair's overlap and verdict. Three things satisfy it:
+
+- the lighter ink first, which is how `tatbot art separate` orders a design;
+- a design separated for the dark ink first, the lighter one kept clear of
+  it (`tatbot art separate --overlap-mm=-0.3`, a gap in place of the
+  underlap): the marks then do not overlap;
+- a wipe between them. In one program the lighter ink's resource says
+  `wipe_before: true` in the inks file; its `tool_change` carries `wipe`, and
+  the landing that asks for the cartridge asks for the wipe first. It needs
+  that landing, so a resource that rinses, or the same tool and ink, cannot
+  ask for one.
+
+A second program on a print that already holds a run's ink names what was
+drawn there, oldest first: `tatbot ros compile ... --after
+<earlier>/program.json`, with `--wiped` when the print was wiped since. The
+same check then runs across them, and `preparation.drawn_after` records the
+earlier programs' digests. Nothing tells a fresh skin from a drawn one of the
+same print, so without `--after` a program is checked against itself alone.
+
+**Line per dip.** A dip takes the same load whatever follows it, so a dip
+that draws a short line lays the rest at that line's start. `stats.line_per_dip`
+says, for each dipping resource, how much line its dips draw (min, median, max)
+against its `mm_per_dip`, how many draw under half of it, and the length of
+the stroke that takes each fresh load. On 2026-11-10 the red's 64 dips drew
+from 1.2 to 60 mm, eight of them under 30 mm. It is a report: the dwell is not
+varied by the line ahead until the lab has a curve of load against dwell.
+
+**Borrowed dips.** A cartridge whose datasheet says its dip values are another
+cartridge's (`dip.card.status: borrowed`) is refused for a design until its
+dip card is read (`tatbot lab propose STUDY --dip-card <tool>`, `docs/lab.md`).
+`--allow-borrowed-dip` draws on them anyway; `tatbot lab` always may, since
+its trials are how the cartridge's own values get measured. A borrowed
+cartridge drawn dry, with no cap, is not refused.
 
 **Cartridge swaps.** A program with several pens binds each to a resource
 (§4.2). At a `tool_change` to another resource the executor lifts, lands the
 arm and ends the goal, naming the cartridge to fit. Fit it, then
-`tatbot ros draw program.json --arm right --resume <run>`: the resume is the
-acknowledgement, and the run's measured page is used again (§4.4), so a colour
-swap of the same ballpoint takes no calibration and no page touches. The
-Inlumino saturated colours share `lutin-ballpoint-dot`; their seating differs
-by less than the tip calibration's uncertainty. A resource on another tool
-must first be the arm's fitted tool (`config/workspace.yaml`, `tatbot ros
-deploy`, `tatbot ros up`, `tatbot ros calib run`); the page is then touched
-again. There is no automatic changer and no wipe.
+`tatbot ros draw program.json --resume <run>`: the resume is the
+acknowledgement, and the run's measured page is used again (§4.4), so a
+cartridge swap on the same tool takes no page touches. It can still need the
+tool calibrated again: a fresh 3RL on the xArm (2026-11-09) seated its tube's
+end about 2 mm across from the last one's (the tip sweep: +1.9, +0.6 mm), and
+the ink landed 2-3 mm off the plan while the wrist tracker, which carries the
+last cartridge's tip, held it on the plan within 0.2 mm. After a fresh
+cartridge: `tatbot ros cartridge fit <tool> --arm <arm>` (the same tool for a
+fresh one of its type), `calib sweep`, `calib apply` (`--across-only` when the
+tube is longer but the needles land where they did), the station touch and its
+height, then each wrist camera's `calib wristcam` and `calib gauge`: a gauge
+file holds the tip in its camera's frame as the TCP stood when wristcam ran,
+and the tracker steers by it. `calib wristcam` pins its fitted mount to the
+pen's end as its own frames show it (`tatbot_calib/seen.py`): the fit alone
+put the TCP at pixels 3.4 mm apart from run to run, the pen's end stands
+within a pixel; and to the depth its depth frames show the pen at, which
+`calib gauge` then reports against the arm's heights and leaves alone.
+`calib apply --derive-gauges` moves each gauge's
+tip as the adopted tip moved, through the camera's hand-eye in its file, in
+place of those two runs per camera; without the flag `apply` leaves the gauges
+and says what each would become (`scripts/lib/gauge_derive.py`; the flag stays
+off until a derived gauge has been checked against a measured one on the rig).
+`tatbot ros cartridge status` names whichever of
+these still predate the cartridge. A resource on another tool is fitted and
+measured the same way; the page is then touched again. There is no automatic
+changer and no wipe.
+
+**The fitted cartridge** lives on the ROS owner, not in git. `tatbot ros
+cartridge fit <tool> --arm <arm> [--instance LABEL]` records it in
+`~/tatbot-ros/calib/cartridge-<arm>.json`, which deploy never touches. It
+starts from the last tip measured with that type there (`carried`), else its
+datasheet's nominal tip (`nominal`), and `calib apply` writes a measured tip
+into the same record. Every reader on the owner sees the record over
+`config/workspace.yaml`'s `tool_id` and tip keys (`tool_spec.read_workspace`,
+`scripts/lib/cartridge_fit.py`), and the robot description renders the tool's
+URDF block from it at each start. Both verbs restart a running stack with its
+own flags, its arms landed first, and are refused (exit 6) while a draw, touch
+or calibration runs. No commit, land or deploy: `config/workspace.yaml` in git
+is the seed, copied into the record by the arm's first fit or adoption.
 
 **Rinses.** A dipping cartridge can change ink without a landing: a resource
 whose `activation` is `{method: rinse, slot: <cap>, ink_id: water}` in the
 `tatbot-inks/3` file takes the cartridge from the last ink by a rinse in that
 cap. At its `tool_change` the executor dips there once (§6's dip, every check
-included) with the tool datasheet's `rinse_dwell_s` (the 3RL: 10 s) and the
-tube's end `rinse_above_ink_m` over the declared water (0: at it), the machine
-running so the needles flush the tube, then goes on to the next ink's dip. The
+included) with the tool datasheet's `rinse_dwell_s` (30 s on every needle
+cartridge) and the tube's end `rinse_above_ink_m` over the declared water (0:
+at it), the machine running so the needles flush the tube, then goes on to the
+next ink's dip. That first dip holds the datasheet's `rinse_first_dip_dwell_x`
+(2 on every needle cartridge) times the ink's `dwell_s`, the activation's
+`first_dip_dwell_s`, so the rinsed cartridge takes up its colour (2026-11-02); the dips after it hold the ink's own. The
 water cap is declared like any other (`tatbot ros palette load
 inkcap_large_1=water --level-mm ...`). An interrupted rinse withdraws and
 rinses again; a resumed run whose rinse was left `sent` rinses again.
@@ -1917,8 +2126,8 @@ commands, to `~/tatbot-ros/calib/station-touch-<arm>.json`
 that. The caps follow from the URDF offsets about the touched ball, and the
 arm's kinematics and the tcp's length cancel over the 40 mm to a cap. Each
 dip's fresh overhead fix supplies the palette's yaw and refuses the touch when
-the palette moved since (2 mm, 1°; twice the fix's repeatability since the
-owner doubled every stop, 2026-10-20), or the tool, joint offsets or
+the palette moved since (2 mm, 1°; twice the fix's repeatability since every
+stop was doubled, 2026-10-20), or the tool, joint offsets or
 registration changed. A palette moved less, past the fix's 1 mm, carries the
 ball across by the fixes' own shift (8 shots repeat to 0.1 mm); a tcp moved
 under 5 mm (a probe calibration adopted since) carries the ball with it. The touches cannot measure the ball's top, so
@@ -1935,8 +2144,11 @@ a cap's floor.
    `config/palette.yaml`, its ink level from the owner's palette load. The tool
    is its datasheet's body of revolution ending at the loaded TCP.
 2. Approach: lift off the page to the standoff, rise until the tool's lowest
-   point clears the station's top, turn to the dip's heading, cross to over the
-   cap and come down its axis to `hover_m` over the rim. The heading is the
+   point clears the station's top, cross to over the cap turning to the dip's
+   heading on the way (at the safe height, every tick checked; a turn in place
+   first took ~2.6 s each way and two more stops, 2026-10-25), and come down its
+   axis to `hover_m` over the rim; the return turns back to the page's attitude
+   while it crosses alike. The heading is the
    touches' and no other: there the tip's error across the tool's axis
    cancels, and a turn moves the tool off the cap's axis by twice that error
    times the sine of half the turn (the 3RL's tip read ~10 mm off on
@@ -1945,7 +2157,13 @@ a cap's floor.
    The dip's event names its heading.
 3. Descend the axis until the tool's end stands `above_ink_m` over the
    declared ink, dwell `dwell_s`, retract to the hover, and return to the page
-   standoff it left. The return is judged once the arm settles there, within
+   standoff it left. A dip with a `drain_s` drains between the dwell and the
+   retract: the tool's end rises to `drain_above_rim_m` over the rim and holds
+   there `drain_s`, so what the needles carry beyond the tube's hold falls
+   into the cap, not onto the skin. No datasheet states a `drain_s` yet, so
+   no dip drains until a lab drain ladder gives its cartridge one (a
+   datasheet without `drain_above_rim_m` drains 3 mm over the rim); a
+   program whose dips do not drain carries neither key. The return is judged once the arm settles there, within
    2 mm and 0.010 rad (`dip.RETURN_M`, `RETURN_RAD`): its quintic stop from
    ~118 mm/s rings joint 4 at ~6.5 Hz for ~0.5 s, and two returns read as
    their goals ended (1.09, then 1.66 mm off) ended a forearm tattoo with the
@@ -1956,7 +2174,7 @@ a cap's floor.
    hover, a descent or dwell more than 1 mm over its dwell height, the tool
    off the axis) withdraws and dips again once with no key; a second one, a
    latch or a tick's fault waits for continue or land.
-4. The machine runs only for the dwell, and only when the datasheet records
+4. The machine runs only for the dwell and the drain after it, and only when the datasheet records
    `needle_reach_mm`: the tube's end holds over the ink and the needles'
    strokes pull it up into the tube (operator, 2026-10-04). A recorded reach
    must reach the ink and stay off the floor. With none the dwell holds with
@@ -1973,13 +2191,14 @@ a cap's floor.
    nozzle in one view, the evidence of where each dip went.
 
 The first dips (2026-10-05, empty caps, the machine off) ran every phase on
-the pink arm at about 70 s a dip from the page and back.
+the WXAI follower at about 70 s a dip from the page and back.
 
 The settings are the tool datasheet's `dip:` block (`tatbot_contracts.dip`),
 which the program carries per resource: `above_ink_m`, `dwell_s`, `hover_m`,
 `speed_m_s`, `wall_margin_m` and `mm_per_dip`, the latter from
-`mm_per_dip_by_ink` once measured for the ink. Measure `mm_per_dip` on the
-bench: dip, draw a long line at the working speed until it fades, repeat, and
+`mm_per_dip_by_ink` once measured for the ink, and `mm_per_dip`, `dwell_s` and
+`above_ink_m` from the resource's own `dip:` where the inks file sets them
+(§4.2). Measure `mm_per_dip` on the bench: dip, draw a long line at the working speed until it fades, repeat, and
 take a conservative length. A resource binds a dipping tool to its cap with
 `slot:`; the 3RL's cone fits the large and medium caps filled to ~70%, not the
 small ones until its silhouette is measured.
@@ -2002,7 +2221,7 @@ program's next dip. The operator answers from the drawing keys while the arm dra
   scale belongs to the program resource for the run, and a resume starts each
   at its last one.
 - Nothing changes, and a `dip` event says why, without a running draw, for a
-  cartridge that takes no dips (the ballpoint), or on `+` while a dip runs or
+  cartridge that takes no dips, or on `+` while a dip runs or
   is already asked. `-` steps whatever runs.
 - From the first press for a resource, the executor counts the line drawn
   since its last dip (any dip: the program's, the numpad's, its own) against
@@ -2050,8 +2269,8 @@ other and the tip (2026-10-01: fitted tips 64-81 mm long, joint offsets of
 either sign). Touches cancel the tip's length for drawing, but the cameras do
 not: the wrist D405 and the overhead place the skin by their own chains, so a
 wrong length reads as a page height and a hold offset (2026-10-22: the 3RL's
-tip 12.6 mm shorter than installed, the ballpoint's seat since 09-19). The
-palette camera's sweep measures the length with its tilts (below).
+tip 12.6 mm shorter than installed). The palette camera's sweep measures the
+length with its tilts (below).
 `config/workspace.yaml` `joint_offsets_rad`, when present, is applied to the
 joint origins by the generated description and the wrist observer; nothing
 here writes it. The wrist D405 stands where the URDF puts it: over eight
@@ -2075,9 +2294,12 @@ assembly, so moving one moves both, and the post rises beside the station
 where the arm's wrist can meet it (below).
 
 **Probe signal path**
-- The probe is normally closed: it reads LOW at rest and HIGH when touched,
-  like an open wire. Its output goes, through a 10 kΩ pull-up to 3V3 and a
-  Schottky diode, to the palette Pi's GPIO27 (header pin 13).
+- Merged palette v9's probe is normally open (NPN): on the pull-up it reads
+  HIGH at rest and LOW when touched, and a broken wire reads untouched. Its
+  output goes, through a 10 kΩ pull-up to 3V3 and a Schottky diode, to the
+  palette Pi's GPIO27 (header pin 13). `stack.yaml` `probe.touched` tells the
+  relay which level is a touch (`low`; `high` for the earlier normally-closed
+  probe), and a frame's state is 1 while touched.
 - The probe has its own relay instance on the palette Pi. `tatbot ros
   relay-install --probe` installs `tatbot-probe-relay`, which sends
   `PRB1 <seq> <state> <edge_ns> <now_ns>` to UDP 7641 (`stack.yaml`
@@ -2091,7 +2313,7 @@ where the arm's wrist can meet it (below).
   - It maps relay time to host time by the least-delayed frame of the last
     100.
   - It keeps 1024 ticks of measured joints and interpolates them at the
-    rising edge's stamp.
+    stamp of the edge that touched it.
 - `tatbot ros up --probe` enables it. Without it the driver has no probe, and
   `GUARD_PROBE` holds at once.
 
@@ -2140,7 +2362,9 @@ where the arm's wrist can meet it (below).
     overtravel (2 mm axial, 4 mm sideways) is damaged. Reaching the cap
     untriggered is a missing trigger, not a fault.
   - The slow leg runs at 1 mm/s. After a trip the tool backs out 3 mm the
-    way it came, and the probe must then read released.
+    way it came, and the probe must then read released and stay so 0.3 s,
+    within 2 s and three tries: its switch chatters for up to 0.9 s as a
+    3RL's nozzle leaves the stylus (2026-11-02).
 - `MODE_MOVE` travels to `start_pose` the same way and holds there (a view of
   the station). Under `PROBE`, a trip on the way is an error.
 - `MODE_VIEW` holds there too, by one joint move (`ready.view_move`, the
@@ -2168,7 +2392,7 @@ where the arm's wrist can meet it (below).
   station anywhere else is not stopped by it. The calibration keeps clear in
   five ways:
   - it measures the station fresh from its fiducials every run, never from a
-    stored pose (the plan's principle 8);
+    stored pose;
   - it uses the clearance-plane approach;
   - it refuses any route whose tool would meet a part to avoid: the palette
     camera, the e-stop, the tag, the probe's body and collar, the inkcaps and
@@ -2184,8 +2408,8 @@ where the arm's wrist can meet it (below).
     read it up to a millimetre under its top (2026-09-29). The stylus is all that stands there: the probe's body
     and collar are 23-26 mm under the top. A search pass 11 mm under a stale
     fix's ball met the probe's base the day the floor came in;
-  - it refuses any goal that brings the arm's wrist within 15 mm of the
-    overhead camera's post: the wrist's bodies (each face of the tag cube,
+  - it refuses any goal that brings the arm's wrist within 11 mm of the
+    overhead camera's post (15 mm until 2026-11-02): the wrist's bodies (each face of the tag cube,
     the wrist D405, links 4 to 6) as spheres, the post as a column 60 mm in
     radius about the camera's footprint (the arm's registration places the
     camera; the D555 cannot see its own post). Both checks run on the way
@@ -2197,9 +2421,8 @@ where the arm's wrist can meet it (below).
     On 2026-09-29 a view turned toward the post
     put the tag cube against it.
 
-**The tool.** A calibration touches the station with the arm's fitted tool,
-`config/workspace.yaml` `<arm>.tool_id`, whose tip the stack's tcp is built
-from. A stated tool (`tatbot --ee-tool`) must be that one. The datasheet
+**The tool.** A calibration touches the station with the arm's fitted
+cartridge (`tatbot ros cartridge`), whose tip the stack's tcp is built from. A stated tool (`tatbot --ee-tool`) must be that one. The datasheet
 declares the tool's contact model; `tatbot ros calib run` refuses any tool
 whose datasheet declares none (exit 3), before anything moves
 (`tatbot_calib.tool`).
@@ -2210,17 +2433,14 @@ meet the ball, the hole, the ring's middle for rim touches and the side
 touches' height up the wall.
 - **Laser:** a chrome ring 9.0 mm in radius outside around a 7.7 mm hole, the
   lens recessed in it. Emission off.
-- **Ballpoint:** a metal tip 2.4 mm long (0.45 mm across at the ball, 1.6 mm
-  at the body) under a body 3.8-4.1 mm across (`face_kind: ballpoint_tip`,
-  the palette camera, 2026-10-02). The side pairs touch the tip, the point
-  that draws, 0.8 mm up it. A side touch trips only after the arm has given
-  about 1.2 mm past first contact (`SIDE_GIVE_M`): the trips lie on a circle
-  that much inside the tip and the ball, and the touches are planned there.
 - **3RL needle cartridge:** the needles retract into the cartridge with the
   machine off, so everything touches the end of its translucent nozzle, ~1 mm
   across (the palette camera, 2026-10-05). Side pairs touch the nozzle 3 mm
   up, where it is ~1.5 mm across; the search lines are spaced by that side
   radius, so a thin nozzle cannot pass between them and the ball.
+- A side touch trips only after the arm has given about 1.2 mm past first
+  contact (`SIDE_GIVE_M`): the trips lie on a circle that much inside the
+  tip and the ball, and the touches are planned there.
 - Nothing is planned into a hole the ball could enter.
 
 **Station fix** (`tatbot ros station --arm <arm>`, `tatbot_calib station
@@ -2258,11 +2478,15 @@ adopted registration.
    staging pose when the executor plans no way there from where the arm
    stands.
 4. S1: the search, opposed side pairs 4 mm under the fix's ball, or 1 mm
-   over a lower side height (1.8 mm up the ballpoint's tip), where the stylus
+   over a lower side height (`calibration.side_touch_height_m`), where the stylus
    stands for a fix up to 2 mm off in height, from starts the tool's
    envelope clears for any ball within 12 mm. A tube's reach across a pass
    line is a few millimetres, so when no pass meets the stylus, pairs run
    along lines offset across, nearer first. These contacts go to no fit.
+   With no touch for this registration the search starts where the last
+   touch met the ball from its own fix (same registration), or, under
+   another one, at the touched ball itself, across only (FK holds no
+   registration; every setup re-registers), when the fix stands within 6 mm.
    Edge passes over the found centre bracket the ball's top, and the floor
    rises to it; opposed pairs at the tool's side height measure.
 5. S4: further upright yaws (default -60, +60, -30, +30, ... about the
@@ -2277,17 +2501,21 @@ adopted registration.
    both trip, is skipped and its contacts dropped.
 6. One fit: the tip across its axis, the ball and a side radius per yaw and
    pair axis (each direction's give differs, 1.6 against 2.7 mm half-spans
-   on pink); the tip's length, its axis and the joint offsets held. Each yaw
+   on the WXAI); the tip's length, its axis and the joint offsets held. Each yaw
    left out says how well the others predict it, and how far the tip moves
    without it.
 
 Each run writes `touches.jsonl`, `events.jsonl`, `candidate.json` and
 `report.md` under `~/tatbot-logs/ros-calib/<run>/`. Nothing is adopted by
-the run: `tatbot ros calib apply --arm <arm> --run ID` moves the arm's
-`pen_tip_offset_x/y` and `mechanical_contact_x/y` by the fitted change and
-names the run in the touch-off record, and refuses a candidate from another
-tool than the fitted one. Commit, land and deploy it like any config change.
-The held-out numbers are for the operator to read, not a gate: on pink the
+the run: `tatbot ros calib apply --arm <arm> --run ID` sets the arm's
+`pen_tip_offset_x/y` to the fitted tip, carries `mechanical_contact_x/y` with
+it and names the run in the touch-off record, and refuses a candidate from
+another tool than the fitted one. The fitted tip is the tip in the tool mount,
+not a change to the installed one: applying a run again says it is adopted
+already and changes nothing, and an older run applied after a newer one gives
+the older run's tip. It writes the ROS owner's fitted-cartridge record
+and restarts a running stack (§6, The fitted cartridge): no commit or deploy.
+The held-out numbers are for the operator to read, not a gate: on the WXAI the
 pairs' give differs with posture by 0.3-0.5 mm, which no fit removes.
 
 **Tool tip, contact-free** (`tatbot ros calib sweep --arm <arm>`,
@@ -2296,10 +2524,25 @@ camera watches, each a probe-guarded Touch `MODE_MOVE` through the run's way
 checks (the floor, the arm against itself, the camera's post, the arm against the
 station, the tool's envelope against the station's parts and 3 mm off the
 fix's ball).
-1. The park: the tool upright 6 mm over the fix's ball top, at the yaw whose
+1. The park: the tool upright over the fix's ball, at the yaw whose
    joint-6 turns the camera sees best among those the arm reaches from rest
    (+15 to +45 deg on the v11 palette; the probe run's -60 sees a sixth as
-   much).
+   much). The camera, not the installed tool, sets its height: the arm first
+   sights the tip 26 and 20 mm over the fix's ball top by its own tool, the
+   step between the two stills gives the camera's scale at the tip, and the
+   tip comes down to 6 mm over the ball's top as the camera measures it. The
+   station and its ball are placed there, in the commanded tool's terms, for
+   every way check after it. A tool re-seated in its cradle can stand many
+   millimetres off its installed length: on 2026-11-08 the 3RL in R7's cradle
+   stood ~7 mm lower than modelled, and a park by the installed tool put it
+   1 mm under the ball's top. The lower sighting, which sets the height, must
+   find the tip in focus: on 2026-11-09 a park 3.5 mm off the lens's plane
+   blurred the tube, the change against the lifted still broke at the
+   cartridge's clear grip 13 mm up at both sightings, the step agreed, and the
+   arm came down until the probe tripped. The park's still, in focus, must see
+   the drop at the step's scale within 10 %, so a misread upper sighting stops
+   the run before any turn. A sighting that leaves the tip under 6 mm, or
+   wants it more than 30 mm down, stops the run.
 2. Four 3 mm translations: across the camera's line of sight both ways, up,
    and away along it. They give the camera its scale, orientation and depth.
 3. Joint 6 alone through -30..+30 deg in 6 deg steps: FK of the park's planned
@@ -2335,19 +2578,19 @@ sweep's stills. The change grows from its sure part through the weaker, so a
 dark tube in a darker room (its change 20-25 over speckle, later that night)
 stays one region down to the needle, where the change alone had broken mid-tube
 beside the region in focus and the two agreed 6.6 mm high. A tip taken by its
-change is the needle's end, up to 1 mm under the tube's. A patch about the ball's top marks the camera's drift; a park whose
+change is the needle's end, up to 1 mm under the tube's. A patch about the ball's top marks the camera's drift; a sighting whose
 ball's top stands 0.5 mm from the lifted still's has the pen on the ball or
 before it, under a station prior that is off, and stops the run. `calib height`
-writes nothing (exit 3) for a ball further than 8 mm from the fresh overhead
+reads the ball's height at the park at the sightings' scale, and writes nothing (exit 3) for a ball further than 12 mm from the fresh overhead
 fix's, the limit every reader of the station touch holds it to. One pinhole fit gives the tip in the tool mount, its length too with
 the tilts; without them the length is held at the installed one and
 `report.md` gives the factor by which a length error reads across: about
-(0, 1) on pink. It also gives the tip's height over the ball's top at the park,
+(0, 1) on the WXAI. It also gives the tip's height over the ball's top at the park,
 the probe run's reference. The run
 writes `holds.jsonl`, `stills/`, `candidate.json` and `report.md` under
-`~/tatbot-logs/ros-calib/<run>/`; `calib apply` adopts it as above, and moves
-`pen_tip_offset_z` and `mechanical_contact_z` by the measured length's change
-when the tilts measured it.
+`~/tatbot-logs/ros-calib/<run>/`; `calib apply` adopts it as above, and sets
+`pen_tip_offset_z` to the measured length, `mechanical_contact_z` carried with
+it, when the tilts measured it.
 
 **Station, per arm:**
 - The ball centre from the solve fixes translation.
@@ -2371,9 +2614,16 @@ when the tilts measured it.
   D555 frame with the arm at rest; the wrist's holds over the palette's roof
   tag (the hand-eye's way-checked views, the tag's pose left free) and its
   straight-down views of the fiducial tile on the holder (its markers' corners
-  by bundle adjustment, each read's D405 depth a 1 mm prior); one fit to the
+  by bundle adjustment, each read's D405 depth a 1 mm prior), oblique ones
+  where no straight-down view is reachable: the xArm's D405 stands 48° off
+  the pen, and none was over the forearm tile (2026-11-09). The wrist camera
+  stands where its gauge file measured it (`calib wristcam`, then `calib
+  gauge`) when that holds the fitted tool, else where the robot model mounts
+  it: on the xArm's printed bracket the two stood 4.4–5.6 mm apart. One fit to the
   tag's and the tile's corners in the D555 image and to the wrist's depth on
-  the D555's flat patches. A tile marker missed past 2 mm is left out once.
+  the D555's flat patches. A tile marker missed past twice the markers'
+  median miss (2 mm at least) is left out once: a small tile's few shared
+  markers miss alike, and a fixed 2 mm left most of them out.
   Each region is left out and predicted by the other, and one alone misses
   the other by ten millimetres, so both regions are measured. A tile the D555
   cannot read (the 12 mm forearm tile: 0 of the 3 markers its views need)
@@ -2470,8 +2720,14 @@ here is a failed goal, not a latch.
 - **The model.** The arm is placed in the D555's world by its registration.
   Each link is the convex hull of its URDF collision mesh (both wrist D405s
   among them), and the fitted tool is a chain of capsules along its datasheet
-  profile. Distances come from pinocchio on coal.
-- **The rule** (2026-09-30: an inspection view folded the pink wrist tag cube
+  profile. Distances come from pinocchio on coal. The xArm's end effector is
+  primitives in `urdf/xarm7.urdf`: its core a cylinder, the dual-D405 bracket
+  six boxes along its reach, each camera's case its mesh as on the WXAI, its
+  body a box and its cable a cylinder out of the case's connector shroud.
+  `scripts/gen_arm_urdf.py` sizes them from the meshes; the bracket's boxes and
+  the cables are 5 mm larger each way, and the cable's 40 mm reach is an
+  estimate, not a measurement.
+- **The rule** (2026-09-30: an inspection view folded the WXAI's wrist tag cube
   into its own upper arm). The model pairs the arm's own bodies whose joints
   stand more than two apart; links within two joints overlap as hulls about
   the compact wrist in every pose.
@@ -2503,8 +2759,8 @@ Real time:
 - Error queries run off the control thread, once a second
   (`controller_query_period_s`). The SDK holds one data mutex for every
   call's whole round trip, so each TCP query stalls the 400 Hz loop by
-  1.5–2.5 ms; at 10 Hz that was about 120 late ticks a minute on the pink
-  arm. A controller error also arrives as an SDK exception on the next read
+  1.5–2.5 ms; at 10 Hz that was about 120 late ticks a minute on the WXAI
+  follower. A controller error also arrives as an SDK exception on the next read
   or command, which latches at once.
 - The follower carriage limits (−6 to +40 mm, `config/trossen/follower.yaml`)
   are set with `set_joint_limits` at configure: a power-cycled controller
@@ -2512,7 +2768,7 @@ Real time:
 
 **E-stop release.** The arm holds while the e-stop is pressed. Released, it
 lands at once, lifted off the skin first, with no decision asked
-(`session.estop_release: land`, owner 2026-10-24: the arm returns to its
+(`session.estop_release: land`, 2026-10-24: the arm returns to its
 rest). With `estop_release: decide`, and after every other latch, the arm
 stays held and `tatbot_session` asks the operator to choose `continue` or
 `land` (§9). `continue` is refused, leaving `land` as the only choice, when:
@@ -2525,7 +2781,7 @@ stays held and `tatbot_session` asks the operator to choose `continue` or
 
 The pose check compares the joints measured at the latch with the joints
 measured now (0.05 rad on any revolute joint, or 5 mm of tip). The tool check
-compares the program's `tool.id` with `config/workspace.yaml` read at the
+compares the program's `tool.id` with the fitted cartridge read at the
 decision. The same rules apply to a JTC goal that failed without a latch,
 because the arm then holds under JTC. With nothing waiting, `decide continue`
 on a latched arm runs the unlatch protocol, and `decide land` lands. A `land`
@@ -2589,14 +2845,14 @@ Kept running and bridged in:
 - `visiond`, `trackd` and `stencild` on the D555's owner (roles `overhead-depth`, `track`), which track the page
   and the EE fiducials;
 - the adopted camera and arm registrations;
-- Inkmap and Inkgen, which author designs.
+- Inkmap and Inkgen, which place and generate source art.
 
 ## 11. Depth
 
 | Sensor | Use today | Use here |
 |---|---|---|
 | D555 (overhead) | Inside `stencild`: lifts the tile print's markers onto the depth under them, giving the page pose and its plane over the sheet. | Stays inside stencil tracking, for page pose and presence. Never used for height. |
-| D405 (wrist) | The pink arm's D405 is this stack's own (no `visiond` unit opens it; the demo viewer sees it only through the session's wrist tap, §13 Graph). A second D405 under the wrist (2026-10-23) is display only: the tap's preview, never read. Measured before the stack: depth repeats to 0.1 mm but sat 12–13 mm above the paper on the pink arm, so touch overrides its height; a tip-over-page check read 8.6 ± 2.4 mm against 10 mm compiled. | Not needed for flat paper at M1. Later uses: (a) a page-plane prior in the arm frame, so touches start slow descent 4 mm above the page instead of searching 25 mm, about 8 s per touch instead of up to 50 s; (b) the height for the standoff laser, which should not touch the paper; (c) arm-relative stencil registration (M5); (d) curved-surface scans (M6). |
+| D405 (wrist) | The wrist D405s are this stack's own, on the xArm since 2026-11-08 and the WXAI follower's before (no `visiond` unit opens them; the demo viewer sees them only through the session's wrist tap, §13 Graph). A second D405 under the wrist (2026-10-23) is display only: the tap's preview, never read. Measured before the stack: depth repeats to 0.1 mm but sat 12–13 mm above the paper on the WXAI follower, so touch overrides its height; a tip-over-page check read 8.6 ± 2.4 mm against 10 mm compiled. | Not needed for flat paper at M1. Later uses: (a) a page-plane prior in the arm frame, so touches start slow descent 4 mm above the page instead of searching 25 mm, about 8 s per touch instead of up to 50 s; (b) the height for the standoff laser, which should not touch the paper; (c) arm-relative stencil registration (M5); (d) curved-surface scans (M6). |
 
 ## 12. Build and run
 
@@ -2651,7 +2907,10 @@ their tmp dir, never `~/tatbot-ros/runtime.json`.
    python/tatbot_contracts/ rust/visiond/config/` and `AGENTS.md` (working-tree
    content; `DEPLOY_DIRS` in `tatbot_ros.py`) into `repo/`, deleting anything else
    there. `AGENTS.md` is the marker by which `tatbot_runlog` finds
-   `config/runlog.json`, so runs on the node land in `~/tatbot-logs`.
+   `config/runlog.json`, so runs on the node land in `~/tatbot-logs`. It compares
+   content, not times (`--checksum --no-times`): a file is sent only when it
+   changed, and lands with the transfer's time, newer than any build of the file
+   it replaces, so the build cannot skip it.
 2. It copies `arm-registration-*-current.json` from this node's
    `~/tatbot-logs/vision/` (the calibration conductor's) into `calib/`.
 3. It writes `repo/REVISION` (sha, `dirty=0|1`) and renders `env.sh`.
@@ -2706,8 +2965,8 @@ started by PID: `ros2 run` and `ros2 launch` wrap the real process, so killing
 the wrapper's `$!` can leave the node running. Signal the process group or run
 the binary directly. Never use `pkill -f`, which matches your own shell.
 
-**Checks.** `scripts/check ros-budget` (fast tier): ≤23,867 lines of code, ≤8
-interfaces, ≤3 launch files. `scripts/check ros` builds in
+**Checks.** `scripts/check ros-budget` (fast tier): ≤8 interfaces, ≤3 launch
+files. `scripts/check ros` builds in
 `~/.cache/tatbot-check-ros/<checkout hash>/` and runs the fast session tier
 described under Developer tests below. `scripts/check --full ros` adds the
 relay tests and `colcon test` of every ROS package; SKIP without `/opt/ros/jazzy`.
@@ -2749,11 +3008,22 @@ a test keeps the two equal.
 - `page/<pattern_id>`: §3. `tatbot_bridge.page.TARGET_FROM_PAGE = diag(1, −1, −1, 1)`:
   `world_from_page = world_from_target · TARGET_FROM_PAGE`. With `page.source: fixed`, the
   pattern id is `fixed_<arm>` and the parent is `<arm>/base_link`.
-- Controlled joints, in controller order: `<arm>/joint_0` … `<arm>/joint_5`
-  (rad), then `<arm>/left_carriage_joint` (m, the tool rides the left finger
-  carriage). The description sets the carriage limits to the arm's controller
-  config (`config/arms.json` `controller_config` `joint_limits[6]`, to 1 µm):
-  −0.006 … 0.040 m on the right (follower), 0 … 0.040 m on the left.
+- Controlled joints, in controller order, are the arm's model's:
+  `config/arms.json` names each physical arm's model, and
+  `config/arm-models/<model>.yaml` lists its joints, each one's kind and role,
+  its rest pose, the joints kinematic calibration may offset, and the
+  controller's command-to-measurement delay. `scripts/lib/arm_model.py`
+  reads it (stdlib, as `tool_spec` reads the tool datasheets), and the stack
+  reaches it as `tatbot_description.arm_model`. Code takes which joint is which
+  from the model (its revolute chain `arm_index`, its `carriage`, its `wrist`),
+  never from a joint's number; `scripts/check ros-budget` refuses a joint index
+  by number outside the tests, and a line indexing anything else says
+  `arm-model: not joints`.
+- The WXAI (`trossen-wxai`): `<arm>/joint_0` … `<arm>/joint_5` (rad), then
+  `<arm>/left_carriage_joint` (m, the tool rides the left finger carriage). The
+  description sets the carriage limits to the arm's controller config
+  (`config/arms.json` `controller_config`, the carriage's `joint_limits` row,
+  to 1 µm): −0.006 … 0.040 m on the right (follower), 0 … 0.040 m on the left.
 
 ### ros2_control
 
@@ -2778,21 +3048,26 @@ total minus the controller's gravity and friction compensation, as
 `arm`, `sdk` (fake|real), `ip` (`real` only, from
 `config/arms.json` `profile_ip_field` in `config/profiles/<profile>.json`; empty
 for `fake`, which is never handed an arm address),
-`end_effector` (`arms.json` `sdk_end_effector`), `estop_source`, `estop_device`,
+`end_effector` (`arms.json` `sdk_end_effector`; this and the other
+`names.TROSSEN_HARDWARE_PARAMETERS` only for an arm with a Trossen golden), `estop_source`, `estop_device`,
 `estop_timeout_s`, `estop_udp_port`, `estop_relay_addr`,
 `estop_debounce_frames`, `rt_priority`, `rt_cpus`, `base_frame`, `tcp_frame`,
-the `stack.yaml safety.*` values flattened with `_` (for example
+from the arm's model `joints` (space-separated, controller order), `carriage_joint`
+(empty for an arm without one: no carriage cap, retract or carriage step) and
+`command_delay_s` (the stall, tip-lag and snag guards compare the measured joints
+with the command that long ago; 0 on the WXAI), the `stack.yaml safety.*` values flattened with `_` (for example
 `tip_lag_trip_m`, `carriage_retract_s`, `landing_budget_s`), the carriage cap,
 deflection and retract, `staged_positions` and `motor_parameters` (the named
-Trossen gain set) from `config/trossen/tatbot.yaml`
-`follower` (the pink arm's qualified carriage; every `TatbotArm` reads that section),
-`carriage_position_offset_m` (the golden's joint 6 `position_offset`), `palm_mass_kg`
+Trossen gain set) from `config/trossen/tatbot.yaml` (an arm without a golden, the xArm, gets its model's
+rest as `staged_positions` instead)
+`follower` (the WXAI follower's qualified carriage; every `TatbotArm` reads that section),
+`carriage_position_offset_m` (the golden's carriage `position_offset`), `palm_mass_kg`
 and `palm_com_m` (`config/workspace.yaml <arm>.payload` when it was identified with
 the arm's `tool_id` on its preset, else empty: the preset's palm),
 plus `flight_path` (the `ros-stack` run directory). `fake` alone gets `fake_page_z`
-after them when `stack.yaml fake.page_z` is set (it is, at `page.fixed.right`'s z,
-so `tatbot ros up --hardware fake --page fixed` touches and draws on it): the base-frame z of a simulated
-paper plane the fake tip cannot pass, so an offline `Touch` trips its guard. `estop_timeout_s` is
+after them when `stack.yaml fake.page` is set: `page.fixed.<arm>`'s base-frame z, so
+`tatbot ros up --hardware fake --page fixed` touches and draws on a simulated paper plane the fake tip
+cannot pass, and an offline `Touch` trips its guard. `estop_timeout_s` is
 `udp_timeout_s` for `udp` and `serial_timeout_s` otherwise. `real` without an
 address in the profile is an error at launch. The e-stop reader and the driver lock are process-wide,
 shared by every arm instance. SDK drivers are constructed on a thread that
@@ -2825,6 +3100,8 @@ measures the lag.
   network, any other checkout is re-fetched), paired with controller firmware v1.11.1.
 - `fake_backend.cpp`: `sdk=fake`. First-order tracking (τ 20 ms) of the
   position target plus the velocity feed-forward, one 2.5 ms step per command.
+  An arm model's `fake_plant` (`fake_delay_s`, `fake_lag_s`) makes each command
+  answer that much later through that lag instead: the xArm's 83 ms and 7 ms.
   The hardware parameter `fake_page_z` (base-frame z, `sdk=fake` only) adds a
   page the tip cannot pass, so a touch trips the tip-lag guard. Tests also
   inject controller errors, carriage effort, measured velocity and a frozen arm.
@@ -2844,7 +3121,7 @@ Behaviour the table in §8 leaves open:
   the aux thread closes it within 100 ms and the control loop reads nothing
   until a wake reconnects (configure, carriage limits and feedback warm-up, as
   at the stack's start), so a landed arm's joint states are its last
-  measurement, from before the idle (idled, the pink wrist sags ~1 deg and
+  measurement, from before the idle (idled, the WXAI's wrist sags ~1 deg and
   joints 1-2 a few mrad, which a wake then measures). A landed controller sees no traffic, and one power-cycled while
   landed comes back with a wake. On 2026-10-07 a controller kept idle with its
   session open stopped answering 1 s and 11 s after the switch, twice, and took
@@ -2855,7 +3132,7 @@ Behaviour the table in §8 leaves open:
   connection is lost, so an arm that has not landed can drop when the stack
   process ends, or when the controller drops the connection itself. Idle has no
   position loop: a velocity loop whose integral alone carries the load, so on
-  Trossen's idle gains the loaded pink arm falls until that integral catches it
+  Trossen's idle gains the loaded WXAI follower falls until that integral catches it
   (the tip 34 mm in 0.22 s from a drawing posture; three mid-draw drops on
   2026-10-08 put the 3RL into the skin). Connect scales the arm joints' idle
   velocity integrals (`config/trossen/tatbot.yaml` follower
@@ -2874,7 +3151,7 @@ Behaviour the table in §8 leaves open:
   tatbot_interfaces or builds clean, while the old install still hears it, and
   refuses (exit 6) while a draw, touch or calibration runs. `--hold` is refused (exit 3) while
   the session's in-cap marker says a tool may be in a palette cap: on
-  2026-10-05 a held restart let the pink arm sag 9 mm and 6.7 mm aside with
+  2026-10-05 a held restart let the WXAI follower sag 9 mm and 6.7 mm aside with
   its nozzle in a cap. A cleanup → configure cycle of a held real arm in
   the same process cannot reconnect (the controller accepts one driver); restart
   the stack.
@@ -2991,7 +3268,10 @@ GPIO `<arm>_safety`, all doubles:
 | `land` | request id, the same rule |
 
 Controllers (`tatbot_bringup/config/controllers.yaml`, controller_manager
-`update_rate: 400`):
+`update_rate: 400`). The file is arm-neutral: the launch renders its `per_arm`
+controllers for each driven arm (`tatbot_description.controllers`), the joints
+from the arm's model and the GPIO interfaces from `names`, and hands
+controller_manager the rendered file, which the `ros-stack` run keeps:
 - `joint_state_broadcaster` publishes `/joint_states`.
 - `<arm>_arm_controller` is `joint_trajectory_controller/JointTrajectoryController`
   with position and velocity commands, position and velocity state, splines, and
@@ -3130,7 +3410,7 @@ timeout is cancelled at once.
 
 ### Launch
 
-The only launch file is `tatbot_bringup/launch/stack.launch.py` (the budget
+The only launch file is `tatbot_bringup/launch/stack.launch.py` (the limit
 leaves two). Every argument defaults to `stack.yaml` when empty:
 
 | Argument | Values |
@@ -3138,7 +3418,7 @@ leaves two). Every argument defaults to `stack.yaml` when empty:
 | `config` | `stack.yaml` path (default: the checkout's `ros/tatbot_bringup/config/stack.yaml`, the file `robot_description()` and the CLI read) |
 | `repo` | the checkout (`$TATBOT_REPO`) |
 | `runtime_record` | where `tatbot_session` publishes its runtime identity (default: `runtime.json` in the workspace root holding the repo, `~/tatbot-ros/runtime.json`) |
-| `arms` | comma list; `right` by default |
+| `arms` | comma list; `stack.yaml` `arms` by default (`xarm`) |
 | `hardware` | `mock`, `fake` or `real` |
 | `profile` | `config/profiles/<profile>.json` |
 | `estop_source` | `none`, `serial` or `udp` |
@@ -3185,23 +3465,24 @@ on the fastest cores).
 
 The launcher freezes the controller parameters it supplies in `controllers.yaml`
 and records its controller process in `controller-process.json` using
-the process-start event. Research run metadata and evidence identify that
-process's loaded executable files, including native plugins, and the launch
-configuration and robot description; see
-[research runtime provenance](../docs/research.md). Missing provenance affects
-research comparability only. `tatbot_session`
-publishes its runtime identity once at startup to the effective stack's
-`runtime_record`, where `tatbot ros evidence` reads it. A session started
-without one, such as `ros2 run` on the installed default, publishes none.
+the process-start event. Each run's metadata identifies that process's loaded
+executable files, including native plugins, and the launch configuration and
+robot description: the software the run drew with, which
+`ros_runtime.software_digest` compares between runs and a lab trial finds by
+its run id ([the lab](../docs/lab.md)). It is provenance, never a motion
+interlock. `tatbot_session` publishes its runtime identity once at startup to
+the effective stack's `runtime_record`, which each run's `meta.json` copies. A
+session started without one, such as `ros2 run` on the installed default,
+publishes none.
 
 The source snapshot records the session/motion/description/bridge/contracts
 package roots and the owner's CLI/vision source trees. It hashes a stable
 recursive Python-file manifest, including membership changes during collection.
-Current evidence reports whether these declared files still match startup.
-Research comparison refuses absent or changed source snapshots. This is source-file
+Current evidence reports whether these declared files still match startup, so
+a run drawn after a source change says so. This is source-file
 provenance, not attestation of Python objects in memory or every external
-dependency. Shared runtime helpers serve the existing session and owner/research
-tools; SDK and motion authority remain in the ROS stack.
+dependency. Shared runtime helpers serve the session and the owner's tools; SDK
+and motion authority remain in the ROS stack.
 
 The run's exit status is 1 when any process exits with a failure (not 0 and
 not a SIGINT/SIGTERM death) before shutdown begins; `run.jsonl` records a
@@ -3210,12 +3491,12 @@ shuts the whole launch, and so `tatbot-ros.service`, down. A launch that fails
 while it is being generated finalizes its run with 1.
 
 **Mock check.** `python3 tatbot_bringup/scripts/mock_check.py [--domain N]
-[--port P|0] [--arms right] [NAME:=VALUE ...]` starts its own `rmw_zenohd` and
+[--port P|0] [--arms ARMS] [NAME:=VALUE ...]` starts its own `rmw_zenohd` and
 the launch with `hardware:=mock page_source:=fixed touch:=false`, then checks
 that every controller is active, `/joint_states` arrives at ≥360 Hz, the
 safety GPIO states are the 21 in order with `estop_ok` 1, and a
-FollowJointTrajectory goal (0.05 rad on `joint_0` and 2 mm of carriage, then
-back) succeeds, moves, and leaves `latched == 0` and `latch_reason == 0`. It
+FollowJointTrajectory goal (0.05 rad on the base joint and 2 mm of carriage,
+if the arm has one, then back) succeeds, moves, and leaves `latched == 0` and `latch_reason == 0`. It
 prints one JSON line and stops everything it started. Extra arguments override
 the launch's, so `hardware:=fake` runs the same checks on `TatbotArm` with its
 fake SDK. The session's runtime record always goes into its logs directory. `colcon test` runs it on a free port as `test_mock_stack` (mock) and
@@ -3258,7 +3539,7 @@ It subscribes `tatbot/tracking/target/<pattern_id>` (`tatbot.target-pose/1`).
 - Parameters (strings; `''` means the `stack.yaml` value): `config`,
   `page_source`, `arms`, `pattern_id`, `bus_endpoint`.
 
-`ros2 run tatbot_bridge page_watch [--seconds 30] [--arm right] [--json]` is the
+`ros2 run tatbot_bridge page_watch [--seconds 30] [--arm ARM] [--json]` is the
 same subscription without ROS. It prints each sample's page pose in `world`
 and in `<arm>/base_link` (`base_xyz_mm`, `base_rpy_deg`, `base_z_axis`), and
 ends with a summary that says whether the sample and the registration share a
@@ -3274,15 +3555,25 @@ one-slot queue, so the session pays a hand-off. It never grabs a frame of its
 own unless `wrist_tap.poll` is set, and its first error turns it off. The
 camera is open only inside a Draw goal, or a page Touch goal's set-up, on real
 hardware (the locate, the gauge holds, the touches' trip frames, the tracker's
-hover and stroke-end frames, a dip's frames), so frames come only then.
+hover and stroke-end frames, a dip's frames). Between readings the session's
+idle feed (`wrist_tap.idle`, `scripts/lib/wrist_claim.py`) shows both D405s
+instead: once no reading has had them for `quiet_s` (30 s) and the rig is
+awake, it opens them as previews (the size below), each polled at 2 Hz.
+Every reading's camera (`inspect.WristCamera`, in the session or in calib,
+the `ros` client verbs and `ros depth`; and `vision capture`) claims the
+cameras first, a shared flock, and waits for the feed, which looks every
+0.5 s, to close them. The feed holds a flock of its own while they are open,
+and each side takes its own before it looks at the other's, so the two never
+open a device together; a crash holds nothing. A claim waits at most 15 s
+for a feed that does not let go, then opens anyway.
 `wrist_tap.preview` opens display-only D405s beside it for as long as it is
-open, by vision.toml role on the same arm: since 2026-10-23 the lower wrist
-camera (`wrist_lower`, urdf `<arm>/realsense_lower_*`, the upper's mount
-turned 180° about the wrist, on the same USB hub), at 640x360 and 15 fps.
+open, by vision.toml role on the same arm: D405-1 (`wrist_1`, its mount
+turned 180° about the wrist from the session's D405-2, on the same USB hub),
+at 640x360 and 15 fps (480x270, the same 16:9, where its link carries no 640x360).
 They open on their own thread, so the session's camera waits for none of
 them, and each one's tap polls it at 2 Hz; one that will not open is logged
 and left out. The tracker also grabs
-`page.track.cameras` (the lower D405) at every hover and lift: that reading's
+`page.track.cameras` (D405-1) at every hover and lift: that reading's
 markers go out on its own camera's tap, and its poll holds 8 s after the grab
 (`wrist_tap.HOLD_S`), so the viewer shows the frame they were read in.
 Each reading of the print's markers in a frame the tap published (a gauge
@@ -3322,10 +3613,10 @@ it dials the `rerun-server` node's proxy. Everything is in `world` under
   (oriented as `drawn.svg`, whose lines stay on the page each stroke used),
   with `frame`, the design's strokes bounded with an 8% margin,
   which the Demo view fits; the tip dot shows only inside it. `stencil` is
-  the print the run draws on (the run log's `pattern_id`, its installed
+  the print the run draws on (the run log's `pattern_id`, or on a fixed page
+  the stack's `page.pattern_id`, whose geometry that page takes; its installed
   `stencil.png`) under the strokes, its black a faint violet, cut to the
-  frame so the fit stays the design's; none on a fixed page or with no print
-  installed;
+  frame so the fit stays the design's; none with no print installed;
 - `page`: the page's edge, clear centre and a 10 mm grid on its plane or
   fitted surface (grey while lost);
 - `level` (static): the arm base's frame with z up, the Demo 3D view's origin,
@@ -3372,7 +3663,11 @@ A run is rebuilt from its files (`tatbot_contracts.ros_scene`: its
 `program.json`, its `meta.json` and its ledger, tailed by offset, whose page,
 dip and done rows it applies). A bridge started mid-draw
 follows the newest `ros-draw` run, and each run start switches it to the new
-run. A touch's events leave the scene as it is. Every layer and link is logged
+run. `strokes/` and `design/` show only while the run draws: once its run log
+is finalized (on the node's clock, so a replayed bag draws up to its end), or
+when the bridge starts after that, both are cleared and stay blank until the
+next run starts; the status board keeps the last run. A touch's events leave
+the scene as it is. Every layer and link is logged
 again every 60 s, so a window that joins after the hub dropped a row still
 gets it. Under `use_sim_time` nothing is stamped before `/clock` runs.
 
@@ -3386,15 +3681,16 @@ Its parameters are `config`, `arms`, `max_hz`, `connect` and `output`.
 ### `stack.yaml`
 
 `tatbot_bringup/config/stack.yaml` has format `tatbot-ros-stack`, version 1. Its keys:
-- `arms`, `hardware`, `fake.page_z`, `profile`, `rt.{priority, cpus}`;
+- `arms`, `hardware`, `fake.{page, page_stiffness_n_m}`, `profile`, `rt.{priority, cpus}`;
 - `estop.{source, serial_device, serial_timeout_s 0.10, udp_port 7640, udp_timeout_s 0.15, relay_addr, debounce_frames}`;
 - `safety.*`, which the driver takes;
+- `page.markers.{enforce, overhead_min, anchors_min, wrist_min, wrist_view_m, every, order, model}`: the marker budget (§4.2);
 - `page.{source, pattern_id, size_m, clear_m, replan_*, fixed.<arm>, trim.<arm>}`;
   the launch replaces `size_m` and `clear_m` with the installed print's and adds
   `geometry`, the print or `stack.yaml`;
 - `registration.<arm>`;
-- `machine.{switch none|pi|sim, arm, addr, gpio, port 7642, estop_port 7643, period_s 0.02, timeout_s 0.2, confirm_s 2.0, sim_endpoint}`, the tattoo machine's switch (§4.4, §7); a `sim` switch also tells `sim_endpoint` (`udp://host:port`, a simulator) each change;
-- `keypad.{port 7644, arm, from_addr}`, the operator's drawing keys from the station keyboard (§4.4); `port: 0` runs no keypad node; `from_addr` "" = the station's `lan`, resolved by the CLI;
+- `machine.{switch none|pi|sim, addr, gpio, port 7642, estop_port 7643, period_s 0.02, timeout_s 0.2, confirm_s 2.0, sim_endpoint}`, the tattoo machine's switch (§4.4, §7); a `sim` switch also tells `sim_endpoint` (`udp://host:port`, a simulator) each change;
+- `keypad.{port 7644, from_addr}`, the operator's drawing keys from the station keyboard (§4.4); `port: 0` runs no keypad node; `from_addr` "" = the station's `lan`, resolved by the CLI;
 - `touch.{enabled, points}`;
 - `session.{resume_timeout_s 300, estop_release land, knot_rate_hz, goal_log false}`; `goal_log` writes every goal sent into the run's `goals.jsonl`;
 - `sensing.{wrist auto|real|sim|none, truth, noise_m}`: how the session senses the page from the wrist (below);
@@ -3404,7 +3700,7 @@ Its parameters are `config`, `arms`, `max_hz`, `connect` and `output`.
 - `record` (stack-wide MCAP, launch `record`);
 - `wrist_tap.{enabled true, poll false}`: the session's wrist D405 tap for the demo viewer (Graph); `false` is no
   tap at all. `poll` also takes a frame at 2 Hz while `grab_both` takes none, under the camera's lock: a polled
-  frame is one the session does not get, so it stays off. `preview.{cameras [wrist_lower], width 640, height 360,
+  frame is one the session does not get, so it stays off. `preview.{cameras [wrist_1], width 640, height 360,
   fps 15}`: the display-only D405s opened beside the session's own (Graph); `[]` is none.
 
 The TCP is not in it (§3). The page trim is `[x, y]` metres in the page
@@ -3432,16 +3728,17 @@ starts.
   `registrations` maps an arm to a registration file or a 4×4 matrix.
   Helpers: `load_stack(repo=None, path=None)`, `hardware_params(repo, arm, stack, hardware)`,
   `ros2_control_xml(repo, arm, hardware, stack)`. `python3 -m tatbot_description
-  [--arms right] [--hardware mock|fake|real] [--registration ARM=PATH] [-o FILE]` prints it
+  [--arms ARMS] [--hardware mock|fake|real] [--registration ARM=PATH] [-o FILE]` prints it
   (for `check_urdf`).
-- `tatbot_ink.compile(design_path, *, arm="right", tool_id=None, repo=None, speed_m_s=0.0035, inks_path=None, max_segment_s=60.0, at_m=None, width_m=None) -> dict`
-  returns §4.2's program and raises `tatbot_ink.CompileError` with the reason. Also
+- `tatbot_ink.compile(design_path, *, arm="right", tool_id=None, repo=None, speed_m_s=0.0035, inks_path=None, max_segment_s=60.0, at_m=None, width_m=None, stencil=None, ...) -> dict`
+  takes one acquired `artwork.json` path, or a list of them drawn as layers, and returns §4.2's program and raises `tatbot_ink.CompileError` with the reason. Also
   `write_program(program, path)`, `write_preview(program, path)`, and
-  `python -m tatbot_ink compile DESIGN [--arm] [--ee-tool] [--speed MM_S] [--inks] [--max-segment-s S] [--repo] [-o DIR]`
+  `python -m tatbot_ink compile ARTWORK [ARTWORK ...] [--arm] [--ee-tool] [--speed MM_S] [--inks] [--max-segment-s S] [--repo] [-o DIR]`
   → `DIR/program.json`, `DIR/preview.svg`, the stats as one JSON line on stdout; exit 1 on a refusal.
 - `tatbot_motion.load_motion(path=None) -> dict` reads `motion.yaml`, format `tatbot-motion`, version 1.
 - `tatbot_motion.Kinematics(urdf_xml, arm="right")` (or `.from_repo(repo=None, arm)`) provides
-  `.joint_names`, `.lower`, `.upper`, `.fk(q) -> base_from_tcp 4×4`, `.jacobian(q) -> 6×7`
+  `.joint_names`, `.lower`, `.upper`, the arm's model as `.arm_model` with `.n`, `.revolute` (its revolute
+  chain as an index) and `.carriage` (or None), `.fk(q) -> base_from_tcp 4×4`, `.jacobian(q) -> 6×n`
   (LOCAL_WORLD_ALIGNED, expressed in `<arm>/base_link`) and `.solve(base_from_tcp, q_seed)` (Newton IK
   for start poses and reach checks, not paths).
 - `tatbot_motion.Trajectory(joint_names, t, q, qd, tip, arc_m, phase, info, axis=None, dq_dh=None)`:
@@ -3483,8 +3780,8 @@ How `tatbot_motion` plans (the choreography of §4.4, ported from the retired `s
   test --packages-select tatbot_motion ...` and confirm `test_clik_parity` reports no skips.
 - Pen orientation: tcp +z along −page z, spun as little as possible from the seed's tcp rotation
   (pen_path's `align(n_c → n) · R_c` on a flat page). A pen-up leg that turns the tool does so over
-  its first chord under the 8°/s `approach.omega_max_rad_s` cap and pen_path's rotary budget
-  (`approach.angular_accel_rad_s2`, 0.1 rad/s²).
+  its first chord under the 29°/s `approach.omega_max_rad_s` cap and the rotary budget
+  (`approach.angular_accel_rad_s2`, 0.5 rad/s²).
 - The carriage stays out of the drawing solve (`carriage.ik: false`); pen-up travel
   brings it back to `carriage.bias_m` (2 mm) at ≤ `carriage.travel_m_s`, so a trip retract is undone
   by the next travel. `carriage.ik: true` is the paper A/B's weighted seven-joint solve, bounded to its
@@ -3492,7 +3789,9 @@ How `tatbot_motion` plans (the choreography of §4.4, ported from the retired `s
 - A gauge hold after another (setup or check) is one pen-up travel up and over onto it
   (`tatbot_motion.hop_via`, `ArmExecutor._hold_travel`): a cubic Bézier leaving and arriving along the
   page's normal, its inner control points `touch.lift_m` out, 0.75 of that over the chord midway, under the
-  same pen-up budgets as any travel. A lift, a ~1 s stop at its top and a travel down were three goals and
+  pen-up speed caps and acceleration (`corners.pen_up_m_s2`, 100 mm/s²; a hop had its own 40 while the other
+  pen-up legs kept 10: at 10 a 66 mm hop took 5.2 s, at 40 2.7 s, joint 3 back to one
+  encoder count by the gauge's capture, 2026-10-25). A lift, a ~1 s stop at its top and a travel down were three goals and
   two more of the arm's stick-slip starts and stops (the tip 0.6-1.3 mm off its command at two to three
   times its speed): 8.4-11.5 s a hold on the 2026-10-20 tattoo, replayed as one 5.0-6.7 s, ~30 s and eight goals less
   a setup. It hops from the stand the last hold's travel commanded, the pen within 2 mm of it (`HOP_AT_M`:
@@ -3508,7 +3807,7 @@ How `tatbot_motion` plans (the choreography of §4.4, ported from the retired `s
   again; it never ships over the cap. `pause` lifts to the standoff or holds; a `dip` is planned by `tatbot_motion.dip` and run by `tatbot_session.cap` (§6).
 - Touch: settle 0.5 s at the start, 10 mm/s to 4 mm short of the prior (`PHASE_DESCEND`), then 0.2 mm/s
   (`touch.slow_m_s`, `PHASE_TOUCH`) up to `max_travel_m`, with no wiggle (`touch.wiggle_amplitude_m` is 0: a
-  wiggling tip dragged the pink arm's compliant mat); without a prior the whole 25 mm search is slow.
+  wiggling tip dragged the WXAI follower's compliant mat); without a prior the whole 25 mm search is slow.
 - `tatbot_bridge.page.world_from_page(world_from_target)`.
 - `tatbot_session.ports`: what `ArmExecutor(node, io, kin, motion, stack, repo, *, clock=None, sensing=None,
   planner=None)` reaches outside itself. `ArmPort` (`ArmIO`'s members), `NodePort`, `Clock{now, utc, sleep,
@@ -3550,8 +3849,7 @@ python3 -m pytest -q ros/tatbot_session/test -m slow --durations=0
 The default includes one shared mock graph whose square draw takes the real
 Draw action through wrist locate, five gauge holds, a fitted cylindrical
 surface and its check holds, a completed stroke, MCAP/ledger/SVG output and
-runtime evidence. It also tests refusal of duplicate research occupancy and
-unsupported pause operations; executor unit tests retain the motion, setup,
+runtime evidence. It also tests refusal of unsupported pause operations; executor unit tests retain the motion, setup,
 surface, cancellation and refusal cases. The fixture supplies deterministic
 decoded wrist observations and a noiseless cylinder mesh read by the production
 `TruthGauge`: camera capture and marker decoding have separate image tests. Locate still solves and validates its
@@ -3592,8 +3890,8 @@ use the wall clock.
 All acceleration lives in `test/`: temporary motion YAML (zero settling and
 faster travel on mock hardware), fewer synthetic camera frames and
 a test-only node entry point that refuses physical hardware. Prepared programs
-bind that same motion configuration, so the research digest refusal remains
-live. Fake-driver contacts keep the original quasistatic speed and settling:
+bind that same motion configuration, so their recorded motion digest is the
+one they draw with. Fake-driver contacts keep the original quasistatic speed and settling:
 their trip-confirmation and plane-accuracy assertions depend on that model.
 Production tuning and interlocks are unchanged. Graphs share a router
 and controller per module where state permits; each has a private domain,
@@ -3605,7 +3903,7 @@ session test over 60 seconds fails the job.
 
 `tatbot_session` creates one run per `Draw` goal (`ros-draw`) or `Touch` goal
 (`ros-touch`) through `$TATBOT_REPO/scripts/lib/tatbot_runlog.py`
-(`init(workflow, attach_logging=False)`, `finalize`). It lives at
+(`init(workflow, attach_logging=False, prune_first=False)`, `finalize`). It lives at
 `~/tatbot-logs/ros-draw/<run-id>/` and holds:
 - `meta.json`, with the deployed `revision` (`repo/REVISION`: sha and dirty
   flag), the program sha, tool, TCP, trim, page pattern id, registration sha,
@@ -3627,9 +3925,65 @@ session test over 60 seconds fails the job.
   20 Hz, in page millimetres, over the planned strokes.
 - `passes.json`: how often the pen passed over each spot, planned and drawn (§4.5).
 
+### Camera-to-controller pipeline timing
+
+`session.pipeline_timing: true` records `pipeline-timing.jsonl` for each Draw
+attempt, independently of the large `session.goal_log` knot log. Producers use
+a bounded background queue; they do not wait for disk writes. Timing metadata does not feed control decisions; existing trajectory
+validation, motion limits and interlocks remain in place.
+Dropped events, writer failure, crashes and uninstrumented resumed attempts
+leave explicit incomplete recording or coverage. Disable with
+`session.pipeline_timing: false`. This is available in the ROS session node;
+the batch simulation driver does not fabricate camera or controller feedback.
+
+    tatbot ros timing /absolute/path/to/ros-draw/run
+    tatbot ros timing /absolute/path/to/ros-draw/run --json
+    tatbot ros timing /absolute/path/to/ros-draw/run --write
+
+The report runs offline with the standard library. Draw completion writes
+`pipeline-timing-summary.json`, `pipeline-timing-report.md` and a
+`pipeline_timing` summary in run metadata. The existing `draw_timing` total
+remains unchanged. `--write` regenerates the two reports from retained evidence.
+
+Each wrist reading retains color/depth frame numbers, raw sensor timestamp
+values and clock domains, and host frameset-receipt time. Pooled readings keep
+their entire capture window. Worker submit/start/end, filter application,
+filter snapshot, plan creation, goal send/accept/result and controller feedback
+carry unique attempt-scoped identities. A reused preplan keeps its original
+snapshot; a rejected or held fit does not refresh its sources. Goal records
+retain the existing trajectory tag for association with the stack's flight log,
+and acceptance retains the ROS goal UUID. Late callbacks cannot join a later
+attempt. Feedback is kept at its first sample and at most once per second
+during drawing, including the first drawing sample.
+
+Each attempt records its hardware mode; mock/fake measurements are labelled.
+All robot-pipeline durations use the session clock (host monotonic on the rig,
+simulation time under `/clock`). Worker execution and planning wall durations use host
+monotonic time. Worker execution includes frame retention and fitting; the
+existing `fit_s` in `track.jsonl` isolates fitting at its original precision. Raw device timestamps and ROS feedback header stamps are
+retained for diagnosis and are never subtracted from another clock. Reports
+separate session clock domains instead of pooling simulated and real latency.
+Frame age starts at host receipt, not exposure; feedback receipt is an upper
+bound on its controller publication time. Neither SDK command-application time
+nor physical contact time is measured. Unknown values remain null, not zero.
+
+Causal attribution currently covers the newest applied measurement per known
+camera in an in-plane `PageFilter` snapshot. This is not the age of every filter
+state. Rigid surface follows, gauge/profile geometry and overhead inputs are
+not yet attributed; plans without this lineage remain visible in coverage.
+The oldest-camera age is unknown if any contributing camera lacks a usable
+receipt timestamp. Use these diagnostics to investigate timing; they add no
+freshness gate or permission to change drawing behavior.
+
+
 `console.log` holds every event line. `tatbot_session` reads one parameter,
 `stack`: the effective `stack.yaml` that `stack.launch.py` writes into the
 `ros-stack` run. The repo is `$TATBOT_REPO`.
+
+Retention (`config/runlog.json`) takes a `ros-draw`, `ros-touch` or `ros-stack` run in two steps: past
+`media_days` it loses the `media` paths that row names, its bags and flight log among them, and `meta.json`
+records `media_pruned_at`; its text stays until `keep_days`. `stack.launch.py` prunes all three as the stack
+comes up, never as a draw or touch starts. A `KEEP` file in a run directory pins the whole run.
 
 ### CLI
 
@@ -3638,16 +3992,15 @@ session test over 60 seconds fails the job.
 | `tatbot ros deploy [--no-build] [--units] [--clean]` | remote | rsync + incremental colcon on the `ros` node, and the Rerun bridge's isolated SDK in `rerun-sdk/` (§12); `--units` installs the systemd units; a build of tatbot_interfaces, or a clean one, lands and stops a running stack first (exit 6 while a draw, touch or calibration runs) |
 | `tatbot ros up [--hardware] [--estop] [--relay-addr] [--page] [--pattern ID] [--arms] [--no-touch] [--rerun] [--hold]` | remote | `--pattern` names the print to draw on by its pattern id or the hex digits its sheet prints, resolved against the prints installed on the ros node (refused when none or several match); lands a running stack's arms (as `down`), writes `stack.env`, restarts the router and the stack, prints the effective hardware, e-stop, page and arms (flags over `stack.yaml`; flags not given fall back to `stack.yaml`, not to the last `up`), and a note when a real arm runs with `estop none`; refused (exit 3) when the running stack sends no SafetyState while a driver may hold an arm (§8); a lane's stack runs no Rerun bridge unless `--rerun` |
 | `tatbot ros down [--router] [--hold]` | remote | prints each arm's landed/latched state, lands every arm that has not landed and reports no controller error (`client land`; hardware fake or real), then stops the stack; a failed landing leaves it up; refused (exit 3) when the running stack sends no SafetyState while a driver may hold an arm (§8); `--hold` stops without landing |
-| `tatbot ros status` | sensor | revision, what the stack runs with (`TATBOT_ROS_EFFECTIVE`), units, `stack.env`, newest run, 2 s of the page on the bus (`page_watch`), `SafetyState` per arm (`client status`) |
+| `tatbot ros status` | sensor | revision, what the stack runs with (`TATBOT_ROS_EFFECTIVE`), the drawing arm (`arm`: `stack.yaml` `arms`, what a verb given no `--arm` drives), units, `stack.env`, newest run, 2 s of the page on the bus (`page_watch`), `SafetyState` per arm (`client status`) |
 | `tatbot ros station [--arm] [--against]` | sensor | the station in an arm's frame, measured now from the palette's palette tag, never a stored pose |
 | `tatbot [--ee-tool ID] ros calib run\|sweep\|apply [--run] [--arm] [--attitudes] [--heading-deg] [--visible-sides]` | motion-auto | calibrate the arm's fitted tool (a stated tool must be it) on the station probe: fresh station fix, touches, fit, closing station check, adopt; `sweep` measures it contact-free from joint-6 turns under the palette camera (§7); a tool with no probe contact model is refused before anything moves |
-| `tatbot ros compile DESIGN [--arm] [--speed] [--inks] [--at] [--width] [--stencil DIR] [-o]` | offline | `tatbot_ink`, local; `--stencil` places it on that generated print's page |
-| `tatbot ros ready [--arm]` | motion-auto | performs the ordinary draw wake-up before a research caller freezes the runtime; a landed arm restarts and waits for readiness |
-| `tatbot ros draw PROGRAM [--arm] [--from-op] [--resume RUN] [--no-inspect] [--hold] [--no-wake]` | motion-auto | restarts the stack first when the arm has landed, unless `--no-wake`; copies the program to `inbox/` and runs `client draw` there; a complete draw is inspected, then landed (controller idle) unless `--hold` |
-| `tatbot ros touch [--arm]` | motion-auto | three page touches |
+| `tatbot ros compile ARTWORK [ARTWORK ...] [--arm] [--speed] [--inks] [--at] [--width] [--stencil DIR] [--allow-marker-loss] [-o]` | offline | `tatbot_ink`, local: acquired `artwork.json`, several as layers; `--stencil` places it on that generated print's page and counts the markers its ink leaves (§4.2) |
+| `tatbot ros draw PROGRAM [--arm] [--from-op] [--resume RUN] [--sheet-at=X,Y] [--no-inspect] [--hold] [--no-wake]` | motion-auto | `--sheet-at` makes the sheet of the print nearest that point (mm in the arm's base) the page first (§4.3); restarts the stack first when the arm has landed, unless `--no-wake`; copies the program to `inbox/` and runs `client draw` there; a complete draw is inspected, then landed (controller idle) unless `--hold` |
+| `tatbot ros touch [--arm] [--sheet-at=X,Y]` | motion-auto | three page touches, with `--sheet-at` on the sheet nearest that point |
 | `tatbot ros jog --joint N --delta D [--arm] [--speed]` | motion-auto | `client jog`: a quintic move of one joint (0–5 rad, 6 the carriage in m) from its measured position through the JTC, 0.02 rad/s (0.002 m/s) peak by default; prints the tip displacement and the latch state; exits 1 while a draw or touch goal runs |
 | `tatbot ros inspect [--arm] [--run] [--frames] [--poses]` | motion-auto | hover the wrist camera over the newest drawing and write page-frame views with the plan overlaid |
-| `tatbot ros evidence --page PAGE --slot SLOT` | sensor | read a research slot claim, original run ledger, runtime and inspection evidence without motion |
+| `tatbot ros views --label NAME [--arm] [--points X,Y;...] [--run] [--frames] [--fetch DIR] [--hold] [--no-wake] [--overhead] [--no-wrist] [--hover-mm] [--overhead-pages PRINT [--sheet-at=X,Y]]` | motion-auto | `client views` (`tatbot_session.views`): with `--overhead` the overhead D555's view first (its owner's capture over the bus, the arm where it stands); then every wrist D405 of the arm photographs each page point from a close-up hold over it, on the newest set-up's page, or with `--overhead-pages` on every sheet of that print the overhead tracker reads, or `--sheet-at`'s one (no set-up; hover higher), every hold planned and its wrist checked before the arm moves; no points, the view where the arm stands; `--no-wrist` leaves the arm untouched; into `~/tatbot-logs/ros-views/NAME`, copied here with `--fetch`; lands after unless `--hold`. The lab's before and after frames (docs/lab.md) |
 | `tatbot ros decide ARM continue\|land\|skip\|redraw` | remote | `client decide` |
 | `tatbot ros cancel` | remote | cancel draw/touch goals with the arm holding |
 | `tatbot ros palette status\|load [SLOT=INK ...] [--level-mm SLOT=MM]` | remote | read or declare what each palette cap holds and its measured ink level (§6) |
@@ -3658,12 +4011,7 @@ The global `--dry-run` prints each plan, with the backend's own dry run as
 `plan` notes: every ssh, rsync, colcon and systemctl command. Exit codes: 0 ok,
 2 usage (a missing program, `--estop udp` without a relay address), 4 no
 single `ros` node in `config/nodes.json`, 5 the node is unreachable, otherwise
-the remote command's own code. A `draw` given an `inkmap-design.json` compiles
+the remote command's own code. A `draw` given acquired `artwork.json` compiles
 it locally first. On the `ros` node,
 `ros2 run tatbot_session client {draw,touch,jog,decide,land,status}` is the same
 client.
-
-The [DBV3 research driver](../docs/research.md) prepares immutable paired
-programs and calls this stack. Research programs claim their physical page
-slot before execution; `tatbot ros evidence --page ID --slot ROW:COL` reads
-that claim and its existing run ledger without moving the arm.

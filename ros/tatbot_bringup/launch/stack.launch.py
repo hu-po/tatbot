@@ -16,6 +16,7 @@ tatbot_session publishes its runtime identity outside the run, to `runtime_recor
 runtime.json in the workspace root holding the repo (~/tatbot-ros/runtime.json), which `tatbot ros
 evidence` reads. A test harness points it into its own tmp dir, never at a live stack's.
 """
+import contextlib
 import importlib.machinery
 import os
 import signal
@@ -36,7 +37,7 @@ from launch.actions import (
 from launch.event_handlers import OnProcessExit, OnProcessStart, OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from tatbot_description import STACK_YAML, load_stack, names, repo_root, robot_description
+from tatbot_description import STACK_YAML, controllers, load_stack, names, repo_root, robot_description
 from tatbot_session.config import print_page
 from tatbot_session.runtime import (
     configuration_digest,
@@ -51,7 +52,7 @@ ARGUMENTS = {
     "config": ("", "stack.yaml path; '' = <repo>/ros/tatbot_bringup/config/stack.yaml"),
     "repo": ("", "repo checkout holding config/ and urdf/; '' = $TATBOT_REPO"),
     "runtime_record": ("", "where tatbot_session publishes its runtime identity; '' = <repo>/../runtime.json"),
-    "arms": ("", "comma-separated arms; '' = stack.yaml arms (right)"),
+    "arms": ("", "comma-separated arms; '' = stack.yaml arms (xarm)"),
     "hardware": ("", "mock | fake | real | sim; '' = stack.yaml hardware"),
     "profile": ("", "config/profiles/<profile>.json for arm addresses; '' = stack.yaml profile"),
     "estop_source": ("", "none | serial | udp; '' = stack.yaml estop.source"),
@@ -144,6 +145,19 @@ def registrations(stack: dict) -> dict:
     return found
 
 
+def check_arms(stack: dict) -> tuple:
+    """The arms the stack drives, of names.ARMS: one alone while it runs a tattoo machine switch or the keypad, which
+    serve the one arm that draws."""
+    arms = tuple(stack["arms"])
+    if not arms or not set(arms) <= set(names.ARMS):
+        raise ValueError(f"stack arms {list(arms)}: name one or more of {', '.join(names.ARMS)}")
+    if len(arms) > 1 and ((stack.get("machine") or {}).get("switch", "none") != "none"
+                          or (stack.get("keypad") or {}).get("port")):
+        raise ValueError(f"stack arms {list(arms)}: the one tattoo machine and keypad serve one drawing arm; drive one, "
+                         "or set machine.switch none and keypad.port 0")
+    return arms
+
+
 def check_placement(stack: dict, placed: dict) -> None:
     """A real arm drawing on the camera-tracked stencil needs its adopted registration: without it the
     base would hang at the nominal URDF mount while the page arrives in the camera's world."""
@@ -164,7 +178,12 @@ def _open_run(repo: Path, stack: dict):
     if revision.is_file():  # `tatbot ros deploy`: the sha, then dirty=0|1
         lines = revision.read_text().split()
         meta["revision"] = {"sha": lines[0] if lines else "", "dirty": "dirty=1" in lines}
-    return tatbot_runlog.init(names.RUN_WORKFLOW_STACK, meta=meta, attach_logging=False)
+    run = tatbot_runlog.init(names.RUN_WORKFLOW_STACK, meta=meta, attach_logging=False)
+    # Here and not as a draw or touch opens, where a person may already be waiting.
+    for workflow in (names.RUN_WORKFLOW_DRAW, names.RUN_WORKFLOW_TOUCH):
+        with contextlib.suppress(Exception):
+            tatbot_runlog.prune(workflow, dry_run=False)
+    return run
 
 
 def generate(context, *args, **kwargs):
@@ -172,7 +191,7 @@ def generate(context, *args, **kwargs):
     repo = repo_root(values["repo"] or None)
     stack = effective_stack(values)
     stack["page"] = print_page(repo, stack["page"])
-    arms = tuple(stack["arms"])
+    arms = check_arms(stack)
     placed = registrations(stack)
     check_placement(stack, placed)
     run = _open_run(repo, stack)
@@ -183,13 +202,13 @@ def generate(context, *args, **kwargs):
         raise
 
 
-def _optional_nodes(stack: dict, arms: tuple, node_params: list, repo: Path) -> list:
+def _optional_nodes(stack: dict, node_params: list, repo: Path) -> list:
     """The operator's drawing keys (stack.yaml keypad) and the Rerun bridge, when configured: the bridge alone
     respawns (display only), and only where it finds the Rerun SDK."""
     keypad = stack.get("keypad") or {}
     env = _rerun(stack, repo)
     return ([Node(package="tatbot_session", executable="keypad", name=names.KEYPAD_NODE, output="both",
-                  parameters=node_params)] if keypad.get("port") and keypad.get("arm") in arms else []) + (
+                  parameters=node_params)] if keypad.get("port") else []) + (
         [Node(package="tatbot_rerun", executable="rerun_bridge", name=names.RERUN_NODE, output="both",
               parameters=node_params, respawn=True, respawn_delay=5.0, additional_env=env)] if env else [])
 
@@ -218,10 +237,9 @@ def _actions(run, repo: Path, stack: dict, arms: tuple, placed: dict) -> list:
     description, stack['runtime_workspace_sha256'] = workspace_description(repo, lambda: robot_description(
         repo, arms=arms, hardware=stack["hardware"], registrations=placed, ros2_control=stack))
     (run.dir / "robot_description.urdf").write_text(description)
-    controller_bytes = (SHARE / 'config' / 'controllers.yaml').read_bytes()
+    controller_bytes = controllers.render_text(SHARE / 'config' / 'controllers.yaml', arms).encode()
     controller_file = run.dir / 'controllers.yaml'
     controller_file.write_bytes(controller_bytes)
-    controllers = str(controller_file)
     stack['runtime_configuration_sha256'] = configuration_digest(stack, description, controller_bytes)
     stack_path.write_text(yaml.safe_dump(stack, sort_keys=False))
     rt = stack["rt"]
@@ -238,20 +256,20 @@ def _actions(run, repo: Path, stack: dict, arms: tuple, placed: dict) -> list:
         spawned += [names.arm_controller(arm), names.safety_controller(arm)]
 
     controller_manager = Node(package="controller_manager", executable="ros2_control_node", output="both",
-                              parameters=[controllers, cm_params],
+                              parameters=[str(controller_file), cm_params],
                               remappings=[("~/robot_description", names.ROBOT_DESCRIPTION_TOPIC)])
     processes = [
         Node(package="robot_state_publisher", executable="robot_state_publisher", output="both",
              parameters=[{"robot_description": description, **sim_time}]),
         controller_manager,
         Node(package="controller_manager", executable="spawner", output="both",
-             arguments=[*spawned, "--param-file", controllers, "--controller-manager-timeout", "60"]),
+             arguments=[*spawned, "--param-file", str(controller_file), "--controller-manager-timeout", "60"]),
         Node(package="tatbot_bridge", executable="bridge", name=names.BRIDGE_NODE, output="both",
              parameters=node_params),
         Node(package="tatbot_session", executable="session", name=names.SESSION_NODE, output="both",
              parameters=node_params),
     ]
-    processes += _optional_nodes(stack, arms, node_params, repo)
+    processes += _optional_nodes(stack, node_params, repo)
     if stack.get("record"):
         processes.append(ExecuteProcess(output="both", cmd=[
             "ros2", "bag", "record", "--storage", "mcap", "--include-hidden-topics",

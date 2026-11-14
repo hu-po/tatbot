@@ -955,8 +955,11 @@ pub const OVERHEAD_DEPTH_MAX_M: f64 = 0.85;
 
 /// A Demo wrist pane's label until its first frame, on short lines: each
 /// upright pane is 270 px wide on the station, and a label is not wrapped.
+/// Frames come from a reading's camera and, between readings, from the
+/// session's idle feed once the cameras have been free for 30 s
+/// (`scripts/lib/wrist_claim.py`).
 #[cfg(feature = "rerun")]
-const WRIST_PLACEHOLDER: &str = "wrist D405: no frame yet\nthe camera opens\nduring a draw";
+const WRIST_PLACEHOLDER: &str = "wrist D405: no frame yet\nlive during a reading\nand 30 s after it";
 
 /// The overhead D555's two streams on the bus.
 #[cfg(any(feature = "rerun", test))]
@@ -981,18 +984,20 @@ const WRIST_MARKERS_QUEUE: usize = 16;
 /// The most one logged image's encoded bytes may be: with its row's own
 /// framing the chunk stays within 64 KiB, about 0.5 ms at 1 Gbps. The hub
 /// streams every chunk on to the station, on the link that also carries the
-/// pink controller's 400 Hz UDP, and a big chunk holds it for its whole time
-/// on the wire. On 2026-10-18 the owner's q95 colour, passed through, ran
-/// ~470 KB a chunk and the 640x360 depth ~155 KB (after the stream's LZ4),
-/// and the controller manager overran ~50 times a minute while the station
-/// was connected.
+/// WXAI follower controller's 400 Hz UDP, and a big chunk holds it for its
+/// whole time on the wire. On 2026-10-18 the owner's q95 colour, passed
+/// through, ran ~470 KB a chunk and the 640x360 depth ~155 KB (after the
+/// stream's LZ4), and the controller manager overran ~50 times a minute while
+/// the station was connected.
 #[cfg(any(feature = "rerun", test))]
 const VIEWER_ROW_BYTES: usize = 60 * 1024;
-/// Every colour image the cockpit shows fits this, as a JPEG of
-/// `VIEWER_JPEG_QUALITY`: the D555's and the wrist tap's 1280x720 become
-/// 640x360, ~52 KB on the D555's table (the `image` encoder keeps full
-/// chroma), more than a Demo pane on the station's 860-wide portrait
-/// screen shows.
+/// Every colour image the cockpit shows fills this, keeping its shape, as a
+/// JPEG of `VIEWER_JPEG_QUALITY`: the D555's and the wrist tap's 1280x720
+/// become 640x360, ~52 KB on the D555's table (the `image` encoder keeps
+/// full chroma), more than a Demo pane on the station's 860-wide portrait
+/// screen shows. A smaller one is scaled up, since each wrist pane's bounds
+/// are this frame's (`rerun_viewer` `DEMO_WRIST_FRAME`): a D405 preview on a
+/// USB 2.1 link streams 480x270, which sat small in a corner of its pane.
 #[cfg(any(feature = "rerun", test))]
 const VIEWER_COLOR_MAX: (u32, u32) = (640, 360);
 #[cfg(any(feature = "rerun", test))]
@@ -1018,11 +1023,20 @@ const RETIRED_ROWS: [&str; 3] = [
     "cameras/06_realsense1/depth",
 ];
 
+/// The inventory targets whose tags the cockpit reads in the overhead colour
+/// itself ([`SceneTags`]), because no tracker follows them: the palette's
+/// roof tag (`ros station` reads it only before a draw), and the xArm's
+/// end-effector cube, which trackd cannot follow while its layout
+/// (`config/xarm_cube_tags.json`) is nominal; the fleet tracker follows the
+/// WXAI's cube (`wrist`). Outlines labelled with their ids only: no pose is
+/// solved from them.
+#[cfg(all(feature = "rerun", feature = "fiducials"))]
+const SCENE_TARGETS: [&str; 2] = ["palette", "xarm_cube"];
+
 /// The cockpit's own reading of a scene target's tags in the overhead
-/// colour (the inventory's `palette`: its roof tag, which no tracker follows
-/// and `ros station` reads only before a draw), at most once every `PERIOD`,
-/// on the full frame its owner sent: the 640x360 the cockpit logs puts the
-/// 46 mm tag ~20 px wide. Drawn by `RerunViewer::log_scene_tags`.
+/// colour ([`SCENE_TARGETS`]), at most once every `PERIOD`, on the full
+/// frame its owner sent: the 640x360 the cockpit logs puts a 46 mm tag
+/// ~20 px wide. Drawn by `RerunViewer::log_scene_tags`.
 #[cfg(all(feature = "rerun", feature = "fiducials"))]
 pub struct SceneTags {
     target: String,
@@ -1303,8 +1317,9 @@ fn log_frame_sample(
 }
 
 /// A colour image as the cockpit logs it: the owner's JPEG as it is when it
-/// already fits `VIEWER_COLOR_MAX` and `VIEWER_ROW_BYTES`; otherwise decoded,
-/// averaged down to fit `VIEWER_COLOR_MAX` (`shrink`) and re-encoded at
+/// already fills `VIEWER_COLOR_MAX` (one side on it, the other within it)
+/// and fits `VIEWER_ROW_BYTES`; otherwise decoded, averaged down (`shrink`)
+/// or interpolated up to fill `VIEWER_COLOR_MAX`, and re-encoded at
 /// `VIEWER_JPEG_QUALITY`, at lower qualities, then at half the size, until
 /// it fits. Its profile takes the logged size, so the Pinhole scaled from it
 /// matches. The viewer only ever receives JPEG colour (`decode_view`).
@@ -1319,16 +1334,18 @@ fn fit_color(frame: &FrameRecord) -> Result<FrameRecord> {
     };
     let (width, height) = (frame.metadata.profile.width, frame.metadata.profile.height);
     let (max_width, max_height) = VIEWER_COLOR_MAX;
-    if width <= max_width && height <= max_height && bytes.len() <= VIEWER_ROW_BYTES {
+    let scale = (f64::from(max_width) / f64::from(width)).min(f64::from(max_height) / f64::from(height));
+    let mut size = [width, height].map(|v| ((f64::from(v) * scale).round() as u32).max(1));
+    if size == [width, height] && bytes.len() <= VIEWER_ROW_BYTES {
         return Ok(frame.clone());
     }
     let image = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)?;
-    let scale = (f64::from(max_width) / f64::from(width))
-        .min(f64::from(max_height) / f64::from(height))
-        .min(1.0);
-    let mut size = [width, height].map(|v| ((f64::from(v) * scale).round() as u32).max(1));
     loop {
-        let small = shrink(&image, size);
+        let small = if size[0] > width {
+            image.resize_exact(size[0], size[1], image::imageops::FilterType::Triangle)
+        } else {
+            shrink(&image, size)
+        };
         for quality in [VIEWER_JPEG_QUALITY, VIEWER_JPEG_QUALITY - 15, VIEWER_JPEG_QUALITY - 30] {
             let mut jpeg = Vec::new();
             small.write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
@@ -1424,12 +1441,8 @@ fn fit_depth(frame: &FrameRecord, max_range_m: Option<f64>) -> FrameRecord {
 /// Decode one wrist reading's markers (`WRIST_MARKERS_SCHEMA`) for the viewer.
 #[cfg(feature = "rerun")]
 fn decode_markers(bytes: &[u8]) -> Result<crate::rerun_viewer::WristMarkers> {
-    let value: Envelope<crate::rerun_viewer::WristMarkers> = serde_json::from_slice(bytes)?;
-    ensure!(
-        value.schema == WRIST_MARKERS_SCHEMA,
-        "expected {WRIST_MARKERS_SCHEMA}, got {}",
-        value.schema
-    );
+    let value = tatbot_bus::transport::decode::<crate::rerun_viewer::WristMarkers>(bytes, WRIST_MARKERS_SCHEMA)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     Ok(value.payload)
 }
 
@@ -1441,8 +1454,8 @@ fn log_pose_sample(
     schema: &str,
     log: fn(&crate::RerunViewer, u64, &serde_json::Value) -> Result<()>,
 ) -> Result<()> {
-    let value: Envelope<serde_json::Value> = serde_json::from_slice(bytes)?;
-    ensure!(value.schema == schema, "expected {schema}, got {}", value.schema);
+    let value = tatbot_bus::transport::decode::<serde_json::Value>(bytes, schema)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     log(viewer, value.stamp.wall_ns, &value.payload)
 }
 
@@ -1474,7 +1487,10 @@ pub fn view_bus(
     );
     let overhead_clip = (out.overhead_depth_max_m > 0.0).then_some(out.overhead_depth_max_m);
     #[cfg(feature = "fiducials")]
-    let mut scene_tags = out.fiducials.map(|path| SceneTags::new(path, "palette")).transpose()?;
+    let mut scene_tags = match out.fiducials {
+        Some(path) => SCENE_TARGETS.iter().map(|target| SceneTags::new(path, target)).collect::<Result<Vec<_>>>()?,
+        None => Vec::new(),
+    };
     #[cfg(not(feature = "fiducials"))]
     ensure!(out.fiducials.is_none(), "--fiducials needs a build with the fiducials feature");
     let rates = out.rates;
@@ -1607,10 +1623,10 @@ pub fn view_bus(
                 skipped.note(&key, &error);
             }
             #[cfg(feature = "fiducials")]
-            if let Some(tags) = scene_tags.as_mut().filter(|_| key == OVERHEAD_COLOR_KEY)
-                && let Err(error) = tags.read(&viewer, &bytes, now)
-            {
-                skipped.note("the palette's tag", &error);
+            for tags in scene_tags.iter_mut().filter(|_| key == OVERHEAD_COLOR_KEY) {
+                if let Err(error) = tags.read(&viewer, &bytes, now) {
+                    skipped.note(&format!("{}'s tags", tags.target), &error);
+                }
             }
         }
         let interval = |_: &str| std::time::Duration::from_secs_f64(1.0 / cap);
@@ -1700,7 +1716,7 @@ pub fn view_bus(
 }
 
 /// The arm an end-effector tracking key names: `tatbot/tracking/ee/<arm>`,
-/// the pink (right) arm's alone.
+/// the WXAI (right) arm's alone.
 #[cfg(any(feature = "rerun", test))]
 fn ee_tracking_arm(key: &str) -> Option<&str> {
     let arm = key.strip_prefix("tatbot/tracking/ee/")?;
@@ -1888,7 +1904,7 @@ mod tests {
         let payload = CaptureHealth {
             event: "reset".into(),
             group: "d405".into(),
-            sensor: "wrist_upper".into(),
+            sensor: "wrist_2".into(),
             serial: "1234".into(),
             reason: "no frame for 15 s".into(),
             last_error: Some("control transfer -71".into()),
@@ -2695,7 +2711,7 @@ mod tests {
         // The palette's roof tag no tracker follows: the cockpit reads its
         // target in the overhead colour's full frame (here the fixture's
         // wrist tag 3, 240 px a side at (360, 40) pasted 200 px down), and
-        // outlines it in the logged 640x360's pixels, labelled with the target.
+        // outlines it in the logged 640x360's pixels, labelled with the tag's id.
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let inventory = root.join("config/fiducials.json");
         if !inventory.exists() {
@@ -2748,7 +2764,12 @@ mod tests {
                     .collect::<Vec<_>>()
             })
             .collect();
-        assert_eq!(labels, ["wrist"]);
+        assert_eq!(labels, ["3"]);
+        // The cockpit reads the palette and, while trackd cannot follow it,
+        // the xArm's cube: both are inventory targets.
+        for target in SCENE_TARGETS {
+            SceneTags::new(&inventory, target).unwrap();
+        }
         // A due sample without the tag clears its outline.
         let (viewer, storage) = cockpit_recording();
         log_frame_sample(&viewer, OVERHEAD_COLOR_KEY, &blank, None).unwrap();
@@ -3132,6 +3153,35 @@ mod tests {
         assert!(crate::frame_ops::rvl_depth(*width, *height, bytes).len() <= VIEWER_ROW_BYTES);
         assert_eq!((*width, *height), (160, 90), "one step coarser than the table's 320x180");
         assert_eq!((fitted.metadata.profile.width, fitted.metadata.profile.height), (160, 90));
+    }
+
+    #[cfg(feature = "rerun")]
+    #[test]
+    fn a_smaller_colour_image_is_scaled_up_to_fill_the_panes_frame() {
+        // A wrist D405 preview on a USB 2.1 link streams 480x270 (2026-11-09):
+        // the wrist pane's bounds are 640x360's, so it is scaled up to them.
+        let mut jpeg = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(480, 270, image::Rgb([90, 120, 150])))
+            .write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 90))
+            .unwrap();
+        let preview = camera_frame(
+            "realsense2_color",
+            PixelFormat::Bgr8,
+            (480, 270),
+            RecordedPayload::Encoded { format: PixelFormat::Jpeg, bytes: jpeg },
+            &[],
+        );
+        let fitted = fit_color(&preview).unwrap();
+        let RecordedPayload::Encoded { bytes, .. } = &fitted.payload else {
+            panic!("colour stays a JPEG");
+        };
+        let size = image::ImageReader::with_format(std::io::Cursor::new(bytes), image::ImageFormat::Jpeg)
+            .into_dimensions()
+            .unwrap();
+        assert_eq!(size, VIEWER_COLOR_MAX);
+        assert_eq!((fitted.metadata.profile.width, fitted.metadata.profile.height), VIEWER_COLOR_MAX);
+        let attributes = &fitted.metadata.attributes;
+        assert_eq!(attributes.get("viewer_preview_source_dimensions").map(String::as_str), Some("480x270"));
     }
 
     #[cfg(feature = "rerun")]

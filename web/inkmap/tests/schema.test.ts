@@ -15,7 +15,7 @@ import { validatePlacementFile, SCHEMA_VERSION } from "../src/core/schema.ts";
 const schema = JSON.parse(readFileSync(new URL("../../../config/inkmap/placement.schema.json", import.meta.url), "utf8"));
 
 const good = {
-  schema_version: 6,
+  schema_version: 7,
   units: { length: "m", tattoo_size: "mm", up: "+z" },
   body: {
     model_spec_id: MODEL_SPEC_ID,
@@ -31,12 +31,12 @@ const good = {
   ],
 };
 
-test("the in-app validator and JSON Schema agree on placement v6", () => {
+test("the in-app validator and JSON Schema agree on placement v7", () => {
   assert.equal(schema.properties.schema_version.const, SCHEMA_VERSION);
   assert.equal(schema.properties.body.properties.model_spec_id.const, MODEL_SPEC_ID);
 });
 
-test("a well-formed v6 file validates", () => {
+test("a well-formed v7 file validates", () => {
   assert.doesNotThrow(() => validatePlacementFile(structuredClone(good)));
 });
 
@@ -46,7 +46,7 @@ test("old schemas, old models, and malformed geometry fail closed", () => {
     mutate(file);
     assert.throws(() => validatePlacementFile(file), pattern);
   };
-  bad((file) => { file.schema_version = 5; }, /unsupported schema\/model/);
+  bad((file) => { file.schema_version = 6; }, /unsupported schema\/model/);
   bad((file) => { file.body.model_spec_id = "legacy-body"; }, /unsupported schema\/model/);
   bad((file) => { file.body.identity_sha256 = "0".repeat(64); }, /unsupported schema\/model/);
   bad((file) => { file.body.rest_surface_sha256 = "0".repeat(64); }, /unsupported schema\/model/);
@@ -58,11 +58,14 @@ test("old schemas, old models, and malformed geometry fail closed", () => {
   bad((file) => { delete file.placements[0].mirror; }, /mirror/);
 });
 
-test("embedded designs contain the shared frozen artwork", () => {
-  const file = JSON.parse(readFileSync(new URL("../../../config/inkmap/examples/forearm-placement-v6.json", import.meta.url), "utf8"));
+test("embedded designs are source art, not stroke artwork", () => {
+  const file = JSON.parse(readFileSync(new URL("../../../config/inkmap/examples/forearm-placement-v7.json", import.meta.url), "utf8"));
   assert.doesNotThrow(() => validatePlacementFile(file));
-  file.designs["line-v1"].svg = "<svg/>";
+  file.designs.ring.program = {};
   assert.throws(() => validatePlacementFile(file), /missing or unknown fields/);
+  delete file.designs.ring.program;
+  file.designs.ring.schema = "tatbot.inkmap-artwork/2";
+  assert.throws(() => validatePlacementFile(file), /source art/);
 });
 
 test("every top-level and placement field required by JSON Schema is emitted", () => {

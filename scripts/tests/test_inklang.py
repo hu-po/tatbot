@@ -42,7 +42,7 @@ def norm(phrase: str) -> str:
 
 
 def test_lexicon_versions_agree():
-    assert SITES_LEX["inklang"] == STYLES_LEX["inklang"] == "0.3"
+    assert SITES_LEX["inklang"] == STYLES_LEX["inklang"] == "0.4"
 
 
 def test_levels_are_a_separate_slot():
@@ -160,8 +160,8 @@ def test_style_axes_sizes():
     assert defaults == ["machine"]
 
 
-def test_placement_schema_is_v6_with_site_language():
-    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 6
+def test_placement_schema_is_v7_with_site_language():
+    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 7
     placement = PLACEMENT_SCHEMA["properties"]["placements"]["items"]["properties"]
     assert "site" in placement and "language" in placement
     assert set(PLACEMENT_SCHEMA["properties"]["placements"]["items"]["required"]) == {
@@ -173,7 +173,7 @@ def test_inklang_contract_versions_are_independent():
     assert INTENT_SCHEMA["properties"]["intent_schema_version"]["const"] == 1
     assert ATLAS_SCHEMA["properties"]["atlas_schema_version"]["const"] == 2
     assert RESOLUTION_SCHEMA["properties"]["resolution_schema_version"]["const"] == 2
-    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 6
+    assert PLACEMENT_SCHEMA["properties"]["schema_version"]["const"] == 7
     assert "pose" not in PLACEMENT_SCHEMA["properties"]
 
 

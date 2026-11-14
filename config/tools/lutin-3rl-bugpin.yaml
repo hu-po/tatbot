@@ -66,6 +66,11 @@ tip_mesh_scale: [1.0, 1.0, 0.78]
 # The machine's stroke (operator, 2026-10-05; the cam was 3.5 mm with a 4.0 spare).
 stroke_mm: 4.0
 
+# The lift over which the mark goes from full to nothing (docs/tools.md). A fade ladder on the silicone skin
+# (2026-11-03: five 28 mm lines rising evenly to 3.8 mm, from a -1.75 mm trim) inked the first 4-6 mm of every
+# line by eye, 0.56-0.82 mm of lift. It is measured from that depth: a deeper ride fades later.
+fade_lift_mm: 0.7
+
 # How far the needles reach past the tube's end at the bottom of the stroke:
 # the collar setting (0 to ~4.5 mm on the Lutin's steel-ball collar). Turning
 # the collar changes it without moving the TCP. 4.0 mm (2026-10-05): on a ride
@@ -114,12 +119,19 @@ dip:
     # On a forearm one dip carried the 184 mm heart and the operator asked for dips sooner (2026-10-23): skin
     # takes more than silicone, so 130 mm until a fade block on skin measures it.
     nighthawk_black: 130.0
+    # The colour series' red drew faint at 120 mm on the silicone tile (2026-10-25): twice as often, and
+    # its blue alike, until a fade block measures them.
+    bright_red: 60.0
+    true_blue: 60.0
   # A resource activated by a rinse (tatbot-inks/3 `activation: {method: rinse, slot, ink_id}`) takes the cartridge
   # from the last ink to its own in a cap of water, no landing: one dip there with the machine running, held longer
   # than an ink dip, the tube's end at the water's declared level so the stroking needles flush it (operator,
-  # 2026-10-05).
-  rinse_dwell_s: 10.0
+  # 2026-10-05). 30 s since 2026-11-02: 10 s was too short to wash the last ink out.
+  rinse_dwell_s: 30.0
   rinse_above_ink_m: 0.0
+  # The new ink's first dip after a rinse holds this many dwell_s, so the rinsed cartridge takes up its colour
+  # (2026-11-02).
+  rinse_first_dip_dwell_x: 2.0
 
 # --- ink supply, the simulator's volume model (scripts/lib/ink_spec.py) -----
 # Guesses (operator, 2026-08-28) the simulator and `tatbot ink` read; the ROS

@@ -17,8 +17,8 @@ from tatbot_ink.errors import CompileError
 STENCIL_SIZE_M = (0.128, 0.172)
 STENCIL_CLEAR_M = (0.090, 0.134)
 STENCIL_MARGIN_M = 0.005
-# A path no wider than this is a dot: a DBV3 contour's sub-mm fragments lie on its other lines (a forearm
-# self-portrait: 38 of its 103 paths, 24 mm).
+# A path no wider than this is a dot: a DBV3 contour's sub-mm fragments lie on its other lines (one forearm
+# design: 38 of its 103 paths, 24 mm).
 MIN_STROKE_M = 0.001
 # A path crossing a keep region's edge goes with the side holding most of its length, unless the other side holds more
 # than this of it: a line of its own there (a DBV3 contour outline can trace a whole design), so it is cut at the edge.
@@ -32,6 +32,15 @@ class Stroke:
     generation_width_m: float
     src: dict
     arc0_m: float = 0.0     # where points_m starts along its source path: a path cut at a keep region's edge
+    deposition: np.ndarray | None = None   # per point where the path fades; None: full ink all along
+
+    def deposition_at(self, arc_m) -> np.ndarray | None:
+        """Its deposition at arc positions along points_m, interpolated (a cut, a chunk); None: full ink."""
+        if self.deposition is None:
+            return None
+        arc = arc_lengths(self.points_m)
+        keep = np.r_[True, np.diff(arc) > 0]
+        return np.interp(arc_m, arc[keep], self.deposition[keep])
 
 
 def place_points(points, canvas, placement):
@@ -46,12 +55,11 @@ def place_points(points, canvas, placement):
 
 
 def relocate(design, *, at_m=None, width_m=None):
+    """The artwork, or its layers together (they share one origin), centred at `at_m`; `width_m` asserts the
+    acquired canvas width."""
     if at_m is None and width_m is None:
         return design
     result = copy.deepcopy(design)
-    anchors = {tuple(item["placement"]["target"]["anchor_uv_m"]) for item in result["placements"]}
-    if len(anchors) != 1:   # layers on one origin move together; a composed design keeps its own layout
-        raise CompileError("--at/--width require one placement, or layers that share one origin")
     for item in result["placements"]:
         size = canvas_m(result["artworks"][item["artwork_id"]])
         if width_m is not None and (not math.isfinite(width_m) or abs(width_m - size[0]) > 1e-10):
@@ -63,13 +71,16 @@ def relocate(design, *, at_m=None, width_m=None):
     return result
 
 
-def page_of(target):
-    size = list(target["canvas_m"])
-    margin = target["margin_m"]
-    if np.allclose(size, STENCIL_SIZE_M, rtol=0, atol=1e-9):
-        return {"kind": "stencil", "size_m": list(STENCIL_SIZE_M), "clear_m": list(STENCIL_CLEAR_M),
-                "margin_m": max(margin, STENCIL_MARGIN_M)}
-    return {"kind": "plane", "size_m": size, "clear_m": [v - 2 * margin for v in size], "margin_m": margin}
+def stencil_page() -> dict:
+    """The nominal stencil page, 128 x 172 mm with a 90 x 134 mm clear centre: the page a program is placed on
+    when no generated print is named (print_page)."""
+    return {"kind": "stencil", "size_m": list(STENCIL_SIZE_M), "clear_m": list(STENCIL_CLEAR_M),
+            "margin_m": STENCIL_MARGIN_M}
+
+
+def drawable_half(page: dict) -> np.ndarray:
+    """Half the width and height a canvas may reach about the page centre: its clear centre, off the edge by the margin."""
+    return np.minimum(np.asarray(page["clear_m"]) / 2, np.asarray(page["size_m"]) / 2 - page["margin_m"])
 
 
 def print_page(stencil, repo) -> dict:
@@ -175,7 +186,8 @@ def keep_region(strokes, polygon_m, *, cut_m=KEEP_CUT_M, min_size_m=MIN_STROKE_M
         inside_m, length_m = sum(n for n, inside in lengths if inside), sum(n for n, _ in lengths)
         decision = "cut" if min(inside_m, length_m - inside_m) > cut_m else "kept" if inside_m >= length_m / 2 else "dropped"
         pieces = [stroke] if decision == "kept" else [] if decision == "dropped" else [
-            Stroke(pts, False, stroke.generation_width_m, stroke.src, stroke.arc0_m + arc0) for pts, inside, arc0 in runs
+            Stroke(pts, False, stroke.generation_width_m, stroke.src, stroke.arc0_m + arc0,
+                   stroke.deposition_at(arc0 + arc_lengths(pts))) for pts, inside, arc0 in runs
             if inside and np.ptp(pts, axis=0).max() > min_size_m]
         kept += pieces
         crossing.append({**{k: stroke.src[k] for k in ("placement", "layer", "path")}, "inside_m": round(inside_m, 9),
@@ -187,21 +199,16 @@ def keep_region(strokes, polygon_m, *, cut_m=KEEP_CUT_M, min_size_m=MIN_STROKE_M
 
 def placed_strokes(design, tool_width=None, *, tool_widths=None, page=None):
     """Check each pen's own physical width, then place paths without editing them, inside `page` (print_page)
-    when given, else the page each placement targets."""
+    when given, else the nominal stencil page."""
     if tool_width is not None and tool_widths is not None:
         raise CompileError('use either one tool width or exact per-pen widths')
-    strokes, chosen = [], page
-    page = None
+    strokes, page = [], page or stencil_page()
     for item in design["placements"]:
         placement = item["placement"]
-        this_page = chosen or page_of(placement["target"])
-        if page is not None and page != this_page:
-            raise CompileError("all placements must share one page")
-        page = this_page
         artwork = design["artworks"][item["artwork_id"]]
         size = canvas_m(artwork)
         corners = place_points([[0, 0], [size[0], 0], size, [0, size[1]]], size, placement)
-        half = np.minimum(np.asarray(page["clear_m"]) / 2, np.asarray(page["size_m"]) / 2 - page["margin_m"])
+        half = drawable_half(page)
         if np.any(np.abs(corners) > half + 1e-10):
             raise CompileError(f"placement {item['id']} canvas leaves the page clear area")
         for layer in artwork["program"]["layers"]:
@@ -211,10 +218,13 @@ def placed_strokes(design, tool_width=None, *, tool_widths=None, page=None):
                 radius = max(width or 0, path["width_m"]) / 2
                 if np.any(np.abs(points) + radius > half + 1e-10):
                     raise CompileError(f"path {path['id']} footprint leaves the page clear area")
+                deposition = (np.asarray(path["deposition"], float) if isinstance(path["deposition"], list)
+                              else None if path["deposition"] == 1 else np.full(len(points), float(path["deposition"])))
                 if path["closed"] and not np.array_equal(points[0], points[-1]):
                     points = np.vstack([points, points[0]])
+                    deposition = None if deposition is None else np.r_[deposition, deposition[0]]
                 strokes.append(Stroke(points, path["closed"], path["width_m"], {
                     "placement": item["id"], "artwork_sha256": artwork["content_sha256"],
                     "program_sha256": artwork["program"]["content_sha256"], "layer": layer["id"],
-                    "path": path["id"], "pen": layer["ink_id"], "closed": path["closed"]}))
+                    "path": path["id"], "pen": layer["ink_id"], "closed": path["closed"]}, deposition=deposition))
     return strokes, page

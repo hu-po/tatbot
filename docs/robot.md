@@ -17,12 +17,13 @@ The URDF at `urdf/tatbot.urdf` is consumed by vision replay and visualization
 tools. Treat it as a shared interface: when geometry changes, rebuild consumers
 and record the model revision with the run.
 
-The model carries the pink-taped `right` arm alone: its fitted tool, from
-the datasheet `config/workspace.yaml` names, and two D405s on its wrist, one
-above it and one under it. The `left` arm is the teleop leader and is not
-modelled. Left/right are persistent physical identities; their positions on
-the screen depend on the viewing direction. Leader/follower are control
-assignments.
+The model carries the `right` arm, the WXAI follower, alone: its fitted
+tool, from the datasheet `config/workspace.yaml` names, and the two D405s its
+wrist carried until 2026-11-08, one above it and one under it. The `left` arm
+is the teleop leader and is not modelled. The drawing arm, a UFACTORY xArm 7,
+has its own model, `urdf/xarm7.urdf`. Left/right are persistent physical
+identities; their positions on the screen depend on the viewing direction.
+Leader/follower are control assignments.
 
 Left and right are the robot's own sides, looking forward through the fixed
 cameras: +X forward, +Y left, +Z up. `root` and `rig_center` coincide at the

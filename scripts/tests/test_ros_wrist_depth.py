@@ -93,10 +93,13 @@ def test_capture_preserves_paired_raw_units_rgb_and_measurement_lifetime(tmp_pat
     optical[2,3] = .2
     tcp = np.eye(4)
     tcp[2,3] = .020
-    kin = SimpleNamespace(frame=lambda q, frame: optical, fk=lambda q:tcp)
+    asked = set()
+    kin = SimpleNamespace(frame=lambda q, frame: asked.add(frame) or optical, fk=lambda q:tcp)
     rgb = np.full((80,120,3),127,np.uint8)
     stem = tmp_path/'capture'
-    fit, obs, result = ros_depth.retain(cam, [rgb], [raw*.0001], kin, np.zeros(7), np.eye(4), stem, 'right',
+    fit, obs, result = ros_depth.retain(cam, [rgb], [raw*.0001], kin, np.zeros(7), np.eye(4), stem,
+                                      depth_frame='xarm/realsense2_depth_optical_frame',
+                                      color_frame='xarm/realsense2_color_optical_frame',
                                       reference={'captured_at_monotonic_s':stamp+.05})
     saved = np.load(stem.with_suffix('.npz'))
     assert np.array_equal(saved['depth_raw'][0],raw) and np.array_equal(saved['rgb_bgr'][0],rgb)
@@ -108,6 +111,9 @@ def test_capture_preserves_paired_raw_units_rgb_and_measurement_lifetime(tmp_pat
         assert fit is None and 'relative_clearance_m' not in result
     meta = json.loads(stem.with_suffix('.json').read_text())
     assert meta['reference_lifetime'].startswith('this capture only')
+    # the camera's own frames on its arm, never the WXAI wrist's stock name (the xArm's draw died on it, 2026-11-09)
+    assert meta['frame'] == 'xarm/realsense2_depth_optical_frame'
+    assert asked == {'xarm/realsense2_depth_optical_frame', 'xarm/realsense2_color_optical_frame'}
     assert not meta['clearance']['used_for_drawing']
 
 

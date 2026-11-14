@@ -214,6 +214,18 @@ def test_sweep_autosaves_idle_edits_pushes_and_fast_forwards_the_mirror(fleet, t
     assert git(path, "status", "--porcelain").stdout == ""
 
 
+def test_sweep_never_fast_forwards_a_pinned_mirror(fleet, tmp_path):
+    r, payload = fleet.run("init", "--no-timer", "--pinned")
+    assert r.returncode == 0 and any("mirror pinned" in d for d in payload["done"])
+    other = fleet.other_clone(tmp_path)
+    commit_file(other, "upstream.txt")
+    git(other, "push", "-q", "origin", "main")
+    r, report = fleet.run("sweep")
+    assert r.returncode == 0, r.stderr
+    assert {"action": "fast_forward_mirror", "skipped": "pinned (tatbot.pinned)"} in report["actions"]
+    assert not (fleet.mirror / "upstream.txt").exists(), "a pinned checkout moves only by hand"
+
+
 def test_sweep_prunes_only_landed_idle_worktrees_and_merged_remote_branches(fleet, tmp_path):
     path, branch = fleet.start("done")
     for p in (path,):

@@ -1,0 +1,1209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Tatbot Flash Wall</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap">
+<script defer id="d3-library" src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+:root {
+  color-scheme: light dark;
+  --paper: #f6f2eb;
+  --card: #fffcf6;
+  --ink: #26211e;
+  --muted: #6c6058;
+  --line: #d7cdc1;
+  --accent: #a43323;
+  --on-accent: #fff9ee;
+  --keep: #236246;
+  --keep-bg: #e5efe7;
+  --star: #745209;
+  --star-bg: #f7ecd0;
+  --hull: #a4332317;
+  --body: "Archivo", system-ui, sans-serif;
+  --display: "Instrument Serif", Georgia, serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #201c1a;
+    --card: #2b2522;
+    --ink: #f6eee4;
+    --muted: #c0b1a5;
+    --line: #52473f;
+    --accent: #ffab98;
+    --on-accent: #2b1611;
+    --keep: #a7dbbb;
+    --keep-bg: #2b4135;
+    --star: #f5d28b;
+    --star-bg: #46391e;
+    --hull: #ffab9828;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  padding: 0 max(18px, env(safe-area-inset-right)) 56px max(18px, env(safe-area-inset-left));
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 15px/1.5 var(--body);
+}
+button, select, input { color: inherit; font: inherit; }
+button, select, summary { cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+h1, h2, h3, p, figure { margin: 0; }
+h1, h2 { font-family: var(--display); font-weight: 400; line-height: 1; }
+h1 { font-size: clamp(46px, 7vw, 84px); letter-spacing: -.035em; }
+h2 { font-size: clamp(30px, 5vw, 44px); }
+.wrap { max-width: 1280px; margin: auto; }
+.masthead { padding-block: clamp(28px, 5vw, 54px) 22px; }
+.masthead p { margin-top: 8px; color: var(--muted); }
+.toolbar, .actions, .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.toolbar { justify-content: space-between; border-block: 1px solid var(--line); gap: 12px; }
+.toolbar > .actions { margin-left: auto; }
+.modes { display: flex; gap: clamp(14px, 4vw, 30px); }
+.modes button {
+  min-height: 50px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent;
+  background: transparent; color: var(--muted); font-weight: 600;
+}
+.modes button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.control {
+  min-height: 40px; border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 11px; background: var(--card); font-size: 14px; font-weight: 500;
+}
+button.control:hover:not(:disabled), summary:hover { border-color: var(--muted); }
+.primary, .reaction[aria-pressed="true"] {
+  background: var(--accent); color: var(--on-accent); border-color: var(--accent);
+}
+summary { width: fit-content; font-weight: 600; }
+.toolbar summary { list-style: none; }
+.toolbar summary::after { content: " ▾"; }
+.toolbar details[open] summary::after { content: " ▴"; }
+.toolbar details { position: relative; }
+.filter-menu {
+  position: absolute; z-index: 3; top: calc(100% + 8px); right: 0;
+  width: min(290px, calc(100vw - 38px)); padding: 14px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 28px #160e1420;
+}
+.fields, .fields label { display: grid; gap: 6px; }
+.fields { gap: 12px; }
+.fields label { color: var(--muted); font-size: 13px; }
+.fields .control { width: 100%; color: var(--ink); }
+.results { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 20px; padding-block: 15px; }
+.results .count { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+.results details > p { max-width: 85ch; margin-block: 7px 0; color: var(--muted); overflow-wrap: anywhere; }
+.status { color: var(--muted); font-size: 14px; }
+.notice, .queue, .cluster { padding: 12px 14px; margin-bottom: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; }
+.notice.pick { position: sticky; z-index: 2; top: 8px; border-color: var(--accent); }
+.queue ol { margin-block: 8px 0; padding-left: 20px; }
+.queue li + li { margin-top: 6px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 178px), 1fr)); gap: 16px; }
+.card {
+  display: flex; flex-direction: column; min-width: 0; padding: 0; text-align: left;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+}
+.card:hover { border-color: var(--muted); }
+.card.kept { border-color: var(--keep); }
+.card.dropped .art { opacity: .64; }
+.art { position: relative; width: 100%; aspect-ratio: 1; display: grid; place-items: center; background: #fff; color: #625c57; }
+.art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.art .missing { padding: 8px; text-align: center; font-size: 12px; }
+.caption { display: grid; gap: 4px; padding: 10px 12px; width: 100%; border-top: 1px solid var(--line); }
+.caption > * { min-width: 0; }
+.caption .subject { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.caption .meta, .eyebrow, figcaption { color: var(--muted); font-size: 12px; }
+.badges:empty { display: none; }
+.badge {
+  display: inline-block; background: var(--paper); color: var(--muted);
+  border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600;
+}
+.badge.kept { background: var(--keep-bg); color: var(--keep); }
+.badge.starred { background: var(--star-bg); color: var(--star); }
+@media (max-width: 450px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .toolbar { padding-bottom: 8px; }
+  .caption { padding: 8px; }
+}
+
+.mapbox {
+  height: clamp(350px, 65vh, 760px); overflow: hidden; background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; touch-action: none;
+}
+.mapbox svg { width: 100%; height: 100%; display: block; cursor: grab; }
+.mapbox .status { padding: 18px; }
+.map-controls { justify-content: space-between; margin-top: 8px; }
+.edge-near { stroke: var(--muted); stroke-opacity: .28; }
+.edge-lineage { stroke: var(--keep); stroke-opacity: .7; stroke-width: 1.6; }
+.edge-lineage.study { stroke-dasharray: 3 3; }
+.hull { fill: var(--hull); stroke: var(--hull); stroke-linejoin: round; stroke-linecap: round; }
+.hull.selected { stroke: var(--accent); stroke-width: 3; }
+.hull-label {
+  fill: var(--ink); font: 600 12px var(--body); cursor: pointer; paint-order: stroke;
+  stroke: var(--card); stroke-width: 5px; stroke-linejoin: round;
+}
+.node { cursor: pointer; }
+.node .ring { fill: #fff; stroke: var(--line); stroke-width: 2; }
+.node.kept .ring { stroke: var(--keep); stroke-width: 3; }
+.node.starred .ring { stroke: var(--star); stroke-width: 3.5; }
+.node.dropped { opacity: .62; }
+.node.dim { opacity: .18; }
+.node:focus-visible, .hull-label:focus-visible { opacity: 1; }
+.cluster { margin-block: 10px 0; }
+.pyramid { display: grid; gap: 12px; }
+.tier { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.tier h2 { font-size: 32px; }
+.tier h2 span { color: var(--muted); margin-left: 8px; font: 400 14px var(--body); }
+.tier p, .stratum { margin-top: 8px; }
+.stratum h3, .related h3 { color: var(--muted); font-size: 13px; font-weight: 600; margin-block: 10px 5px; }
+.thumbs { display: flex; flex-wrap: wrap; gap: 5px; }
+.thumb { position: relative; width: 60px; padding: 0; border: 2px solid var(--line); border-radius: 5px; overflow: hidden; }
+.thumb.kept { border-color: var(--keep); }
+.thumb.dropped { opacity: .62; }
+.thumb.starred { border-color: var(--star); }
+.thumb .cap {
+  position: absolute; bottom: 0; left: 0; right: 0; background: var(--card); color: var(--ink);
+  font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+dialog {
+  width: min(1100px, calc(100% - 28px)); max-height: calc(100% - 28px); padding: 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink);
+}
+dialog::backdrop { background: #1d1615b3; }
+.dialog-head, .dialog-foot {
+  position: sticky; z-index: 1; padding: 12px clamp(12px, 3vw, 24px); background: var(--card);
+}
+.dialog-head { top: 0; border-bottom: 1px solid var(--line); justify-content: space-between; }
+.dialog-head > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dialog-foot { bottom: 0; border-top: 1px solid var(--line); }
+.dialog-foot > .row { justify-content: space-between; }
+.dialog-foot .status:not(:empty) { margin-top: 6px; }
+.dialog-body { display: grid; gap: 16px; padding: clamp(12px, 3vw, 24px); }
+.comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.comparison figure { min-width: 0; }
+.comparison h3 { margin-bottom: 6px; font-size: 14px; }
+#rendition-control { display: grid; gap: 4px; width: fit-content; max-width: 100%; }
+#rendition-choice { width: 100%; min-width: 0; }
+#review-study { margin-top: 6px; }
+.comparison .art { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.comparison figcaption { margin-top: 4px; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 5px 14px; margin: 8px 0; font-size: 14px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+#design-request { justify-self: start; }
+#request { width: min(460px, calc(100% - 28px)); }
+@media (max-width: 600px) {
+  .comparison { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 8px; }
+  .stencil-view { grid-column: 1 / -1; width: min(100%, 280px); }
+  .dialog-foot .control { min-height: 38px; padding-inline: 8px; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="masthead">
+    <h1>Tatbot Flash Wall</h1>
+    <p>Open a design to compare its previews and vote on what to develop next.</p>
+  </header>
+  <div class="toolbar" id="toolbar" hidden>
+    <nav class="modes" aria-label="Browse designs">
+      <button type="button" data-mode="wall" aria-pressed="true">Wall</button>
+      <button type="button" data-mode="map" aria-pressed="false">Map</button>
+      <button type="button" data-mode="pyramid" aria-pressed="false">Pyramid</button>
+    </nav>
+    <div class="actions">
+      <select class="control" id="round" aria-label="Round"></select>
+      <details id="filters">
+        <summary class="control" id="filter-label">Filters</summary>
+        <div class="filter-menu fields">
+          <label>Style<select class="control" id="style"></select></label>
+          <label>My review<select class="control" id="review">
+            <option value="all">All designs</option><option value="unvoted">Unvoted</option>
+            <option value="kept">Kept</option><option value="dropped">Dropped</option>
+            <option value="shortlisted">Shortlisted</option>
+          </select></label>
+          <label>Preview<select class="control" id="preview"></select></label>
+          <button type="button" class="control" id="reset">Reset filters</button>
+        </div>
+      </details>
+    </div>
+  </div>
+  <div class="results" id="results" hidden>
+    <details id="note" hidden><summary id="note-title"></summary><p id="note-body"></p></details>
+    <p class="count" id="count" role="status"></p>
+  </div>
+  <div class="notice pick" id="pick" hidden>
+    <div class="row"><span id="pick-text" role="status"></span><button type="button" class="control" id="pick-cancel">Cancel</button></div>
+  </div>
+  <details class="queue" id="queue" hidden><summary id="queue-title"></summary><ol id="queue-list"></ol></details>
+  <p class="status" id="connection" role="status">Loading the wall…</p>
+  <div class="row" id="feedback" hidden>
+    <p class="status" id="feedback-text" role="status"></p>
+    <button type="button" class="control" id="retry" hidden>Retry votes</button>
+  </div>
+  <p class="status" id="empty" role="status" hidden></p>
+  <section class="grid" id="mode-wall" aria-label="Designs"></section>
+  <section id="mode-map" aria-label="Design map" hidden>
+    <div class="mapbox" id="mapbox"></div>
+    <div class="row map-controls">
+      <p class="status">Nearby designs look alike. Green lines show lineage. Select a neighbourhood by name.</p>
+      <button type="button" class="control" id="fit-map">Fit map</button>
+    </div>
+    <div class="cluster row" id="cluster" hidden>
+      <span id="cluster-name"></span>
+      <button type="button" class="control" id="cluster-request" hidden>Request more</button>
+      <button type="button" class="control" id="cluster-clear">Clear selection</button>
+    </div>
+  </section>
+  <section class="pyramid" id="mode-pyramid" aria-label="Promotion pyramid" hidden></section>
+</main>
+<dialog id="design" aria-labelledby="design-title">
+  <header class="dialog-head row">
+    <div><p class="eyebrow" id="design-meta"></p><h2 id="design-title"></h2></div>
+    <button type="button" class="control" id="design-close" autofocus>Close</button>
+  </header>
+  <div class="dialog-body">
+    <label class="status" id="rendition-control" hidden>Compare a robot rendition
+      <select class="control" id="rendition-choice"></select>
+    </label>
+    <div class="comparison" id="design-views">
+      <figure>
+        <h3>Original</h3><div id="design-original"></div>
+      </figure>
+      <figure>
+        <h3>Robot rendition</h3><div id="design-rendition"></div>
+        <figcaption id="rendition-caption"></figcaption>
+        <button type="button" class="control" id="review-study" hidden>Review this version</button>
+      </figure>
+      <figure class="stencil-view">
+        <h3>On stencil</h3><div id="design-stencil"></div>
+        <figcaption id="stencil-caption"></figcaption>
+      </figure>
+    </div>
+    <details id="design-details">
+      <summary>Design details</summary>
+      <dl class="facts" id="design-facts"></dl>
+      <p class="status" id="design-prompt"></p>
+      <div id="design-related"></div>
+    </details>
+    <button type="button" class="control" id="design-request" hidden>Request a variation</button>
+  </div>
+  <footer class="dialog-foot">
+    <div class="row">
+      <div class="actions" aria-label="Vote on design" role="group" id="reactions">
+        <button type="button" class="control reaction" data-vote="keep" aria-pressed="false" aria-keyshortcuts="U" title="Keep (U)">Keep</button>
+        <button type="button" class="control reaction" data-vote="drop" aria-pressed="false" aria-keyshortcuts="D" title="Drop (D)">Drop</button>
+        <button type="button" class="control reaction" data-vote="star" aria-pressed="false" aria-keyshortcuts="S" title="Shortlist (S)">Shortlist</button>
+      </div>
+      <div class="actions">
+        <button type="button" class="control" id="prev" aria-label="Previous design" aria-keyshortcuts="ArrowLeft" title="Previous design (←)">←</button>
+        <span class="status" id="position" aria-live="polite"></span>
+        <button type="button" class="control" id="next" aria-label="Next design" aria-keyshortcuts="ArrowRight" title="Next design (→)">→</button>
+      </div>
+    </div>
+    <div class="row"><p class="status" id="design-feedback" role="status"></p>
+      <button type="button" class="control" id="design-retry" hidden>Retry votes</button>
+    </div>
+  </footer>
+</dialog>
+<dialog id="request" aria-labelledby="request-title">
+  <header class="dialog-head row"><div><h2 id="request-title">Next-round request</h2></div>
+    <button type="button" class="control" id="request-close">Close</button>
+  </header>
+  <form class="dialog-body" id="request-form">
+    <p class="status" id="request-context"></p>
+    <div class="fields">
+      <label>Variation<select class="control" id="request-kind">
+        <option value="near">More like this design</option>
+        <option value="branch">This subject in other styles</option>
+        <option value="blend">Blend with another design</option>
+        <option value="cluster">More from this neighbourhood</option>
+      </select></label>
+      <label>Prompts<select class="control" id="request-count">
+        <option value="1">1 prompt · 3 images</option>
+        <option value="2" selected>2 prompts · 6 images</option>
+        <option value="3">3 prompts · 9 images</option>
+      </select></label>
+      <label>Direction (optional)<input class="control" id="request-steer" maxlength="200" placeholder="e.g. more negative space"></label>
+    </div>
+    <button class="control primary" id="request-submit">Queue request</button>
+    <p class="status" id="request-feedback" role="status"></p>
+  </form>
+</dialog>
+<script>
+(() => {
+  "use strict";
+
+  const VIEWS = { flow: "Generated art", ours: "In our inks", drawn: "Robot paths" };
+  const MODES = ["wall", "map", "pyramid"];
+  const TIERS = ["Sketch", "Robot paths", "Fill study", "Shortlist"];
+  const ASK_NAMES = { near: "More like", branch: "Other styles for", blend: "Blend", cluster: "Neighbourhood" };
+  const $ = (id) => document.getElementById(id);
+  const modes = [...document.querySelectorAll("[data-mode]")];
+  const reactions = [...document.querySelectorAll("[data-vote]")];
+  const pending = { v: new Map(), s: new Map() };
+  const roundByMode = { wall: "latest", map: "all", pyramid: "all" };
+  const state = {
+    designs: [], byId: new Map(), children: new Map(), studies: new Map(), rounds: new Map(), map: null,
+    votes: new Map(), asks: [], uid: null, owner: false, votesReady: false, readOnly: false,
+    mode: "wall", style: "", review: "all", preview: "flow", cluster: null,
+    inspected: null, sequence: [], request: null, pick: null,
+    loaded: false, connection: "Loading the wall…", voteMessage: "", requestMessage: "",
+  };
+
+  try {
+    const view = localStorage.getItem("flashwall.view");
+    if (Object.hasOwn(VIEWS, view)) state.preview = view;
+  } catch { /* Storage may be unavailable in the host frame. */ }
+
+  function el(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+    node.append(...children.filter((child) => child != null));
+    return node;
+  }
+
+  function setText(id, text) {
+    const node = $(id);
+    if (node.textContent !== text) node.textContent = text;
+  }
+
+  function setOptions(select, entries, value) {
+    const key = JSON.stringify(entries);
+    if (select.dataset.options !== key) {
+      select.replaceChildren(...entries.map(([id, label]) => el("option", { value: id }, label)));
+      select.dataset.options = key;
+    }
+    select.value = value;
+  }
+
+  function picture(design, view, { fallback = false } = {}) {
+    const url = design.views?.[view] || (fallback && design.views?.flow);
+    return previewImage(url, "", view === "drawn" ? "Paths pending" : "Preview unavailable", true);
+  }
+
+  function previewImage(url, label, placeholder, lazy = false) {
+    const content = url
+      ? el("img", { src: url, alt: label, loading: lazy ? "lazy" : "eager" })
+      : el("span", { class: "missing" }, placeholder);
+    return el("span", { class: "art" }, content);
+  }
+
+  function addToIndex(index, key, value) {
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(value);
+  }
+
+  function setDesigns(docs) {
+    state.designs = docs.map(([id, data]) => ({ ...data, id }))
+      .sort((a, b) => b.round - a.round || a.order - b.order);
+    state.byId = new Map(state.designs.map((design) => [design.id, design]));
+    state.children = new Map();
+    state.studies = new Map();
+    const alternatives = new Map();
+    for (const design of state.designs) {
+      for (const parent of design.parents || []) addToIndex(state.children, parent, design.id);
+      if (design.study_of) addToIndex(state.studies, design.study_of, design.id);
+      else addToIndex(alternatives, JSON.stringify([design.round, design.style, design.subject]), design);
+    }
+    for (const designs of alternatives.values()) {
+      if (designs.length > 1) designs.forEach((design, index) => { design.option = `Option ${index + 1} of ${designs.length}`; });
+    }
+  }
+
+  function voteSummary() {
+    const mine = { v: {}, s: {}, ...state.votes.get(state.uid) };
+    const summary = { v: { ...mine.v }, s: { ...mine.s } };
+    for (const field of ["v", "s"]) {
+      for (const [id, value] of pending[field]) {
+        if (value) summary[field][id] = value;
+        else delete summary[field][id];
+      }
+    }
+    return summary;
+  }
+
+  function starredDesigns(mine) {
+    const stars = new Set(Object.keys(mine.s).filter((id) => mine.s[id]));
+    for (const [uid, vote] of state.votes) {
+      if (uid === state.uid) continue;
+      for (const [id, value] of Object.entries(vote.s || {})) if (value) stars.add(id);
+    }
+    return stars;
+  }
+
+  function tier(design, stars) {
+    if (stars.has(design.id)) return 3;
+    if (design.study_of || state.studies.has(design.id)) return 2;
+    return design.views?.drawn ? 1 : 0;
+  }
+
+  function designClasses(id, mine, stars) {
+    const vote = mine.v[id];
+    return [vote > 0 ? "kept" : vote < 0 ? "dropped" : "", stars.has(id) ? "starred" : ""].filter(Boolean).join(" ");
+  }
+
+  function drawingTime(design) {
+    return [design.minutes != null ? `${Math.round(design.minutes)} min` : "",
+      design.dips != null ? `${design.dips} dips` : ""].filter(Boolean).join(" · ");
+  }
+
+  function browse(mine) {
+    const rounds = [...new Set(state.designs.map((design) => String(design.round)))];
+    const selected = roundByMode[state.mode];
+    const round = selected === "latest" ? rounds[0] : selected;
+    const inRound = state.designs.filter((design) => round === "all" || String(design.round) === round);
+    const styles = [...new Set(inRound.map((design) => design.style))].sort();
+    if (!styles.includes(state.style)) state.style = "";
+    const list = inRound.filter((design) => {
+      if (state.style && design.style !== state.style) return false;
+      switch (state.review) {
+        case "unvoted": return !mine.v[design.id];
+        case "kept": return mine.v[design.id] > 0;
+        case "dropped": return mine.v[design.id] < 0;
+        case "shortlisted": return !!mine.s[design.id];
+        default: return true;
+      }
+    });
+    return { rounds, round, styles, list };
+  }
+
+  function renderControls({ rounds, round, styles, list }, mine) {
+    const hasDesigns = state.designs.length > 0;
+    $("toolbar").hidden = $("results").hidden = !hasDesigns;
+    for (const button of modes) button.setAttribute("aria-pressed", String(button.dataset.mode === state.mode));
+    setOptions($("round"), [["latest", `Latest round${rounds.length ? ` · ${rounds[0]}` : ""}`],
+      ...rounds.map((number) => [number, `Round ${number}`]), ["all", "All rounds"]], roundByMode[state.mode]);
+    setOptions($("style"), [["", "All styles"], ...styles.map((style) => [style, style])], state.style);
+    setOptions($("preview"), Object.entries(VIEWS), state.preview);
+    $("review").value = state.review;
+    const filters = Number(!!state.style) + Number(state.review !== "all") + Number(state.preview !== "flow");
+    $("filter-label").textContent = filters ? `Filters (${filters})` : "Filters";
+
+    const note = state.rounds.get(round);
+    $("note").hidden = state.mode !== "wall" || !note?.note;
+    const title = note?.title || `Round ${round} notes`;
+    if ($("note-title").textContent !== title) $("note").open = false;
+    $("note-title").textContent = title;
+    $("note-body").textContent = note?.note || "";
+    const reviewed = list.filter(({ id }) => mine.v[id]).length;
+    const total = `${list.length} ${list.length === 1 ? "design" : "designs"}`;
+    const count = state.mode === "map" && list.length !== state.designs.length
+      ? `${list.length} of ${state.designs.length} match filters`
+      : total;
+    setText("count", state.review === "all" ? `${count} · ${reviewed} reviewed` : count);
+    $("empty").textContent = hasDesigns ? "No designs match these filters." : "No designs have been added yet.";
+    $("empty").hidden = !state.loaded || !!state.connection || (hasDesigns && (list.length > 0 || state.mode === "map"));
+  }
+
+  function designName(design) {
+    const detail = design.study_of ? `${design.fill} fill` : design.option;
+    return [design.subject, design.style, detail].filter(Boolean).join(", ");
+  }
+
+  function designButton(design, className, ...children) {
+    return el("button", { class: className, type: "button", "data-design": design.id,
+      "aria-label": `Open ${designName(design)}`, title: designName(design) }, ...children);
+  }
+
+  function card(design) {
+    return designButton(design, "card", picture(design, state.preview),
+      el("span", { class: "caption" },
+        el("span", { class: "subject" }, design.subject),
+        el("span", { class: "meta" }, [design.style, design.study_of && design.fill, drawingTime(design)].filter(Boolean).join(" · ")),
+        el("span", { class: "badges row" })));
+  }
+
+  let wallData, wallPreview;
+  let cards = new Map();
+  function renderWall(list, mine, stars) {
+    if (wallData !== state.designs || wallPreview !== state.preview) {
+      cards = new Map();
+      wallData = state.designs;
+      wallPreview = state.preview;
+    }
+    const nodes = list.map((design) => {
+      if (!cards.has(design.id)) cards.set(design.id, card(design));
+      const node = cards.get(design.id);
+      node.className = `card ${designClasses(design.id, mine, stars)}`;
+      const badges = node.querySelector(".badges");
+      const vote = mine.v[design.id];
+      const label = vote > 0 ? "Kept" : vote < 0 ? "Dropped" : "";
+      const star = stars.has(design.id) ? "Shortlisted" : "";
+      const key = `${label}|${star}`;
+      if (badges.dataset.value !== key) {
+        badges.replaceChildren(...[
+          label && el("span", { class: `badge ${vote > 0 ? "kept" : ""}` }, label),
+          star && el("span", { class: "badge starred" }, star),
+        ].filter(Boolean));
+        badges.dataset.value = key;
+      }
+      node.setAttribute("aria-label", [`Open ${designName(design)}`, label, star].filter(Boolean).join(", "));
+      return node;
+    });
+    const wall = $("mode-wall");
+    if (nodes.length !== wall.children.length || nodes.some((node, index) => node !== wall.children[index])) {
+      const focus = wall.contains(document.activeElement) ? document.activeElement.dataset.design : null;
+      wall.replaceChildren(...nodes);
+      if (focus) (cards.get(focus)?.isConnected ? cards.get(focus) : nodes[0] || $("round")).focus();
+    }
+  }
+
+  function thumb(design, mine, stars, caption = "") {
+    return designButton(design, `thumb ${designClasses(design.id, mine, stars)}`,
+      picture(design, state.preview, { fallback: true }), caption ? el("span", { class: "cap" }, caption) : null);
+  }
+
+  const TIER_HELP = [
+    "Keep a sketch to request its robot paths.",
+    "Keep a design with robot paths to request fill studies.",
+    "Compare fills and shortlist favourites for the rig.",
+    "Shortlisted designs for the rig.",
+  ];
+  function renderPyramid(list, mine, stars) {
+    const buckets = TIERS.map(() => new Map());
+    const counts = TIERS.map(() => 0);
+    for (const design of list) {
+      const level = tier(design, stars);
+      addToIndex(buckets[level], level === 2 ? design.study_of || design.id : design.style, design);
+      counts[level]++;
+    }
+    const rows = [];
+    for (let level = TIERS.length - 1; level >= 0; level--) {
+      const groups = [...buckets[level]].sort(([a, x], [b, y]) => y.length - x.length || a.localeCompare(b));
+      rows.push(el("section", { class: "tier" },
+        el("h2", {}, TIERS[level], el("span", {}, String(counts[level]))),
+        el("p", { class: "status" }, TIER_HELP[level]),
+        ...groups.map(([key, designs]) => {
+          const source = state.byId.get(key);
+          if (level === 2) designs.sort((a, b) => Number(!!a.study_of) - Number(!!b.study_of) || String(a.fill).localeCompare(String(b.fill)));
+          return el("div", { class: "stratum" }, el("h3", {}, source && level === 2 ? source.subject : key),
+            el("div", { class: "thumbs" }, ...designs.map((design) => thumb(design, mine, stars, level === 2 ? design.fill : ""))));
+        })));
+    }
+    const pyramid = $("mode-pyramid");
+    const active = pyramid.contains(document.activeElement) ? document.activeElement.dataset.design : null;
+    pyramid.replaceChildren(...rows);
+    if (active) (pyramid.querySelector(`[data-design="${CSS.escape(active)}"]`) || $("round")).focus();
+  }
+
+  let renderQueued = false;
+  function refresh() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => {
+      renderQueued = false;
+      const mine = voteSummary();
+      const stars = starredDesigns(mine);
+      const filters = browse(mine);
+      renderControls(filters, mine);
+      for (const mode of MODES) $(`mode-${mode}`).hidden = mode !== state.mode;
+      if (state.mode === "wall") renderWall(filters.list, mine, stars);
+      if (state.mode === "map") renderMap(filters.list, mine, stars);
+      if (state.mode === "pyramid") renderPyramid(filters.list, mine, stars);
+      renderQueue();
+      renderStatus();
+      if ($("design").open) renderDesign(mine, stars);
+    });
+  }
+
+  // The atlas supplies positions, neighbours and lineage. Build the SVG only when its source changes.
+  function neighbourhood(designId) {
+    const map = state.map;
+    const design = state.byId.get(designId);
+    const index = map?.ids?.indexOf(design?.study_of || designId) ?? -1;
+    return index < 0 ? null : map.cluster?.[index] ?? null;
+  }
+
+  function clusterInfo(index) {
+    const group = state.map?.clusters?.[index];
+    if (!group || index == null) return null;
+    return { label: group.label, anchors: state.designs.filter((design) => neighbourhood(design.id) === index).map(({ id }) => id) };
+  }
+
+  function mapPoints(map) {
+    const positions = new Map((map?.ids || []).map((id, index) => [id, map.xy[index]]));
+    const styles = [...new Set(state.designs.map(({ style }) => style))].sort();
+    return state.designs.map((design, index) => {
+      const angle = styles.indexOf(design.style) * 2 * Math.PI / styles.length;
+      const [x, y] = positions.get(design.id) || positions.get(design.study_of) || [.8 * Math.cos(angle), .8 * Math.sin(angle)];
+      // Offset coincident variants so the force solver can separate them deterministically.
+      const tx = x * 640, ty = y * 640;
+      return { id: design.id, tx, ty, x: tx + 4 * Math.cos(index), y: ty + 4 * Math.sin(index), cluster: neighbourhood(design.id) };
+    });
+  }
+
+  function svgButton(selection, activate) {
+    selection.attr("role", "button").attr("tabindex", 0)
+      .on("click", (_, data) => activate(data))
+      .on("keydown", (event, data) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        activate(data);
+      });
+  }
+
+  function buildMap(d3, box) {
+    const map = state.map;
+    const points = mapPoints(map);
+    const ids = new Set(points.map(({ id }) => id));
+    const nearby = (map?.near || []).map(([a, b, weight]) => ({ source: map.ids[a], target: map.ids[b], weight }))
+      .filter(({ source, target }) => ids.has(source) && ids.has(target));
+    const lineage = state.designs.flatMap((design) => (design.parents || []).filter((id) => ids.has(id))
+      .map((id) => ({ source: design.id, target: id, study: !!design.study_of })));
+    const link = (edges) => d3.forceLink(edges).id((point) => point.id);
+    d3.forceSimulation(points).stop()
+      .force("x", d3.forceX((point) => point.tx).strength(.1))
+      .force("y", d3.forceY((point) => point.ty).strength(.1))
+      .force("charge", d3.forceManyBody().strength(-30).distanceMax(140))
+      .force("near", link(nearby).distance(({ weight }) => 30 + (1 - weight) * 70).strength(({ weight }) => .35 * weight))
+      .force("lineage", link(lineage).distance(({ study }) => study ? 26 : 46).strength(.25))
+      .force("collide", d3.forceCollide(25)).tick(120);
+
+    const svg = d3.select(box).append("svg").attr("role", "group").attr("aria-label", "Design neighbourhoods");
+    svg.append("defs").append("clipPath").attr("id", "nodeclip").attr("clipPathUnits", "objectBoundingBox")
+      .append("circle").attr("cx", .5).attr("cy", .5).attr("r", .5);
+    const plot = svg.append("g");
+    const zoom = d3.zoom().scaleExtent([.15, 8]).on("zoom", (event) => plot.attr("transform", event.transform));
+    svg.call(zoom);
+
+    const groups = new Map();
+    for (const point of points) {
+      if (point.cluster != null && map.clusters?.[point.cluster]) addToIndex(groups, point.cluster, [point.x, point.y]);
+    }
+    const hulls = plot.append("g").selectAll("path").data([...groups]).join("path").attr("class", "hull")
+      .attr("stroke-width", 38).attr("d", ([, members]) => {
+        const outline = d3.polygonHull(members) || members;
+        return `M${outline.map((point) => point.join(",")).join("L")}Z`;
+      });
+
+    function drawEdges(edges, className) {
+      return plot.append("g").selectAll("line").data(edges).join("line").attr("class", className)
+        .attr("x1", (edge) => edge.source.x).attr("y1", (edge) => edge.source.y)
+        .attr("x2", (edge) => edge.target.x).attr("y2", (edge) => edge.target.y);
+    }
+    drawEdges(nearby, "edge-near").attr("stroke-width", ({ weight }) => .5 + weight);
+    drawEdges(lineage, ({ study }) => `edge-lineage${study ? " study" : ""}`);
+
+    const nodes = plot.append("g").selectAll("g").data(points).join("g")
+      .attr("transform", ({ x, y }) => `translate(${x},${y})`)
+      .attr("aria-label", ({ id }) => `Open ${designName(state.byId.get(id))}`);
+    svgButton(nodes, ({ id }) => chooseDesign(id));
+    nodes.append("title").text(({ id }) => designName(state.byId.get(id)));
+    nodes.append("circle").attr("class", "ring");
+    nodes.append("image").attr("clip-path", "url(#nodeclip)").attr("preserveAspectRatio", "xMidYMid slice");
+
+    const labels = plot.append("g").selectAll("text").data([...groups]).join("text").attr("class", "hull-label")
+      .attr("text-anchor", "middle").attr("x", ([, members]) => d3.mean(members, ([x]) => x))
+      .attr("y", ([, members]) => d3.min(members, ([, y]) => y) - 28)
+      .text(([index]) => map.clusters[index].label);
+    svgButton(labels, ([index]) => {
+      state.cluster = state.cluster === index ? null : index;
+      refresh();
+    });
+
+    const [x0, x1] = d3.extent(points, ({ x }) => x);
+    const [y0, y1] = d3.extent(points, ({ y }) => y);
+    function fit() {
+      const { clientWidth: w, clientHeight: h } = box;
+      if (!w || !h || !points.length) return;
+      const scale = Math.min(8, .92 * Math.min(w / (x1 - x0 + 120), h / (y1 - y0 + 120)));
+      svg.call(zoom.transform, d3.zoomIdentity.translate(w / 2 - scale * (x0 + x1) / 2, h / 2 - scale * (y0 + y1) / 2).scale(scale));
+    }
+    function update(matches, mine, stars) {
+      const radius = ({ id }) => [11, 15, 20, 25][tier(state.byId.get(id), stars)];
+      nodes.attr("class", ({ id, cluster }) => {
+        const dim = !matches.has(id) || (state.cluster != null && cluster !== state.cluster);
+        return `node ${designClasses(id, mine, stars)}${dim ? " dim" : ""}`;
+      });
+      nodes.select("circle").attr("r", (point) => radius(point) + 1.5);
+      nodes.select("image").attr("href", ({ id }) => {
+        const views = state.byId.get(id).views;
+        return views?.[state.preview] || views?.flow || null;
+      }).attr("x", (point) => -radius(point)).attr("y", (point) => -radius(point))
+        .attr("width", (point) => 2 * radius(point)).attr("height", (point) => 2 * radius(point));
+      hulls.classed("selected", ([index]) => index === state.cluster);
+      labels.attr("aria-pressed", ([index]) => String(index === state.cluster));
+    }
+    fit();
+    return { fit, update };
+  }
+
+  let mapView, mapDesigns, mapDocument;
+  function renderMap(list, mine, stars) {
+    const box = $("mapbox");
+    $("fit-map").disabled = !window.d3 || !state.designs.length;
+    if (!window.d3 || !state.designs.length) {
+      box.replaceChildren(el("p", { class: "status" }, state.designs.length ? "The map library is unavailable. Use the Wall to browse designs." : "There are no designs to map."));
+      return;
+    }
+    if (mapDesigns !== state.designs || mapDocument !== state.map) {
+      box.replaceChildren();
+      mapView = buildMap(window.d3, box);
+      mapDesigns = state.designs;
+      mapDocument = state.map;
+    }
+    mapView.update(new Set(list.map(({ id }) => id)), mine, stars);
+    const group = clusterInfo(state.cluster);
+    $("cluster").hidden = !group;
+    $("cluster-request").hidden = !state.owner;
+    if (group) $("cluster-name").textContent = `${group.label} · ${group.anchors.length} designs`;
+  }
+
+  // Review uses the list as it stood when opened, so voting under Unvoted never strands navigation.
+  let inspectedData, relatedMap, relatedDesigns, returnFocus;
+  function openDesign(id) {
+    const dialog = $("design");
+    if (!dialog.open) returnFocus = document.activeElement;
+    if (!state.sequence.includes(id) || !dialog.open) {
+      const list = browse(voteSummary()).list;
+      state.sequence = (list.some((design) => design.id === id) ? list : state.designs).map((design) => design.id);
+    }
+    state.inspected = id;
+    renderDesign();
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function step(delta) {
+    const sequence = state.sequence.filter((id) => state.byId.has(id));
+    const target = sequence[sequence.indexOf(state.inspected) + delta];
+    if (target) openDesign(target);
+  }
+
+  function relatedRow(label, ids, mine, stars) {
+    const designs = ids.map((id) => state.byId.get(id)).filter(Boolean);
+    return designs.length ? el("div", { class: "related" }, el("h3", {}, label),
+      el("div", { class: "thumbs" }, ...designs.map((design) => thumb(design, mine, stars)))) : null;
+  }
+
+  function designDetails(design, mine, stars) {
+    const source = design.study_of || design.id;
+    const map = state.map;
+    const index = map?.ids?.indexOf(source) ?? -1;
+    const looks = index < 0 ? [] : (map.near || []).filter(([a, b]) => a === index || b === index)
+      .sort((a, b) => b[2] - a[2]).slice(0, 6).map(([a, b]) => map.ids[a === index ? b : a]);
+    const cluster = map?.clusters?.[neighbourhood(design.id)];
+    const facts = [
+      ["Tier", TIERS[tier(design, stars)]], ["Colours", design.colours != null ? `${design.colours} · ${design.mixes || 0} hatch mixes` : null],
+      ["Fidelity", design.fidelity != null ? `ΔE00 ${design.fidelity} at 30 cm` : null],
+      ["Neighbourhood", cluster?.label], ["Variant", design.variant], ["ID", design.id],
+    ];
+    $("design-facts").replaceChildren(...facts.filter(([, value]) => value != null && value !== "")
+      .flatMap(([label, value]) => [el("dt", {}, label), el("dd", label === "Tier" ? { id: "design-tier" } : {}, String(value))]));
+    $("design-prompt").textContent = design.prompt || "";
+    const rows = [
+      relatedRow("Built on", (design.parents || []).filter((id) => id !== design.study_of), mine, stars),
+      relatedRow("Built from this", (state.children.get(design.id) || []).filter((id) => !state.byId.get(id)?.study_of), mine, stars),
+      relatedRow("Looks like", looks, mine, stars),
+    ].filter(Boolean);
+    const focus = $("design-related").contains(document.activeElement) ? document.activeElement.dataset.design : null;
+    $("design-related").replaceChildren(...rows);
+    if (focus) $("design-related").querySelector(`[data-design="${CSS.escape(focus)}"]`)?.focus();
+  }
+
+  function strokeName(fill) {
+    const name = fill.replace(/^solid:/, "");
+    return { solid: "Packed fill", packed: "Packed fill", contour: "Contour fill", flow: "Flow fill", hatch: "Hatching",
+      edges: "Outlines", offset: "Offset contours" }[name] || name.replaceAll("-", " ");
+  }
+
+  function recipeLabel(rendition) {
+    const inks = rendition.recipe?.inks || rendition.inks || [];
+    const cartridges = [...new Set(inks.map(({ cartridge }) => cartridge).filter(Boolean))];
+    return [(rendition.recipe?.strokes || (rendition.fill ? [rendition.fill] : [])).map(strokeName).join(" + "),
+      cartridges.join(" + "), inks.map(({ name, id }) => name || id).join(" + ")].filter(Boolean).join(" · ") || rendition.label;
+  }
+
+  function dimensions(mm) {
+    return mm?.length === 2 ? `${mm[0]} × ${mm[1]} mm` : "";
+  }
+
+  function renderComparison(design, choice) {
+    const sourceId = design.study_of || design.id;
+    const source = state.byId.get(sourceId) || design;
+    const studies = (state.studies.get(sourceId) || []).map((id) => state.byId.get(id))
+      .filter((study) => study.id !== source.id && (study.views?.drawn || study.id === design.id));
+    const options = [source, ...studies, ...(source.renditions || [])];
+    const selected = options.find(({ id }) => id === choice) || design;
+    setOptions($("rendition-choice"), options.map((rendition) => [rendition.id, recipeLabel(rendition) || "Recorded rendition"]), selected.id);
+    $("rendition-control").hidden = options.length < 2;
+    const subject = design.subject;
+    const stencil = selected.stencil;
+    const drawn = selected.views?.drawn;
+    $("design-original").replaceChildren(previewImage(source.views?.flow || design.views?.flow, `${subject}, original`, "Original unavailable"));
+    $("design-rendition").replaceChildren(previewImage(drawn || selected.views?.ours, `${subject}, ${drawn ? "robot paths" : "ink separation"}`, "Rendition unavailable"));
+    $("design-stencil").replaceChildren(previewImage(stencil?.url, `${subject} on the stencil`, "No stencil preview yet"));
+    const setup = selected.recipe?.inks?.map(({ name, cartridge }) => cartridge ? `${name} · ${cartridge}` : name).join(", ");
+    const strokes = selected.recipe?.strokes?.map(strokeName).join(" + ") || (selected.fill && strokeName(selected.fill));
+    setText("rendition-caption", [drawn ? drawingTime(selected) : selected.views?.ours ? "Ink separation · paths pending" : "Paths pending",
+      strokes, setup || selected.inks?.map(({ name, id }) => name || id).join(", ")].filter(Boolean).join(" · "));
+    const size = dimensions(selected.canvas_mm);
+    const page = dimensions(stencil?.page_mm);
+    setText("stencil-caption", [size && `${size} design`, page && `${page} stencil`,
+      stencil?.url && (stencil.view === "ours" ? "Ink separation" : "Robot paths")].filter(Boolean).join(" · "));
+    const study = state.byId.get(selected.id);
+    $("review-study").hidden = !study || study.id === design.id;
+  }
+
+  function renderDesign(mine = voteSummary(), stars = starredDesigns(mine)) {
+    const design = state.byId.get(state.inspected);
+    const dialog = $("design");
+    if (!design) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    const changed = inspectedData?.id !== design.id || !dialog.open;
+    if (changed) {
+      $("design-details").open = false;
+      dialog.scrollTop = 0;
+    }
+    if (inspectedData !== design || changed) {
+      $("design-title").textContent = design.subject;
+      $("design-meta").textContent = [design.style, `Round ${design.round}`, design.study_of ? `${design.fill} fill` : design.option].filter(Boolean).join(" · ");
+    }
+    if (inspectedData !== design || relatedDesigns !== state.designs || changed) {
+      const selected = changed ? design.id : $("rendition-choice").value;
+      renderComparison(design, selected);
+    }
+    if (inspectedData !== design || relatedMap !== state.map || relatedDesigns !== state.designs || changed) {
+      designDetails(design, mine, stars);
+      relatedMap = state.map;
+      relatedDesigns = state.designs;
+    } else {
+      setText("design-tier", TIERS[tier(design, stars)]);
+      for (const node of $("design-related").querySelectorAll("[data-design]")) {
+        node.className = `thumb ${designClasses(node.dataset.design, mine, stars)}`;
+      }
+    }
+    inspectedData = design;
+    $("design-request").hidden = !state.owner;
+    const voted = mine.v[design.id] || 0;
+    const pressed = { keep: voted > 0, drop: voted < 0, star: !!mine.s[design.id] };
+    for (const button of reactions) {
+      button.setAttribute("aria-pressed", String(pressed[button.dataset.vote]));
+      button.disabled = !state.uid || !state.votesReady || state.readOnly;
+    }
+    const sequence = state.sequence.filter((id) => state.byId.has(id));
+    const position = sequence.indexOf(design.id);
+    $("prev").disabled = position <= 0;
+    $("next").disabled = position >= sequence.length - 1;
+    const counter = `${position + 1} / ${sequence.length}`;
+    setText("position", counter);
+  }
+
+  function chooseDesign(id) {
+    if (!state.pick) {
+      openDesign(id);
+      return;
+    }
+    if (state.pick.anchors[0] === id || requestWriting) return;
+    state.pick.anchors[1] = id;
+    queueRequest(state.pick);
+  }
+
+  // Requests use the same form for a design and for a selected neighbourhood.
+  function openRequest(design, cluster = null) {
+    const group = clusterInfo(cluster);
+    if (!state.owner || requestWriting || (!design && !group)) return;
+    state.request = { id: `ask-${crypto.randomUUID()}`, design, group };
+    $("request-form").reset();
+    $("request-kind").value = design ? "near" : "cluster";
+    $("request-kind").disabled = !design;
+    $("request-kind").querySelector('[value="cluster"]').disabled = design && !clusterInfo(neighbourhood(design.id));
+    $("request-context").textContent = design?.subject || group.label;
+    $("request-feedback").textContent = "";
+    updateRequestButton();
+    $("request").showModal();
+  }
+
+  function updateRequestButton() {
+    $("request-submit").textContent = $("request-kind").value === "blend" ? "Choose second design" : "Queue request";
+    $("request-submit").disabled = $("pick-cancel").disabled = requestWriting;
+  }
+
+  function submitRequest(event) {
+    event.preventDefault();
+    if (!state.owner || !state.request || requestWriting) return;
+    const { id, design, group } = state.request;
+    const kind = $("request-kind").value;
+    const hood = kind === "cluster" ? group || clusterInfo(neighbourhood(design?.id)) : null;
+    if (kind === "cluster" && !hood?.anchors.length) {
+      $("request-feedback").textContent = "This neighbourhood has no designs available.";
+      return;
+    }
+    const request = { id, kind, anchors: hood?.anchors || [design.id],
+      n: Number($("request-count").value), steer: $("request-steer").value.trim(), ...(hood && { label: hood.label }) };
+    if (kind === "blend") {
+      state.pick = request;
+      $("request").close();
+      $("design").close();
+      $("pick-text").textContent = `Select a second design to blend with “${design.subject}”.`;
+      $("pick").hidden = false;
+      $("pick-cancel").focus();
+      return;
+    }
+    queueRequest(request);
+  }
+
+  function cancelPick() {
+    state.pick = null;
+    $("pick").hidden = true;
+  }
+
+  let requestWriting = false;
+  async function queueRequest({ id, ...request }) {
+    if (!db || !state.owner || requestWriting) return;
+    requestWriting = true;
+    $("request-feedback").textContent = "";
+    state.requestMessage = "";
+    updateRequestButton();
+    const record = { ...request, anchors: request.anchors.slice(0, 60), at: new Date().toISOString(), by: state.uid, status: "open" };
+    try {
+      await db.doc(`asks/${id}`).set(record);
+      cancelPick();
+      if ($("request").open) $("request").close();
+      state.requestMessage = "Request queued for the next round.";
+    } catch {
+      const message = "The request did not save. Try again.";
+      if ($("request").open) $("request-feedback").textContent = message;
+      else if (state.pick) $("pick-text").textContent = `${message} Select the second design again.`;
+      else state.requestMessage = message;
+    } finally {
+      requestWriting = false;
+      updateRequestButton();
+      refresh();
+    }
+  }
+
+  let queueData, queueDesigns;
+  function renderQueue() {
+    if (queueData === state.asks && queueDesigns === state.designs) return;
+    queueData = state.asks;
+    queueDesigns = state.designs;
+    const open = state.asks.filter((ask) => (ask.status || "open") === "open")
+      .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    $("queue").hidden = !open.length;
+    $("queue-title").textContent = `Next-round requests (${open.length})`;
+    $("queue-list").replaceChildren(...open.map((ask) => {
+      const anchors = (ask.anchors || []).map((id) => state.byId.get(id)?.subject || id);
+      const name = ask.kind === "cluster" ? ask.label || `${anchors.length} designs` : anchors.join(" + ");
+      const remove = state.owner ? el("button", { class: "control", type: "button", "data-remove": ask.id,
+        "aria-label": `Remove request for ${name}` }, "Remove") : null;
+      return el("li", {}, el("div", { class: "row" },
+        el("span", {}, `${ASK_NAMES[ask.kind] || ask.kind} · ${name} · ${ask.n} ${ask.n === 1 ? "prompt" : "prompts"}${ask.steer ? ` · “${ask.steer}”` : ""}`), remove));
+    }));
+  }
+
+  async function removeRequest(button) {
+    if (!db || !state.owner || button.disabled) return;
+    button.disabled = true;
+    try {
+      await db.doc(`asks/${button.dataset.remove}`).delete();
+      state.requestMessage = "Request removed.";
+    } catch {
+      state.requestMessage = "The request was not removed. Try again.";
+      button.disabled = false;
+    }
+    refresh();
+  }
+
+  // The host stores each viewer's votes and stars together. Apply local changes over its latest snapshot.
+  let db, writing = false, voteFailed = false, confirmedAt = "";
+  function react(kind) {
+    const id = state.inspected;
+    if (!id || !state.uid || !state.votesReady || state.readOnly) return;
+    const mine = voteSummary();
+    const field = kind === "star" ? "s" : "v";
+    const value = kind === "drop" ? -1 : 1;
+    pending[field].set(id, mine[field][id] === value ? 0 : value);
+    saveVotes();
+    refresh();
+  }
+
+  async function saveVotes() {
+    if (!db || writing || !state.uid || state.readOnly || (!pending.v.size && !pending.s.size)) return;
+    writing = true;
+    voteFailed = false;
+    state.voteMessage = "Saving votes…";
+    refresh();
+    try {
+      while (pending.v.size || pending.s.size) {
+        const changes = { v: new Map(pending.v), s: new Map(pending.s) };
+        const previous = Date.parse(confirmedAt) || 0;
+        const record = { ...voteSummary(), at: new Date(Math.max(Date.now(), previous + 1)).toISOString() };
+        await db.doc(`votes/${state.uid}`).set(record);
+        confirmedAt = record.at;
+        if ((state.votes.get(state.uid)?.at || "") <= confirmedAt) state.votes.set(state.uid, record);
+        for (const field of ["v", "s"]) {
+          for (const [id, value] of changes[field]) {
+            if (pending[field].get(id) === value) pending[field].delete(id);
+          }
+        }
+      }
+      state.voteMessage = "";
+    } catch (error) {
+      if (error?.code === "invalid_argument" || error?.code === "permission_denied") {
+        state.readOnly = true;
+        pending.v.clear();
+        pending.s.clear();
+        state.voteMessage = "This copy of the wall is view-only. Your vote was not saved.";
+      } else {
+        voteFailed = true;
+        state.voteMessage = "Some votes have not saved yet.";
+      }
+    } finally {
+      writing = false;
+      refresh();
+    }
+  }
+
+  function applyVotes(docs, fromCache) {
+    const previous = state.votes.get(state.uid);
+    state.votes = new Map(docs);
+    const incoming = state.votes.get(state.uid);
+    if (previous && (previous.at || "") >= confirmedAt && (incoming?.at || "") < confirmedAt) {
+      state.votes.set(state.uid, previous);
+    }
+    if (!fromCache) {
+      state.votesReady = true;
+      if (!state.readOnly && !writing && !voteFailed) state.voteMessage = state.uid ? "" : "Sign in to Claude to vote.";
+    }
+  }
+
+  function renderStatus() {
+    setText("connection", state.connection);
+    $("connection").hidden = !state.connection;
+    const message = [state.voteMessage, state.requestMessage].filter(Boolean).join(" ");
+    $("feedback").hidden = !message;
+    setText("feedback-text", message);
+    $("retry").hidden = $("design-retry").hidden = !voteFailed;
+    setText("design-feedback", state.voteMessage || state.requestMessage);
+  }
+
+  function subscribe(name, apply, fail) {
+    db.collection(name).onSnapshot((snapshot) => {
+      apply(snapshot.docs.map((doc) => [doc.id, doc.data() || {}]), !!snapshot.metadata?.fromCache);
+      refresh();
+    }, () => { fail?.(); refresh(); });
+  }
+
+  async function connect() {
+    const timer = setTimeout(() => {
+      state.connection = "The wall is taking a while to load.";
+      refresh();
+    }, 10000);
+    function finish(message) {
+      clearTimeout(timer);
+      state.loaded = true;
+      state.connection = message;
+      refresh();
+    }
+    try {
+      if (!window.claude?.use) {
+        finish("Open the private Flash Wall in Claude to load its designs.");
+        return;
+      }
+      const [database, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+      if (!database) {
+        finish("The wall’s data is unavailable in this view. Open it in Claude while signed in.");
+        return;
+      }
+      db = database;
+      state.uid = user ? await user.id() : null;
+      state.owner = !!(user && await user.isOwner());
+      state.voteMessage = state.uid ? "Loading your votes…" : "Sign in to Claude to vote.";
+      subscribe("designs", (docs, fromCache) => {
+        setDesigns(docs);
+        if (!fromCache) finish("");
+      }, () => finish("The wall stopped updating. Reopen it to reconnect."));
+      subscribe("rounds", (docs) => { state.rounds = new Map(docs.map(([, data]) => [String(data.round), data])); });
+      subscribe("votes", applyVotes, () => {
+        state.votesReady = false;
+        state.voteMessage = "Votes are unavailable. Reopen the wall to reconnect.";
+      });
+      subscribe("map", (docs) => { state.map = new Map(docs).get("current") || null; });
+      subscribe("asks", (docs) => { state.asks = docs.map(([id, data]) => ({ ...data, id })); });
+    } catch {
+      finish("Could not connect to the wall. Reopen it in Claude to try again.");
+    }
+  }
+
+  function on(id, event, handler) { $(id).addEventListener(event, handler); }
+  for (const button of modes) button.addEventListener("click", () => {
+    state.mode = button.dataset.mode;
+    refresh();
+  });
+  for (const id of ["round", "style", "review", "preview"]) on(id, "change", (event) => {
+    const value = event.target.value;
+    if (id === "round") roundByMode[state.mode] = value;
+    else state[id] = value;
+    if (id === "preview") {
+      try { localStorage.setItem("flashwall.view", value); } catch { /* Optional preference. */ }
+    }
+    refresh();
+  });
+  on("reset", "click", () => {
+    state.style = "";
+    state.review = "all";
+    state.preview = "flow";
+    try { localStorage.removeItem("flashwall.view"); } catch { /* Optional preference. */ }
+    refresh();
+  });
+  document.addEventListener("click", (event) => {
+    if (!$("filters").contains(event.target)) $("filters").open = false;
+    const design = event.target.closest("[data-design]");
+    if (design) chooseDesign(design.dataset.design);
+  });
+  on("filters", "keydown", (event) => {
+    if (event.key !== "Escape" || !$("filters").open) return;
+    $("filters").open = false;
+    $("filter-label").focus();
+  });
+  on("d3-library", "load", refresh);
+  on("fit-map", "click", () => mapView?.fit());
+  on("cluster-clear", "click", () => { state.cluster = null; $("fit-map").focus(); refresh(); });
+  on("cluster-request", "click", () => openRequest(null, state.cluster));
+  on("rendition-choice", "change", (event) => renderComparison(state.byId.get(state.inspected), event.target.value));
+  on("review-study", "click", () => openDesign($("rendition-choice").value));
+  on("design-request", "click", () => openRequest(state.byId.get(state.inspected)));
+  on("request-close", "click", () => $("request").close());
+  on("request-kind", "change", updateRequestButton);
+  on("request-form", "submit", submitRequest);
+  on("queue-list", "click", (event) => {
+    const remove = event.target.closest("[data-remove]");
+    if (remove) removeRequest(remove);
+  });
+  on("pick-cancel", "click", () => { cancelPick(); $("round").focus(); });
+  on("retry", "click", saveVotes);
+  on("design-retry", "click", saveVotes);
+  for (const button of reactions) button.addEventListener("click", () => react(button.dataset.vote));
+  on("prev", "click", () => step(-1));
+  on("next", "click", () => step(1));
+  on("design-close", "click", () => $("design").close());
+  on("design", "close", () => {
+    if ($("design").open) return;
+    state.inspected = null;
+    if (state.pick) $("pick-cancel").focus();
+    else if (returnFocus?.isConnected) returnFocus.focus();
+    else $("round").focus();
+  });
+  on("design", "keydown", (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.repeat || event.target.matches("select")) return;
+    const action = { arrowleft: "prev", arrowright: "next" }[event.key.toLowerCase()];
+    const vote = { u: "keep", d: "drop", s: "star" }[event.key.toLowerCase()];
+    if (!action && !vote) return;
+    event.preventDefault();
+    if (action) $(action).click();
+    else react(vote);
+  });
+
+  refresh();
+  connect();
+})();
+</script>
+</body>
+</html>

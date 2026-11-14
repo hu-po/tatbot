@@ -74,7 +74,7 @@ CHECK = "scripts/lib/rig_check.py"
       wraps=(CHECK,), example=(), doc=DOC,
       summary="is every piece of demo hardware up: hosts, links, USB devices, controllers, services, clocks",
       invariants=("Read-only: pings, lists devices and reads unit state; starts, stops and opens nothing.",
-                  "Exit 5 while any part (pink drawing, station, blue arm) has a failed check; warnings do not fail it."))
+                  "Exit 5 while any part (pink drawing, station) has a failed check; warnings do not fail it."))
 def rig_check(ctx, ns, rest):
     return py(ctx, CHECK, *(["--json"] if ctx.json else []), *(["--all"] if ns.all else []), *rest)
 

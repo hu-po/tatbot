@@ -43,12 +43,11 @@ def make_dip(*, cap=None, tool=None, level=.006, rotation=DOWN, **changes):
 
 
 def test_inside_dimensions_and_support_frame_come_from_current_assets():
-    cap = read_cap(REPO, 'inkcap_medium_1', 'right', np.eye(4))
+    cap = read_cap(REPO, 'inkcap_medium_1', np.eye(4))
     assert (cap.inner_floor_m, cap.rim_m, cap.bore_radius_m) == pytest.approx((.0005, .010, .005))
-    np.testing.assert_allclose(cap.base_from_cap[:3, 3], [-.025846187, .025772555, .022])
-    for slot, arm in [('M1', 'right'), ('inkcap_medium_1', 'left')]:
-        with pytest.raises(ValueError, match='canonical cap slot'):
-            read_cap(REPO, slot, arm, np.eye(4))
+    np.testing.assert_allclose(cap.base_from_cap[:3, 3], [.016, -.134, -.004])   # merged palette v9's M1 floor
+    with pytest.raises(ValueError, match='canonical cap slot'):
+        read_cap(REPO, 'M1', np.eye(4))
 
 
 @pytest.mark.parametrize('mutation', ['parent', 'moving', 'duplicate'])
@@ -68,7 +67,7 @@ def test_cap_does_not_ignore_a_changed_urdf_joint(tmp_path, mutation):
         root.append(copy.deepcopy(joint))
     ET.ElementTree(root).write(tmp_path / 'urdf/palette.urdf')
     with pytest.raises(ValueError, match='fixed directly|exactly one'):
-        read_cap(tmp_path, 'inkcap_medium_1', 'right', np.eye(4))
+        read_cap(tmp_path, 'inkcap_medium_1', np.eye(4))
 
 
 def test_the_tool_is_measured_up_from_its_end():
@@ -127,7 +126,7 @@ def test_the_3rl_nozzle_fits_every_cap_size_filled_well():
     tool, recipe = Tool.from_profile(sheet.profile), resolve_dip(sheet.raw['dip'], 'nighthawk_black')
     slack = []
     for slot in ('inkcap_large_1', 'inkcap_medium_1', 'inkcap_small_1'):
-        cap = read_cap(REPO, slot, 'right', np.eye(4))
+        cap = read_cap(REPO, slot, np.eye(4))
         for level in (.0005, .7 * (cap.rim_m - cap.inner_floor_m)):   # nearly empty, and filled well
             slack.append(Dip(cap, tool, recipe, level, DOWN).slack_m)
     assert min(slack) > 0.0005
@@ -160,6 +159,11 @@ def reachable(kin):
     return dip, kin.solve(start, q0), page
 
 
+def geometry_angle(a, b):   # the rotation between two poses (rad)
+    r = np.asarray(a)[:3, :3].T @ np.asarray(b)[:3, :3]
+    return float(np.arccos(np.clip((np.trace(r) - 1.0) / 2.0, -1.0, 1.0)))
+
+
 def run(dip, plan, *, check=None):
     stages = []
 
@@ -171,23 +175,57 @@ def run(dip, plan, *, check=None):
     return plan(seen), stages
 
 
-def test_approach_lifts_rises_turns_crosses_and_comes_down_the_axis(kin, motion, reachable):
+def test_approach_lifts_rises_crosses_turning_and_comes_down_the_axis(kin, motion, reachable):
     dip, seed, page = reachable
     top = .035
     traj, stages = run(dip, lambda check: plan_approach(dip, q_seed=seed, kin=kin, motion=motion, base_from_page=page,
                                                         station_top_m=top, check=check))
-    assert [stage for stage, _ in stages] == ['page_lift', 'rise', 'align', 'transit', 'hover']
+    assert [stage for stage, _ in stages] == ['page_lift', 'rise', 'transit', 'hover']
     assert list(traj.info['stages_s']) == [s for s, _ in stages] and traj.info['dip_phase'] == 'approach'
     assert np.isnan(traj.arc_m).all() and not (traj.phase == pplan.PHASE_DRAW).any()
     np.testing.assert_allclose(traj.q[:, 6], seed[6], atol=1e-12)
     poses = {stage: [kin.fk(q) for q in rows] for stage, rows in stages}
     lift = poses['page_lift']
     assert page[:3, 2] @ (lift[-1][:3, 3] - page[:3, 3]) >= motion['approach']['standoff_m'] - 1e-4
-    for stage in ('align', 'transit'):   # nothing turns or crosses until the whole tool is over the station
-        assert min(dip.tool.lowest(p) for p in poses[stage]) > top
+    # nothing turns or crosses until the whole tool is over the station: the crossing turns to the dip's attitude
+    assert min(dip.tool.lowest(p) for p in poses['transit']) > top
+    assert geometry_angle(poses['rise'][-1], poses['transit'][0]) < 1e-3
+    assert geometry_angle(poses['transit'][-1], dip.hover) < 1e-3
     end = kin.fk(traj.q[-1])
     assert dip.local(end)[1] < 1e-3 and dip.local(end)[0] == pytest.approx(dip.hover_height_m, abs=1e-3)
     np.testing.assert_allclose(traj.info['return_tcp'], lift[-1], atol=2e-3)
+
+
+def test_the_drop_onto_the_cap_keeps_to_its_own_speed(kin, motion, reachable):
+    """2026-10-25: the drop down the cap's axis to the hover came at travel speed (120 mm/s) and its stop 8 mm over the
+    rim rang +-1.2 mm; approach.cap_drop_m_s bounds that leg alone."""
+    dip, seed, page = reachable
+
+    def drop(cap):
+        approach = {k: v for k, v in motion['approach'].items() if k != 'cap_drop_m_s'}
+        m = {**motion, 'approach': approach if cap is None else {**approach, 'cap_drop_m_s': cap}}
+        _, stages = run(dip, lambda check: plan_approach(dip, q_seed=seed, kin=kin, motion=m, base_from_page=page,
+                                                         station_top_m=.035, check=check))
+        legs = {stage: np.array([kin.fk(q)[:3, 3] for q in rows]) for stage, rows in stages}
+        speed = {s: np.max(np.linalg.norm(np.diff(p, axis=0), axis=1)) * motion['control_rate_hz'] for s, p in legs.items()}
+        return np.linalg.norm(legs['hover'][-1] - legs['hover'][0]), speed
+    length, free = drop(None)
+    _, capped = drop(0.02)
+    assert length > 0.01 and capped['hover'] <= 0.02 * 1.05 < free['hover']
+    assert capped['transit'] == pytest.approx(free['transit'], rel=0.05)
+
+
+def test_an_approach_via_a_page_point_goes_there_along_the_standoff_and_returns_there(kin, motion, reachable):
+    """From a stroke's end at a corner of the silicone tile joint 3 met its limit on the way to the cap (2026-10-25):
+    via_xy takes the pen along the standoff to over a page point first, and the return comes back there."""
+    dip, seed, page = reachable
+    traj, stages = run(dip, lambda check: plan_approach(dip, q_seed=seed, kin=kin, motion=motion, base_from_page=page,
+                                                        station_top_m=.035, check=check, via_xy=(-0.01, 0.02)))
+    assert [stage for stage, _ in stages] == ['page_lift', 'inward', 'rise', 'transit', 'hover']
+    there = kin.fk(stages[1][1][-1])
+    local = np.linalg.inv(page) @ np.append(there[:3, 3], 1.0)
+    np.testing.assert_allclose(local[:3], [-0.01, 0.02, motion['approach']['standoff_m']], atol=1e-3)
+    np.testing.assert_allclose(np.asarray(traj.info['return_tcp'])[:3, 3], there[:3, 3], atol=1e-3)
 
 
 def test_the_axial_phases_go_down_and_up_the_axis_and_keep_the_carriage(kin, motion, reachable):
@@ -210,6 +248,32 @@ def test_the_axial_phases_go_down_and_up_the_axis_and_keep_the_carriage(kin, mot
     assert dip.local(kin.fk(seed))[0] == pytest.approx(dip.hover_height_m, abs=2e-4)
 
 
+def test_a_drain_rises_the_axis_to_over_the_rim_and_holds_there(kin, motion, reachable):
+    """After the dwell a draining dip rises until its end stands drain_above_rim_m over the rim and holds drain_s,
+    on the axis throughout; a dip without a drain_s has no such phase."""
+    plain, _, _ = reachable
+    with pytest.raises(ValueError, match='no drain_s'):
+        plan_axial(plain, 'drain', q_seed=kin.solve(plain.dwell, np.array([-.5, 1., 1., -.3, 0, 0, .002])), kin=kin,
+                   motion=motion)
+    dip = Dip(plain.cap, plain.tool, {**plain.settings, 'drain_s': 1.2, 'drain_above_rim_m': .003},
+              plain.dwell_height_m - plain.cap.inner_floor_m - plain.settings['above_ink_m'], plain.rotation)
+    assert dip.dwell_height_m == pytest.approx(plain.dwell_height_m)
+    assert dip.drain_height_m == pytest.approx(dip.cap.rim_m + .003) and dip.drain_s == 1.2
+    seed = kin.solve(dip.dwell, np.array([-.5, 1., 1., -.3, 0, 0, .002]))
+    traj, stages = run(dip, lambda check: plan_axial(dip, 'drain', q_seed=seed, kin=kin, motion=motion, check=check))
+    assert [name for name, _ in stages] == ['drain_rise', 'drain'] and traj.info['dip_phase'] == 'drain'
+    assert list(dict.fromkeys(traj.phase.tolist())) == [pplan.PHASE_LIFT, pplan.PHASE_SETTLE]
+    rise_s, end_s = traj.info['stages_s']['drain_rise'], traj.info['stages_s']['drain']
+    assert end_s - rise_s == pytest.approx(1.2, abs=2 * motion['dt_s'] if 'dt_s' in motion else .05)
+    heights = np.array([dip.local(kin.fk(q)) for q in traj.q])
+    assert heights[-1, 0] == pytest.approx(dip.drain_height_m, abs=2e-4)
+    assert (np.diff(heights[:, 0]) > -1e-5).all() and heights[:, 1].max() < motion['clik']['max_model_error_m'] + 1e-4
+    held = heights[traj.t >= rise_s + 1e-9, 0]
+    np.testing.assert_allclose(held, dip.drain_height_m, atol=2e-4)
+    up = plan_axial(dip, 'retract', q_seed=traj.q[-1], kin=kin, motion=motion)
+    assert dip.local(kin.fk(up.q[-1]))[0] == pytest.approx(dip.hover_height_m, abs=2e-4)
+
+
 def test_an_interrupted_descent_retracts_along_the_axis_and_cannot_dwell(kin, motion, reachable):
     dip, _, _ = reachable
     seed = kin.solve(dip.hover, np.array([-.5, 1., 1., -.3, 0, 0, .002]))
@@ -229,7 +293,9 @@ def test_the_return_leaves_up_the_axis_and_restores_the_page_standoff(kin, motio
     target = np.asarray(entered.info['return_tcp'])
     traj, stages = run(dip, lambda check: plan_return(dip, q_seed=entered.q[-1], kin=kin, motion=motion,
                                                       return_tcp=target, station_top_m=.035, check=check))
-    assert [stage for stage, _ in stages] == ['cap_exit', 'transit', 'over_page', 'page_return']
+    assert [stage for stage, _ in stages] == ['cap_exit', 'transit', 'page_return']
+    turned = kin.fk(stages[1][1][-1])   # the crossing ends over the page at its attitude, at the safe height
+    assert geometry_angle(turned, target) < 1e-3 and min(dip.tool.lowest(kin.fk(q)) for q in stages[1][1]) > .035
     first = kin.fk(entered.q[-1])
     for q in stages[0][1]:
         pose = kin.fk(q)

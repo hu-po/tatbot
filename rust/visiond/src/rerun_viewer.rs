@@ -21,7 +21,8 @@ use sha2::{Digest, Sha256};
 use crate::teleop::{LiveTeleopTick, TeleopLog};
 use crate::{PixelFormat, RecordedPayload, SynchronizedFrameSet};
 
-/// A teleop flight log plus the mapping onto the URDF's two arms.
+/// A teleop flight log plus the mapping of its two arms onto URDF joint names;
+/// an arm the URDF does not model animates nothing.
 #[derive(Debug)]
 pub struct TeleopSetup {
     pub log: TeleopLog,
@@ -209,9 +210,9 @@ struct PinholeModel {
 /// How a camera's panes are turned in the viewer, degrees about the image
 /// normal (Rerun's 2D frame is y-down, so a negative angle reads
 /// counter-clockwise on screen). The D405s sit rotated on the wrist, so
-/// their panes are turned back upright: RealSense 2 (the upper) clockwise,
-/// RealSense 1 (the lower, the upper's mount turned 180 degrees about the
-/// wrist) counter-clockwise. This is a static
+/// their panes are turned back upright: RealSense 2 (the session's)
+/// clockwise, RealSense 1 (its mount turned 180 degrees about the wrist from
+/// 2's) counter-clockwise. This is a static
 /// in-plane `Transform3D` on the camera entity: the pixels, the recording,
 /// and every hover readout stay in sensor coordinates.
 fn display_rotation_deg(sensor_name: &str) -> Option<f32> {
@@ -225,10 +226,10 @@ fn display_rotation_deg(sensor_name: &str) -> Option<f32> {
     }
 }
 
-/// A label's point on a camera's image, in its pixels, placed where the
-/// upper wrist camera's turn (+90) shows `at`: the lower one is turned the
-/// other way (-90), so its point turns 180 deg about the image centre and its
-/// labels read at the top of its pane, as the upper's do, not cut at the
+/// A label's point on a camera's image, in its pixels, placed where
+/// RealSense 2's turn (+90) shows `at`: RealSense 1 is turned the other way
+/// (-90), so its point turns 180 deg about the image centre and its labels
+/// read at the top of its pane, as 2's do, not cut at the
 /// bottom (station, 2026-10-23). `rotation` is `display_rotation_deg`'s.
 fn label_point(rotation: Option<f32>, [width, height]: [u32; 2], [x, y]: [f32; 2]) -> [f32; 2] {
     match rotation {
@@ -364,16 +365,19 @@ fn marker_color(fit: bool, accepted: bool) -> [u8; 3] {
 /// it at `<image>/fiducials/<group>` ([`RerunViewer::log_tracking`]: the
 /// wrist cube's tags, `ee/<target>`; [`RerunViewer::log_target`]: a print's
 /// markers, `print/<pattern>`; [`RerunViewer::log_scene_tags`]: a scene
-/// target's, the palette's, `<target>`, read by the cockpit itself). Ids
-/// name only the cube's few tags; a print's markers are too many and too
-/// small in that pane to label, and a scene tag carries its target's name.
+/// target's, the palette's or the xArm cube's, `<target>`, read by the
+/// cockpit itself). The cubes' and scene targets' few tags are labelled with
+/// their ids alone (a target's name beside each overlapped its neighbour's
+/// on the cube's adjacent faces, station 2026-11-09); a print's markers are
+/// too many and too small in that pane to label.
 const OVERHEAD_FIDUCIALS: &str = "fiducials";
 /// The cube's tags the pose was solved from, and those read beside them.
 const EE_TAG_USED: [u8; 3] = [80, 200, 255];
 const EE_TAG_READ: [u8; 3] = [150, 150, 150];
 /// A print's markers, in its outline's colour ([`RerunViewer::log_target`]).
 const PRINT_MARKER: [u8; 3] = [255, 200, 0];
-/// A scene target's tags, the palette's ([`RerunViewer::log_scene_tags`]).
+/// A scene target's tags, the palette's and the xArm cube's
+/// ([`RerunViewer::log_scene_tags`]).
 #[cfg(feature = "fiducials")]
 const SCENE_TAG: [u8; 3] = [120, 230, 140];
 
@@ -692,7 +696,7 @@ impl RerunViewer {
         *self.tracking_registration.lock().unwrap() = Some(TrackingPlacement::CameraWorld);
     }
 
-    /// One entity per tracked target, the pink arm's `wrist` at its
+    /// One entity per tracked target, the WXAI follower's `wrist` at its
     /// unsuffixed path.
     pub fn log_tracking(&self, stamp_ns: u64, value: &serde_json::Value) -> Result<()> {
         let (axes_entity, status) = tracking_entities(value)?;
@@ -769,7 +773,7 @@ impl RerunViewer {
                 .iter()
                 .map(|d| {
                     let corners = d.corners_px.map(|[u, v]| [u as f32, v as f32]);
-                    Quad::scaled(corners, scale, SCENE_TAG, Some(target.to_owned()))
+                    Quad::scaled(corners, scale, SCENE_TAG, Some(d.tag_id.to_string()))
                 })
                 .collect()
         })
@@ -2887,9 +2891,9 @@ const _: () = assert!(DEMO_EYE[2] > DEMO_LOOK_AT[2], "the Demo eye looks down");
 const STATUS_BOARD_BOUNDS: ([f64; 2], [f64; 2]) = ([0.0, 860.0], [0.0, 150.0]);
 
 /// The wrist D405s' colour images in the Demo tab, each pane's title and
-/// sensor (`camera_entity` places its image), by device number: D405-1 the
-/// lower (vision.toml wrist_lower), D405-2 the upper, the session's own
-/// (owner, 2026-10-23: "D405-1 and D405-2, not upper/lower wrist"). A title
+/// sensor (`camera_entity` places its image), by device number: D405-1
+/// (vision.toml wrist_1) and D405-2 (wrist_2), the session's own
+/// (2026-10-23: "D405-1 and D405-2, not upper/lower wrist"). A title
 /// is short: a 270 px pane's bar shows ten characters beside its buttons.
 /// Each camera
 /// is open only inside a Draw goal (the lower one beside the session's own,
@@ -3218,36 +3222,36 @@ pub fn viewer_blueprint() -> FleetBlueprint {
     .into();
 
     // Each wrist camera, by device number, beside its role's dataset views
-    // (vision.toml: RealSense 1 is wrist_lower, RealSense 2 wrist_upper).
+    // (vision.toml: RealSense 1 is wrist_1, RealSense 2 wrist_2).
     let telemetry: rerun::blueprint::ContainerLike = Grid::new(vec![
         view(
             "D405-1 RGB",
             [
                 "cameras/06_realsense1/color",
-                "observation.wrist_lower/**",
-                "observation.images.wrist_lower/**",
+                "observation.wrist_1/**",
+                "observation.images.wrist_1/**",
             ],
         ),
         view(
             "D405-1 depth",
             [
                 "cameras/06_realsense1/depth",
-                "observation.images.wrist_lower_depth/**",
+                "observation.images.wrist_1_depth/**",
             ],
         ),
         view(
             "D405-2 RGB",
             [
                 "cameras/07_realsense2/color",
-                "observation.wrist_upper/**",
-                "observation.images.wrist_upper/**",
+                "observation.wrist_2/**",
+                "observation.images.wrist_2/**",
             ],
         ),
         view(
             "D405-2 depth",
             [
                 "cameras/07_realsense2/depth",
-                "observation.images.wrist_upper_depth/**",
+                "observation.images.wrist_2_depth/**",
             ],
         ),
         overhead_rgb(),

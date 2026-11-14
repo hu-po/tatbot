@@ -79,7 +79,7 @@ def test_upright_yaws_recover_the_tip_across_its_axis_and_the_ball():
 
 
 def test_a_side_radius_per_pair_axis_takes_the_arms_give_and_the_midpoints_keep_the_tip():
-    """Round 18 (2026-09-30, pink at v11): the pairs read half-spans 1.6 mm across the heading and 2.7 mm along it,
+    """Round 18 (2026-09-30, the WXAI at v11): the pairs read half-spans 1.6 mm across the heading and 2.7 mm along it,
     the arm's give before the probe trips differing by direction. One side radius cannot fit that; one per
     attitude and pair axis does, and its midpoints recover the tip."""
     yaws = {yaw: n for n, yaw in enumerate(YAWS)}

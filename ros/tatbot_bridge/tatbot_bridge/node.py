@@ -3,14 +3,18 @@
 page_source stencil: its own zenoh client session to the tatbot bus router
 (tatbot_cli.nodes.bus_endpoint(address="lan")) subscribes tatbot/tracking/target/<pattern_id>
 (tatbot.target-pose/1) and publishes /tatbot/page (Page, transient local, depth 1) plus the
-tf world -> page/<pattern_id> at each measured sample. A lost sample republishes the last measured
-pose with SOURCE_LOST and no tf. It only reads the bus. While the bus router is unreachable it retries
-every 2 s.
+tf world -> page/<pattern_id> at each measured sample. Of several sheets of the print in view it
+publishes the one page.PageChooser says is the page. A lost sample, or one with no sheet that is the
+page, republishes the last measured pose with SOURCE_LOST and no tf. It only reads the bus. While the
+bus router is unreachable it retries every 2 s. Setting `page_at` to `<arm>,<x_mm>,<y_mm>` (`ros2 param
+set`, or the session client's --sheet-at) makes the sheet nearest that point in <arm>/base_link the page
+from the turn it is read there on; the bridge records it (page-chosen-<arm>.json in the log root) so a
+restart starts there.
 page_source fixed: stack.yaml page.fixed.<arm> as a static tf <arm>/base_link -> page/fixed_<arm>
 and a Page per arm at 1 Hz. The arm transforms are the description's (robot_state_publisher),
 never this node's.
 
-Parameters (strings; '' = stack.yaml): config, page_source, arms, pattern_id, bus_endpoint.
+Parameters (strings; '' = stack.yaml): config, page_source, arms, pattern_id, bus_endpoint; page_at ('' = none).
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ import rclpy
 import rclpy.executors
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
+from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from tatbot_description import names
@@ -78,6 +83,9 @@ class Bridge(Node):
         self.pattern_id = param["pattern_id"] or cfg["pattern_id"]
         self.pub = self.create_publisher(Page, names.PAGE_TOPIC, PAGE_QOS)
         self.bus = None
+        self.declare_parameter("page_at", "", ParameterDescriptor(description="<arm>,<x_mm>,<y_mm>: choose the sheet "
+                                                                              "nearest this point as the page"))
+        self.add_on_set_parameters_callback(self._on_parameters)
         if self.source == "fixed":
             self._start_fixed(cfg)
         else:
@@ -103,6 +111,39 @@ class Bridge(Node):
             self.pub.publish(page_msg(pattern_id=names.fixed_pattern_id(arm), parent=names.base_frame(arm),
                                       matrix=matrix, when=now, source=Page.SOURCE_FIXED))
 
+    def _on_parameters(self, params):
+        for param in params:
+            if param.name == "page_at" and param.value:
+                try:
+                    self._choose_at(str(param.value))
+                except ValueError as error:
+                    return SetParametersResult(successful=False, reason=str(error))
+        return SetParametersResult(successful=True)
+
+    def _choose_at(self, text: str) -> None:
+        if self.source == "fixed":
+            raise ValueError("page.source fixed: the page is stack.yaml's page.fixed, with no sheet to choose")
+        arm, xy = page.parse_at(text)
+        if self.registrations.get(arm) is None:
+            known = [a for a, matrix in self.registrations.items() if matrix is not None]
+            raise ValueError(f"page_at: {arm} is not an arm this bridge has a registration for "
+                             f"({', '.join(known) or 'none'})")
+        self.chooser.choose_at(xy, np.linalg.inv(self.registrations[arm]))
+        self.chosen_arm = arm
+        self.get_logger().info(f"page: the sheet nearest ({xy[0] * 1e3:+.0f}, {xy[1] * 1e3:+.0f}) mm in "
+                               f"{names.base_frame(arm)}, from the turn it is read there on")
+
+    def _record_choice(self, chosen) -> None:
+        arm = self.chosen_arm
+        bfp = page.base_from_page(self.registrations[arm], chosen["world_from_target"])
+        self.get_logger().info(f"page chosen: the sheet at {np.round(bfp[:3, 3] * 1000, 1).tolist()} mm in "
+                               f"{names.base_frame(arm)}")
+        try:
+            stack.chosen_path(arm).write_text(json.dumps({"arm": arm, "camera": bfp.tolist(),
+                                                          "stamp_ns": chosen["stamp_ns"]}) + "\n")
+        except OSError as error:
+            self.get_logger().warning(f"the choice is not recorded ({error}): a restart starts where it stood before")
+
     # --- stencil ----------------------------------------------------------------------------
     def _start_stencil(self, endpoint):
         self.tf = TransformBroadcaster(self)
@@ -111,8 +152,10 @@ class Bridge(Node):
         self.lock = threading.Lock()
         self.last = None            # the last measured sample
         self.lost = False
-        self.logged_at = -math.inf
+        self.logged_at = self.refused_at = -math.inf
         self.registrations = {a: stack.world_from_arm_base(self.stack, a) for a in self.arms}
+        self.chooser = stack.page_chooser(self.stack, self.registrations)
+        self.chosen_arm = None
         self.endpoint, self.bus_error = endpoint, None
         self.ee_pubs = {a: self.create_publisher(PoseWithCovarianceStamped, names.ee_topic(a), 10) for a in self.arms}
         self.ee_samples = collections.deque(maxlen=64)
@@ -177,8 +220,9 @@ class Bridge(Node):
             sample = page.parse(data, self.pattern_id)
             if sample is None:
                 continue
-            if sample["source"] == "measured":
-                self._measured(sample)
+            chosen = self._page_of(sample) if sample["source"] == "measured" else None
+            if chosen is not None:
+                self._measured(chosen)
             elif self.last is not None:
                 if not self.lost:
                     self.get_logger().info("page lost: the last measured pose stands")
@@ -186,6 +230,23 @@ class Bridge(Node):
                 wfp = page.world_from_page(self.last["world_from_target"])
                 self.pub.publish(page_msg(pattern_id=self.pattern_id, parent=names.WORLD, matrix=wfp,
                                           when=stamp(self.last["stamp_ns"]), source=Page.SOURCE_LOST, sample=self.last))
+
+    def _page_of(self, sample):
+        """The sheet of a measured sample that is the page, how far the others stand from it in its support; None, and
+        a warning every LOG_BASE_EVERY_S, when none is."""
+        sheets, choosing = page.copies(sample), self.chooser.wanted is not None
+        chosen = self.chooser.choose(sheets)
+        if chosen is not None:
+            if choosing:
+                self._record_choice(chosen)
+            return {**chosen, "support": {**chosen["support"], "other_copies_m": page.others_m(chosen, sheets)}}
+        t = self.get_clock().now().nanoseconds / 1e9
+        if t - self.refused_at >= LOG_BASE_EVERY_S:
+            self.refused_at = t
+            self.get_logger().warning(f"{len(sheets)} sheet(s) of the print in view, none the page: "
+                                      f"{self.chooser.why_none()}. `tatbot ros page` lists them, --sheet-at X,Y "
+                                      "chooses one")
+        return None
 
     def _measured(self, sample):
         when = stamp(sample["stamp_ns"])

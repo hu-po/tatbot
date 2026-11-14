@@ -850,9 +850,101 @@ def _kept_by_count(candidates: list[Path], adopted: set[str], policies: dict[boo
     return protected
 
 
+def _strip_media(run_dir: Path, workflow: str, policy: dict, meta: dict, dry_run: bool,
+                 verbose: bool) -> dict | None:
+    """Delete one run's `media` paths and keep the rest of it. The marker goes in last, so a crash
+    part way leaves the remainder for the next prune and never claims a strip that did not finish."""
+    paths = [path for pattern in policy.get("media", ()) for path in run_dir.glob(pattern)]
+    if not paths:
+        return None
+    size = sum(_dir_size(path) if path.is_dir() else path.lstat().st_size for path in paths)
+    entry = {"run_id": run_dir.name, "workflow": workflow, "bytes": size,
+             "status": meta.get("status"), "ended_at": meta.get("ended_at")}
+    if dry_run:
+        if verbose:
+            print(f"prune: WOULD strip {run_dir.name} ({workflow}, {_human(size)} of media)", file=sys.stderr)
+        return entry
+    try:
+        for path in paths:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        _atomic_write_json(run_dir / "meta.json",
+                           {**meta, "media_pruned_at": _iso(), "media_bytes_freed": size})
+    except Exception as exc:
+        print(f"prune: failed to strip {run_dir}: {exc}", file=sys.stderr)
+        return None
+    if verbose:
+        print(f"prune: stripped {run_dir.name} ({workflow}, {_human(size)} of media, "
+              f"ended {entry['ended_at']}, status {entry['status']})", file=sys.stderr)
+    return entry
+
+
+def _remove_run(run_dir: Path, workflow: str, meta: dict | None, cfg: dict, dry_run: bool,
+                verbose: bool) -> dict | None:
+    """Delete one whole run, leaving its index row and a copy of its meta.json."""
+    size = _dir_size(run_dir)
+    entry = {"run_id": run_dir.name, "workflow": workflow, "bytes": size,
+             "status": (meta or {}).get("status"),
+             "ended_at": (meta or {}).get("ended_at")}
+    if dry_run:
+        if verbose:
+            print(f"prune: WOULD remove {run_dir.name} "
+                  f"({workflow}, {_human(size)})", file=sys.stderr)
+        return entry
+    # Record first, delete second: a crash mid-rmtree then leaves a
+    # half-empty directory the next prune finishes, with the record already
+    # durable. An empty dir with no index row would read as "no logs".
+    with contextlib.suppress(Exception):
+        pruned_dir = run_dir.parent / ".pruned"
+        pruned_dir.mkdir(parents=True, exist_ok=True)
+        if meta is not None:
+            _atomic_write_json(pruned_dir / f"{run_dir.name}.meta.json", meta)
+        _append_line(index_path(cfg), {
+            "schema_version": SCHEMA_VERSION, "run_id": run_dir.name,
+            "workflow": workflow, "node": _node(), "status": "pruned",
+            "pruned_at": _iso(), "data_present": False, "bytes_freed": size})
+    try:
+        shutil.rmtree(run_dir)
+    except Exception as exc:
+        print(f"prune: failed to remove {run_dir}: {exc}", file=sys.stderr)
+        return None
+    if verbose:
+        # stderr, never stdout: `begin` runs this and runlog.sh captures its stdout as
+        # RUN_DIR (a 60-run prune once became a 6 KB "log path", exit 130).
+        print(f"prune: removed {run_dir.name} ({workflow}, {_human(size)}, "
+              f"ended {entry['ended_at']}, status {entry['status']})", file=sys.stderr)
+    return entry
+
+
+def _strip_aged_media(runs: list[Path], root: Path, workflow: str, policy: dict, cfg: dict, deadline: float,
+                      dry_run: bool, verbose: bool) -> list[dict]:
+    """Strip every run past `media_days` and outside the newest `media_keep_runs`."""
+    media_days = policy.get("media_days")
+    if not media_days:
+        return []
+    stripped = []
+    for run_dir in runs[:-int(policy.get("media_keep_runs", 0)) or None]:
+        if time.time() > deadline:
+            break
+        meta = _read_meta(run_dir)
+        if meta is None or _age_days(meta) < float(media_days) or why_not_deletable(run_dir, root, workflow, cfg):
+            continue
+        entry = _strip_media(run_dir, workflow, policy, meta, dry_run, verbose)
+        if entry:
+            stripped.append(entry)
+    return stripped
+
+
 def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
           budget_s: float | None = None, verbose: bool = True) -> list[dict]:
     """Delete the oldest runs of one workflow past its retention policy.
+
+    `media_days` takes a run's heavy `media` paths long before keep_days takes the run, so the small
+    files a citation or a debug session reads outlive them. keep_days and keep_runs stay the whole-run
+    rule on purpose: a config lands under a stack still running older code, which ignores the media
+    keys and must find nothing new to delete.
 
     Runs `adopt` moved in from another log root (an ADOPTED marker) are held to
     the "adopted" policy among themselves, never counted against the
@@ -887,40 +979,11 @@ def prune(workflow: str, cfg: dict | None = None, dry_run: bool = True,
         reason = why_not_deletable(run_dir, root, workflow, cfg)
         if reason:
             continue
-        size = _dir_size(run_dir)
-        entry = {"run_id": run_dir.name, "workflow": workflow, "bytes": size,
-                 "status": (meta or {}).get("status"),
-                 "ended_at": (meta or {}).get("ended_at")}
-        if dry_run:
+        entry = _remove_run(run_dir, workflow, meta, cfg, dry_run, verbose)
+        if entry:
             removed.append(entry)
-            if verbose:
-                print(f"prune: WOULD remove {run_dir.name} "
-                      f"({workflow}, {_human(size)})", file=sys.stderr)
-            continue
-        # Record first, delete second: a crash mid-rmtree then leaves a
-        # half-empty directory the next prune finishes, with the record already
-        # durable. An empty dir with no index row would read as "no logs".
-        with contextlib.suppress(Exception):
-            pruned_dir = wf_dir / ".pruned"
-            pruned_dir.mkdir(parents=True, exist_ok=True)
-            if meta is not None:
-                _atomic_write_json(pruned_dir / f"{run_dir.name}.meta.json", meta)
-            _append_line(index_path(cfg), {
-                "schema_version": SCHEMA_VERSION, "run_id": run_dir.name,
-                "workflow": workflow, "node": _node(), "status": "pruned",
-                "pruned_at": _iso(), "data_present": False, "bytes_freed": size})
-        try:
-            shutil.rmtree(run_dir)
-        except Exception as exc:
-            print(f"prune: failed to remove {run_dir}: {exc}", file=sys.stderr)
-            continue
-        removed.append(entry)
-        if verbose:
-            # stderr, never stdout: `begin` runs this and runlog.sh captures its stdout as
-            # RUN_DIR (a 60-run prune once became a 6 KB "log path", exit 130).
-            print(f"prune: removed {run_dir.name} ({workflow}, {_human(size)}, "
-                  f"ended {entry['ended_at']}, status {entry['status']})", file=sys.stderr)
-    return removed
+    own = [p for p in candidates if p.name not in adopted | {entry["run_id"] for entry in removed}]
+    return removed + _strip_aged_media(own, root, workflow, policies[False], cfg, deadline, dry_run, verbose)
 
 
 ADOPTED = "ADOPTED"

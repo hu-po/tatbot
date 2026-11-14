@@ -55,6 +55,15 @@ std::vector<double> numbers(std::string text)
   return out;
 }
 
+std::vector<std::string> words(const std::string & text)
+{
+  std::istringstream in(text);
+  std::vector<std::string> out;
+  std::string token;
+  while (in >> token) {out.push_back(token);}
+  return out;
+}
+
 // Serializes SDK connects across both arms (README section 5).
 std::mutex & connect_mutex()
 {
@@ -171,6 +180,21 @@ TatbotArm::CallbackReturn TatbotArm::on_init(
       return CallbackReturn::ERROR;
     }
     if (palm_com.size() == 3) {std::copy(palm_com.begin(), palm_com.end(), sdk_options_.palm_com_m.begin());}
+    // The controller's make (the arm model's): Trossen's SDK or UFACTORY's, with the xArm's load and sensitivity.
+    controller_ = text("controller", "trossen");
+    if (controller_ != "trossen" && controller_ != "xarm") {
+      RCLCPP_FATAL(get_logger(), "controller must be trossen or xarm, not '%s'", controller_.c_str());
+      return CallbackReturn::ERROR;
+    }
+    xarm_options_.ip = ip_;
+    xarm_options_.payload_mass_kg = num("payload_mass_kg", xarm_options_.payload_mass_kg);
+    const auto payload_com = numbers(text("payload_com_m", ""));
+    if (std::isfinite(xarm_options_.payload_mass_kg) && payload_com.size() != 3) {
+      RCLCPP_FATAL(get_logger(), "payload_mass_kg needs payload_com_m as three values");
+      return CallbackReturn::ERROR;
+    }
+    if (payload_com.size() == 3) {std::copy(payload_com.begin(), payload_com.end(), xarm_options_.payload_com_m.begin());}
+    xarm_options_.collision_sensitivity = static_cast<int>(num("collision_sensitivity", -1));
     flight_path_ = text("flight_path", "");
     rt_priority_ = static_cast<int>(num("rt_priority", 80));
     for (double c : numbers(text("rt_cpus", ""))) {rt_cpus_.push_back(static_cast<int>(c));}
@@ -223,11 +247,14 @@ TatbotArm::CallbackReturn TatbotArm::on_init(
     c.landing_verify_rad = num("landing_verify_rad", c.landing_verify_rad);
     c.landing_verify_carriage_m = num("landing_verify_carriage_m", c.landing_verify_carriage_m);
     c.landing_budget_s = num("landing_budget_s", c.landing_budget_s);
+    c.command_delay_s = num("command_delay_s", c.command_delay_s);
     const auto staged = numbers(text("staged_positions", ""));
     if (staged.size() == kJoints) {std::copy(staged.begin(), staged.end(), c.staged_positions.begin());}
     fake_page_ = p.count("fake_page_z") && !p.at("fake_page_z").empty();
     fake_page_z_ = num("fake_page_z", 0.0);
     fake_page_stiffness_ = num("fake_page_stiffness_n_m", 0.0);
+    fake_plant_.delay_s = num("fake_delay_s", fake_plant_.delay_s);
+    fake_plant_.tau = num("fake_lag_s", fake_plant_.tau);
     carriage_min_m_ = num("carriage_min_m", carriage_min_m_);
     carriage_max_m_ = num("carriage_max_m", carriage_max_m_);
     controller_query_period_s_ = num("controller_query_period_s", controller_query_period_s_);
@@ -248,13 +275,23 @@ TatbotArm::CallbackReturn TatbotArm::on_init(
     return CallbackReturn::ERROR;
   }
 
-  // Joints by name: <arm>/joint_0..joint_5, then <arm>/left_carriage_joint.
-  std::vector<std::string> joint_names(kJoints);
-  for (size_t k = 0; k < kCarriage; ++k) {joint_names[k] = arm_ + "/joint_" + std::to_string(k);}
-  joint_names[kCarriage] = arm_ + "/left_carriage_joint";
-  if (info_.joints.size() != kJoints) {
-    RCLCPP_FATAL(get_logger(), "expected 7 joints, got %zu", info_.joints.size());
+  // Joints by name, in controller order, and the tool carriage among them or none: the arm's model
+  // (tatbot_description.hardware_params `joints` and `carriage_joint`).
+  const auto joint_names = words(text("joints", ""));
+  if (joint_names.size() != kJoints || info_.joints.size() != kJoints) {
+    RCLCPP_FATAL(get_logger(), "expected the arm model's %zu joints, got %zu named and %zu in ros2_control", kJoints,
+      joint_names.size(), info_.joints.size());
     return CallbackReturn::ERROR;
+  }
+  const auto carriage = text("carriage_joint", "");
+  cfg_.carriage.reset();
+  if (!carriage.empty()) {
+    const auto it = std::find(joint_names.begin(), joint_names.end(), carriage);
+    if (it == joint_names.end()) {
+      RCLCPP_FATAL(get_logger(), "carriage_joint %s is not one of the joints", carriage.c_str());
+      return CallbackReturn::ERROR;
+    }
+    cfg_.carriage = static_cast<size_t>(it - joint_names.begin());
   }
   for (size_t i = 0; i < kJoints; ++i) {
     const auto it = std::find(joint_names.begin(), joint_names.end(), info_.joints[i].name);
@@ -336,9 +373,11 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
     }
     if (sdk_ == "real") {
       lock_ = runtime::DriverLock::acquire();
-      backend_ = make_sdk_backend(ip_, sdk_options_);
+      backend_ = controller_ == "xarm" ? make_xarm_backend(xarm_options_) : make_sdk_backend(ip_, sdk_options_);
       if (!backend_) {
-        RCLCPP_FATAL(get_logger(), "built without the Trossen SDK (TATBOT_ARM_SDK off or offline)");
+        RCLCPP_FATAL(get_logger(), "%s", controller_ == "xarm" ?
+          "built without UFACTORY's xArm SDK (TATBOT_XARM_SDK off or offline)" :
+          "built without the Trossen SDK (TATBOT_ARM_SDK off or offline)");
         return CallbackReturn::ERROR;
       }
     } else if (sdk_ == "sim") {
@@ -348,8 +387,9 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
         return CallbackReturn::ERROR;
       }
     } else {
-      FakeOptions options;
+      FakeOptions options = fake_plant_;
       options.start = cfg_.staged_positions;
+      options.carriage = cfg_.carriage;
       if (fake_page_) {
         options.fk = fk_;
         options.page_z = fake_page_z_;
@@ -381,7 +421,7 @@ TatbotArm::CallbackReturn TatbotArm::on_configure(const State &)
   // TCP getters and the post-landing close, off the control thread. Every SDK call, these included,
   // holds the driver's one data mutex for its whole round trip (trossen_arm.hpp "Mutex ownership"),
   // so each query stalls the 400 Hz loop by 1.5-2.5 ms: at 10 Hz that was ~120 late ticks a minute
-  // on the pink arm (bench 2026-09-26). A controller error also surfaces as an SDK
+  // on the WXAI follower (bench 2026-09-26). A controller error also surfaces as an SDK
   // exception on the next read or command (sticky_error_), so the query runs every
   // controller_query_period_s; a close request is served within 100 ms.
   aux_ = std::make_shared<Aux>();
@@ -468,7 +508,7 @@ void TatbotArm::open_session()
   helper.join();
   if (failure) {std::rethrow_exception(failure);}
   try {
-    {
+    if (cfg_.carriage) {
       // A power-cycled controller boots with a -4 mm carriage floor, while a loaded carriage rests
       // on its stop near -4.7 mm: holding that pose idles motor 6 and every later command fails
       // with "modes different than configured modes" (cpp/teleop/arm_recover.cpp). Apply the

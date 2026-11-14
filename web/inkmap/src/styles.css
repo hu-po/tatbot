@@ -21,14 +21,9 @@ kbd { font: 11px ui-monospace, monospace; padding: 1px 5px; border: 1px solid va
 .topbar h1 { font-size: 16px; margin: 0 6px 0 0; letter-spacing: -.01em; }
 .topbar button, .menu-trigger { min-height: 30px; padding: 4px 10px; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
 .topbar button:disabled { opacity: .45; cursor: default; }
-.workspaces { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.workspaces button { border: 0; border-radius: 0; background: transparent; }
-.workspaces button + button { border-left: 1px solid var(--line); }
-.workspaces button[aria-selected=true] { background: rgba(91,124,255,.28); color: #fff; }
 .history, .camera { display: flex; gap: 4px; }
 .save-status { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .save-status.failed { color: #ffb3b3; }
-.chart-note { white-space: nowrap; }
 .workarea { display: flex; flex: 1; min-height: 0; }
 .stage { flex: 1; position: relative; min-width: 0; min-height: 0; background: var(--bg); display: flex; }
 .stage > div:first-child, .stage canvas { flex: 1; min-height: 0; }
@@ -68,6 +63,7 @@ kbd { font: 11px ui-monospace, monospace; padding: 1px 5px; border: 1px solid va
 .adjustbar .name { font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adjustbar label { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
 .adjustbar input[type=number] { width: 68px; padding: 5px 6px; background: var(--field); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
+.adjustbar input[aria-invalid=true] { border-color: var(--warn); }
 .adjustbar label.check { color: var(--fg); }
 .adjustbar button { padding: 6px 12px; border-radius: 999px; border: 1px solid transparent; cursor: pointer; font-size: 13px; font-weight: 600; }
 .adjustbar .accept { background: var(--ok); color: #fff; }
@@ -179,8 +175,6 @@ input.filter { width: 100%; padding: 7px 9px; margin-top: 8px; background: var(-
 .provenance dl { display: grid; grid-template-columns: 76px 1fr; gap: 4px 8px; margin: 8px 0 0; }
 .provenance dt { color: var(--muted); }
 .provenance dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; }
-.surface-details summary { cursor: pointer; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
-.surface-details[open] { display: flex; flex-direction: column; gap: 8px; }
 .simulation-export { padding: 9px; border: 1px solid var(--line); border-radius: 8px; }
 .simulation-export summary { cursor: pointer; font-weight: 600; }
 .simulation-export[open] { display: flex; flex-direction: column; gap: 9px; }
@@ -205,18 +199,11 @@ input.filter { width: 100%; padding: 7px 9px; margin-top: 8px; background: var(-
 .body-strip .menu-field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
 .body-strip select { padding: 5px 6px; background: var(--field); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; }
 
-/* chart stage: the paper fixture in 3D, the caption under it */
-.chart-figure { flex: 1; display: flex; flex-direction: column; align-items: stretch; margin: 0; padding: 0; min-height: 0; min-width: 0; }
-.chart-stage { flex: 1 1 0; min-height: 0; min-width: 0; position: relative; }
-.chart-stage > div, .chart-stage canvas { width: 100% !important; height: 100% !important; display: block; touch-action: none; }
-.chart-figure figcaption { color: var(--muted); font-size: 12px; padding: 6px 12px 8px; text-align: center; border-top: 1px solid var(--line); background: var(--panel); }
-
 /* ---- mobile: the dock is a bottom tray, stacked under the stage ---------- */
 @media (max-width: 768px) and (pointer: coarse) {
   .topbar { gap: 5px; padding: 0 6px; }
   .topbar h1 { display: none; }
   .save-status { display: none; }
-  .chart-note { display: none; }
   .topbar button, .menu-trigger { padding: 4px 7px; font-size: 12px; min-height: 34px; }
   .history, .camera { gap: 3px; }
   .workarea { flex-direction: column; }
@@ -362,3 +349,33 @@ input.filter { width: 100%; padding: 7px 9px; margin-top: 8px; background: var(-
   .review-grid { padding: 12px; gap: 12px; }
   .review-paper { height: 260px; }
 }
+
+/* ---- fit and cost ------------------------------------------------------ */
+
+.fit { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--field); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
+.fit h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.fit h3 span { font-weight: 400; }
+.fit-tiles { display: flex; flex-direction: column; gap: 2px; border: 0; margin: 0; padding: 0; }
+.fit-tiles label { display: flex; align-items: baseline; gap: 6px; cursor: pointer; min-height: 22px; }
+.fit-tiles .size { color: var(--muted); }
+.fit-tiles .verdict { margin-left: auto; text-align: right; color: var(--ok); }
+.fit-tiles .verdict.over { color: #ffd98a; }
+.fit-row { display: grid; grid-template-columns: 64px 1fr; gap: 6px; margin: 0; }
+.fit-row dt { color: var(--muted); }
+.fit-row dd { margin: 0; }
+.fit-row .warn { color: #ffd98a; }
+.fit button.fit-action { align-self: flex-start; padding: 5px 10px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px; }
+.fit h3 span { font-size: 11px; }
+.ink-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ink-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.ink-chip i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid #fff3; }
+.ink-chip button { padding: 0 2px; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; }
+.ink-chip button:hover { color: var(--fg); }
+.ink-chips select { padding: 3px 4px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.overlap-note { margin: 0; color: #ffd98a; }
+.fit-check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.fit-note { color: #ffd98a; }
+.fit-note .link { color: inherit; }
+.fit label.fit-action { align-self: flex-start; padding: 5px 10px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 12px; }
+.fit label.fit-action input { display: none; }
+.fit code { font-size: 11px; }

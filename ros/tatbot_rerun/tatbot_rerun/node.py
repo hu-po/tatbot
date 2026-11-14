@@ -40,6 +40,7 @@ PAGE_QOS = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL, reli
 PHASES = {getattr(Draw.Feedback, k): k[6:] for k in dir(Draw.Feedback) if k.startswith("PHASE_")}
 LATCHES = {v: k[6:].lower() for k, v in vars(names).items() if k.startswith("LATCH_")}
 LAYERS = ("plan", "design", "planned", "done", "page", "table", "palette")
+RUN_LAYERS = ("plan", "design", "planned", "done")   # the followed run's: shown only while it draws
 KEYFRAME_S = 60.0   # every layer and link again this often: a viewer joining the hub's buffer late still gets them
 
 
@@ -105,6 +106,7 @@ class RerunBridge(Node):
         self.failed, self.dirty, self.logged, self.poses, self.safety, self.wrist = set(), set(LAYERS), {}, {}, {}, {}
         self.page_msg = self.run = self.feedback = self.surface = self.palette = self.caps = self.highlight = None
         self.frame, self.tip_shown = None, False   # the design map's frame (design_frame); a tip dot drawn in it
+        self.drawing = None   # whether the followed run draws (DrawState.drawing); None until the first tick
         self.keyframe, self.wrist_failed, self.followed, self.board = self._now_s(), False, False, {}
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer, self)
@@ -280,6 +282,7 @@ class RerunBridge(Node):
             if "page" in changed:
                 self.surface = scene.page_surface(self.run.page, self.fitted)
             self.dirty |= changed & set(LAYERS)
+        self._blank_between_draws(now)
         index = self.feedback["index"] if self.feedback else self.run and self.run.next_op()
         if self.run is not None and self.run.dip_slot(index) != self.highlight:
             self.highlight = self.run.dip_slot(index)
@@ -291,6 +294,20 @@ class RerunBridge(Node):
                 self.dirty.discard(layer)
         self._log_status(now, index)
 
+    def _blank_between_draws(self, now: float):
+        """The design map and the strokes show only while the followed run draws: when it ends, or when the bridge
+        starts after it ended (the hub keeps what an earlier bridge logged), both are cleared once."""
+        drawing = self.run is not None and self.run.drawing(now)
+        if drawing == self.drawing:
+            return
+        self.drawing = drawing
+        if drawing:
+            self.dirty |= set(RUN_LAYERS)
+            return
+        self.frame, self.tip_shown = None, False
+        for layer in ("strokes", "design"):
+            self.rr.log(f"{ROOT}/{layer}", self.rr.Clear(recursive=True))
+
     def _drawn(self):
         """Every done or partial stroke's measured lines, with their ink colours."""
         drawn = [(op, line) for op, lines in self.run.lines.items() for line in lines]
@@ -299,7 +316,7 @@ class RerunBridge(Node):
     @shown
     def _log_plan(self):
         """The design map, page mm like drawn.svg: the print, its clear centre and the planned strokes (once a run)."""
-        if self.run is not None:
+        if self.drawing:
             outline = [scene.design_mm(scene.rectangle(*s)[:, :2], self.size) for s in (self.size, self.clear)]
             self.rr.log(f"{ROOT}/design/page", self.rr.LineStrips2D(outline, colors=[scene.PAGE_RGB], radii=0.2))
             planned = [scene.design_mm(s, self.size) for s in self.run.planned.values()]
@@ -311,13 +328,16 @@ class RerunBridge(Node):
 
     @shown
     def _log_stencil(self):
-        """The print the run draws on (its installed stencil.png) under the design map, cut to the frame; none on a
-        fixed page or with no print installed."""
+        """The print the run draws on (its installed stencil.png) under the design map, cut to the frame: the run's
+        own, or on a fixed page the stack's, whose geometry that page takes (`ros up` logs `page fixed (print ...)`);
+        none with no print installed."""
         import cv2
         import stencil_reference as ref
 
-        path = ref.observer_references(self.log_root) / str(
-            self.run.pattern_id or self.stack["page"].get("pattern_id")) / "tracking.json"
+        pattern = self.run.pattern_id
+        if pattern in (None, names.fixed_pattern_id(self.run.arm)):
+            pattern = self.stack["page"].get("pattern_id")
+        path = ref.observer_references(self.log_root) / str(pattern) / "tracking.json"
         manifest, image = ref.load(path) if path.is_file() else (None, None)
         under = manifest and scene.stencil_underlay(cv2.imread(str(image), cv2.IMREAD_GRAYSCALE), manifest["page_mm"],
                                                     self.size, self.frame)
@@ -330,7 +350,7 @@ class RerunBridge(Node):
     @shown
     def _log_design(self):
         """The design map's done strokes, in their inks."""
-        if self.run is not None:
+        if self.drawing:
             lines, colors = self._drawn()
             self.rr.log(f"{ROOT}/design/done", self.rr.LineStrips2D(
                 [scene.design_mm(line, self.size) for line in lines], colors=colors, radii=0.2))
@@ -339,22 +359,22 @@ class RerunBridge(Node):
     def _log_planned(self):
         """The program's strokes in 3D, a translucent ghost (False: no page pose yet, try again)."""
         page = self._page_pose()
-        if self.run is not None and page is not None:
+        if self.drawing and page is not None:
             self.rr.log(f"{ROOT}/strokes/planned", self.rr.LineStrips3D(
                 [scene.transform(page, scene.page_local(self.run.on_page(s), self.surface)) for s in self.run.planned.values()],
                 colors=[scene.PLANNED_RGBA], radii=0.00015))
-        return self.run is None or page is not None
+        return not self.drawing or page is not None
 
     @shown
     def _log_done(self):
         """Every done or partial stroke in 3D as the line the pen measured, in its ink, on the page in use."""
         page = self._page_pose()
-        if self.run is not None and page is not None:
+        if self.drawing and page is not None:
             lines, colors = self._drawn()
             self.rr.log(f"{ROOT}/strokes/done", self.rr.LineStrips3D(
                 [scene.transform(page, scene.page_local(self.run.on_page(line), self.surface, chart=False)) for line in lines],
                 colors=colors, radii=0.0002))
-        return self.run is None or page is not None
+        return not self.drawing or page is not None
 
     @shown
     def _log_page(self):

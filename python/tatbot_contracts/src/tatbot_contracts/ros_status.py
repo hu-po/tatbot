@@ -91,10 +91,15 @@ def phase_item(run, feedback, now_s):
 
 def trim_item(run, trim, now_s):
     """The operator's pen trim of the cartridge on the arm (Fn+W up, Fn+S deeper) and its limit, yellow at it; yellow
-    too with the trim the stroke takes when that holds the keys back (a needle cartridge's, by the skin read)."""
+    too with the trim the stroke takes when that holds the keys back (a needle cartridge's, by the skin read). While
+    its depth hold waits (the needle running dry at the first stroke's start), yellow: the depth the keys set, and that
+    Fn+E takes it, or where the skin read holds it."""
     if run is None or _ended(run, now_s) or trim is None:
         return "trim -", OFF
     mm, limit = trim["m"] * 1000, trim.get("limit_m")
+    if trim.get("hold"):
+        held = trim.get("used_m", trim["m"]) * 1000 > mm + 0.005
+        return f"depth {mm:+.2f} " + (f"held {trim['used_m'] * 1000:+.2f} mm" if held else "· Fn+E takes"), WARN
     if trim.get("used_m", trim["m"]) * 1000 > mm + 0.005:
         return f"trim {mm:+.1f} · held {trim['used_m'] * 1000:+.2f} mm", WARN
     if limit is None:
@@ -175,9 +180,10 @@ def latch_item(safety, now_s):
 
 
 def wrist_item(wrist, feedback, now_s):
-    """The wrist D405 opens only inside a Draw goal: an old frame is a warning only while one runs."""
+    """The wrist D405's frames come from a reading's camera or, between readings, the session's idle feed (closed
+    while the rig sleeps): an old frame is a warning only while a draw runs."""
     if wrist is None:
-        return "wrist: no frame yet (opens in a draw)", OFF
+        return "wrist: no frame yet", OFF
     if _fresh(wrist, now_s, WRIST_FRESH_S):
         return ("wrist live (latest tf)", WARN) if wrist.get("latest") else ("wrist live", OK)
     return f"wrist {age(now_s - wrist['t'])} ago", WARN if _fresh(feedback, now_s) else OFF
@@ -190,7 +196,7 @@ def items(now_s: float, *, run: dict | None = None, feedback: dict | None = None
     """{item: (text, state)} in board order. run {id, t (newest ledger row), index (next op; None when finished), total,
     done, started_s, ended_s, status}; feedback {t, index, total, phase (a name), arc_m}; safety {t, estop_source,
     estop_ok, estop_age_s, probe_triggered, latched, latch (a name), machine_powered, machine_reply_age_s}; ink {ink,
-    slot}; trim {m, limit_m (None unknown), used_m (the trim the stroke takes, m by default)}; wrist {t (the frame's
+    slot}; trim {m, limit_m (None unknown), used_m (the trim the stroke takes, m by default), hold (its depth hold waits)}; wrist {t (the frame's
     stamp), latest (placed by the newest tf, none at its stamp)}; palette_s: the station fix's measured time; caps:
     ros_scene.caps' (state, brief), which the ink item lists outside an ink op."""
     return {"run": run_item(run, feedback, now_s), "op": op_item(run, feedback, now_s),

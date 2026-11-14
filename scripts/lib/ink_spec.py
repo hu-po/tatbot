@@ -25,9 +25,10 @@ record in the same palette_load.yaml.
 * A dip is planned when the next stroke's need exceeds the charge, on colour
   change, or at session start, and the plan says WHY.
 * ``mode`` decides what the same arithmetic touches: ``real`` debits caps and
-  stock; ``rehearsal`` (the ballpoint) runs the identical path with every event
-  tagged and nothing real mutated, dry caps allowed; ``none`` (the laser)
-  refuses to plan a dip at all.
+  stock; ``rehearsal`` runs the identical path with every event tagged and
+  nothing real mutated, dry caps allowed; ``none`` (the laser) refuses to plan
+  a dip at all; ``cartridge`` (a self-inking refill, exchanged by hand) carries
+  no charge and never dips.
 * Dip depth follows the cap's fill level, so an emptying cap gets a deeper
   plunge rather than a fixed one.
 """
@@ -146,7 +147,6 @@ class CapSize:
 class PaletteSlot:
     slot_id: str      # == URDF frame name
     size: CapSize
-    arm: str
 
 
 @dataclass(frozen=True)
@@ -248,9 +248,6 @@ def policy_with_ink(policy: "InkPolicy", ink: Ink | None) -> "InkPolicy":
 
 def load_palette(repo: Path | str = REPO) -> dict[str, PaletteSlot]:
     data = _read(PALETTE_RELPATH, repo)
-    from tatbot_cli.arms import load as configured_arms
-
-    arms = configured_arms(Path(repo))
     sizes = {}
     for size_id, d in (data.get("sizes") or {}).items():
         cs = CapSize(
@@ -277,10 +274,7 @@ def load_palette(repo: Path | str = REPO) -> dict[str, PaletteSlot]:
         size = sizes.get(d.get("size"))
         if size is None:
             raise ValueError(f"{PALETTE_RELPATH}: slot {slot_id}: unknown size {d.get('size')!r}")
-        arm = d.get("arm")
-        if arm not in arms:
-            raise ValueError(f"{PALETTE_RELPATH}: slot {slot_id}: arm {arm!r} is not configured")
-        slots[slot_id] = PaletteSlot(slot_id=slot_id, size=size, arm=arm)
+        slots[slot_id] = PaletteSlot(slot_id=slot_id, size=size)
     if not slots:
         raise ValueError(f"{PALETTE_RELPATH}: no slots")
     return slots
@@ -315,8 +309,8 @@ SUPPLIES = ("bench", "wet", "dry")
 
 
 def supply_load(kind: str, palette: dict[str, PaletteSlot], ink_id: str | None = None,
-                repo: Path | str = REPO, arm: str = "right") -> dict[str, SlotLoad]:
-    """A palette load that is NOT the bench's: ``wet`` fills every ``arm`` cap
+                repo: Path | str = REPO) -> dict[str, SlotLoad]:
+    """A palette load that is NOT the bench's: ``wet`` fills every cap
     to its usable volume with ``ink_id`` (the sim's default — a simulator is
     not the bench, and a batch should not be refused because nobody poured
     this morning); ``dry`` empties every cap; ``bench`` is what
@@ -333,8 +327,7 @@ def supply_load(kind: str, palette: dict[str, PaletteSlot], ink_id: str | None =
     if ink_id not in inks:
         raise ValueError(f"unknown ink {ink_id!r}; have {', '.join(inks)}")
     return {
-        s: (SlotLoad(s, ink_id, p.size.capacity_ul * p.size.usable_frac, bottle=f"{kind}-supply")
-            if p.arm == arm else SlotLoad(s, None))
+        s: SlotLoad(s, ink_id, p.size.capacity_ul * p.size.usable_frac, bottle=f"{kind}-supply")
         for s, p in palette.items()
     }
 
@@ -386,15 +379,13 @@ class InkSupplyError(ValueError):
 
 
 def usable_slots(policy: InkPolicy, palette: dict[str, PaletteSlot],
-                 load: dict[str, SlotLoad], arm: str = "right",
+                 load: dict[str, SlotLoad],
                  ink_id: str | None = None) -> list[SlotLoad]:
     """Slots this tool may dip in, in palette order. Rehearsal accepts dry caps
     (and ignores ink identity, since a dry cap has none); real needs the ink and
     a fill above ``min_fill_frac`` of the cap's usable volume."""
     out = []
     for slot_id, slot in palette.items():
-        if slot.arm != arm:
-            continue
         sl = load[slot_id]
         if policy.mode == "rehearsal":
             if sl.ink_id is None or ink_id is None or sl.ink_id == ink_id:
@@ -412,7 +403,7 @@ def usable_slots(policy: InkPolicy, palette: dict[str, PaletteSlot],
 
 
 def require_supply(policy: InkPolicy, palette: dict[str, PaletteSlot],
-                   load: dict[str, SlotLoad], needs_ink: bool, arm: str = "right",
+                   load: dict[str, SlotLoad], needs_ink: bool,
                    ink_id: str | None = None, tool_id: str = "tool") -> None:
     """Refuse a run whose ink story cannot be true. Raises InkSupplyError."""
     if not needs_ink:
@@ -421,10 +412,10 @@ def require_supply(policy: InkPolicy, palette: dict[str, PaletteSlot],
         raise InkSupplyError(
             f"this task needs an ink supply and {tool_id!r} has ink.mode none — fit a "
             "tool that dips (lutin-3rl-bugpin, or a `rehearsal` tool to rehearse)")
-    if not usable_slots(policy, palette, load, arm, ink_id):
+    if not usable_slots(policy, palette, load, ink_id):
         want = f" of {ink_id}" if ink_id else ""
         raise InkSupplyError(
-            f"{tool_id!r} ({policy.mode}) has no usable {arm}-arm cap{want} in "
+            f"{tool_id!r} ({policy.mode}) has no usable cap{want} in "
             f"{LOAD_RELPATH}: fill one with `scripts/ink.py load <slot> <ink> --ul <n>`")
 
 
@@ -497,12 +488,12 @@ class SlotChoice:
 
 
 def select_slot(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict[str, SlotLoad],
-                arm: str, ink_id: str | None, inks: dict[str, Ink] | None = None,
+                ink_id: str | None, inks: dict[str, Ink] | None = None,
                 fills: dict[str, float] | None = None,
                 need_ul: float | None = None) -> SlotChoice | None:
     """Which cap to dip in, and why. The rules, in order:
 
-    1. only usable caps: this arm, this ink, above ``min_fill_frac`` (``usable_slots``);
+    1. only usable caps: this ink, above ``min_fill_frac`` (``usable_slots``);
        ``fills`` is a planner's running view after the dips it already placed,
        so a cap drained mid-plan stops being offered;
     2. rehearsal: the first usable cap — the choreography is the point;
@@ -513,7 +504,7 @@ def select_slot(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict[s
     """
     fills = fills or {}
     current = {s: replace(sl, fill_ul=fills.get(s, sl.fill_ul)) for s, sl in load.items()}
-    cands = usable_slots(policy, palette, current, arm, ink_id)
+    cands = usable_slots(policy, palette, current, ink_id)
     if not cands:
         return None
     if policy.mode == "rehearsal":
@@ -624,13 +615,13 @@ def _cartridge_prep(inventory: dict, tool_id: str) -> Prep:
 
 
 def _ink_preps(ink_id: str, need: float, policy: InkPolicy, palette: dict[str, PaletteSlot],
-               load: dict[str, SlotLoad], ink: Ink, inventory: dict, arm: str, taken: set[str]) -> list[Prep]:
+               load: dict[str, SlotLoad], ink: Ink, inventory: dict, taken: set[str]) -> list[Prep]:
     """Refills and fills that load ``need`` uL of one ink, claiming the caps they use in ``taken``."""
     out: list[Prep] = []
     pref = CAP_SIZE_PREFERENCE.get(ink.viscosity, CAP_SIZE_PREFERENCE[None])
     have = 0.0
     for s, sl in load.items():
-        if palette[s].arm != arm or sl.ink_id != ink_id:
+        if sl.ink_id != ink_id:
             continue
         usable = palette[s].size.capacity_ul * palette[s].size.usable_frac
         if sl.fill_ul >= policy.min_fill_frac * usable:
@@ -645,8 +636,7 @@ def _ink_preps(ink_id: str, need: float, policy: InkPolicy, palette: dict[str, P
     # little more than the need so the last dip is not refused
     want = need * 1.15 + policy.uptake_ul
     while have < want:
-        dry = [s for s, sl in load.items()
-               if palette[s].arm == arm and sl.dry and s not in taken]
+        dry = [s for s, sl in load.items() if sl.dry and s not in taken]
         if not dry:
             out.append(Prep("info", f"{ink_id}: {want - have:.0f} uL short and no dry cap left to fill"))
             break
@@ -668,7 +658,7 @@ def _ink_preps(ink_id: str, need: float, policy: InkPolicy, palette: dict[str, P
 
 def mise_en_place(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict[str, SlotLoad],
                   inks: dict[str, Ink], inventory: dict, needs: dict[str, float],
-                  tool_id: str = "tool", arm: str = "right") -> list[Prep]:
+                  tool_id: str = "tool") -> list[Prep]:
     """The checklist for a session that will spend ``needs`` (ink_id -> uL).
 
     Pure: reads state, proposes actions, changes nothing. Fills are proposed
@@ -680,7 +670,7 @@ def mise_en_place(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict
         return [Prep("ok", f"{tool_id} carries no ink — nothing to pour")]
     if policy.mode == "rehearsal":
         out.append(Prep("info", f"{tool_id} rehearses: leave every cap DRY (water and ink are messy)"))
-        wet = [s for s, sl in load.items() if not sl.dry and palette[s].arm == arm]
+        wet = [s for s, sl in load.items() if not sl.dry]
         for s in wet:
             out.append(Prep("dump", f"{s} holds {load[s].ink_id}; dump it or the rehearsal dips into pigment",
                             slot_id=s, ink_id=load[s].ink_id))
@@ -692,9 +682,9 @@ def mise_en_place(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict
         if ink_id not in inks:
             out.append(Prep("info", f"{ink_id} is not in config/inks.yaml"))
             continue
-        out += _ink_preps(ink_id, need, policy, palette, load, inks[ink_id], inventory, arm, taken)
+        out += _ink_preps(ink_id, need, policy, palette, load, inks[ink_id], inventory, taken)
     for s, sl in load.items():
-        if palette[s].arm == arm and not sl.dry and sl.ink_id not in needs:
+        if not sl.dry and sl.ink_id not in needs:
             out.append(Prep("info", f"{s} holds {sl.ink_id}, which this session does not use",
                             slot_id=s, ink_id=sl.ink_id))
     out.append(Prep("weigh", "weigh each filled cap: `ink.py weigh <slot> <g> --when before`"))
@@ -702,7 +692,7 @@ def mise_en_place(policy: InkPolicy, palette: dict[str, PaletteSlot], load: dict
 
 
 def plan_dips(strokes: list[StrokeNeed], policy: InkPolicy, palette: dict[str, PaletteSlot],
-              load: dict[str, SlotLoad], arm: str = "right",
+              load: dict[str, SlotLoad],
               initial_charge_ul: float = 0.0, initial_ink: str | None = None,
               tool_id: str = "tool", inks: dict[str, Ink] | None = None) -> list[DipPlan]:
     """Where dips go and why. Pure: touches nothing.
@@ -728,11 +718,10 @@ def plan_dips(strokes: list[StrokeNeed], policy: InkPolicy, palette: dict[str, P
             reason = "low_charge"
         if reason is not None:
             remaining = sum(policy.stroke_ul(n.contact_mm, n.contact_s) for n in strokes[i:])
-            choice = select_slot(policy, palette, load, arm, want, inks, fills, need_ul=remaining)
+            choice = select_slot(policy, palette, load, want, inks, fills, need_ul=remaining)
             if choice is None:
                 raise InkSupplyError(
-                    f"stroke {i} needs {want or 'ink'} and {tool_id!r} has no usable "
-                    f"{arm}-arm cap for it")
+                    f"stroke {i} needs {want or 'ink'} and {tool_id!r} has no usable cap for it")
             slot_id = choice.slot_id
             before = charge.ul
             if reason == "color_change":
@@ -805,15 +794,6 @@ def _urdf_fixed_origin(root, child: str, relpath: str = URDF_RELPATH):
     raise ValueError(f"{relpath}: no joint has child {child!r}")
 
 
-def _rpy_matrix(r, p, y):
-    cr, sr, cp, sp, cy, sy = math.cos(r), math.sin(r), math.cos(p), math.sin(p), math.cos(y), math.sin(y)
-    return [
-        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-        [-sp, cp * sr, cp * cr],
-    ]
-
-
 def palette_from_tag(repo: Path | str = REPO):
     """4x4 palette body <- installed tag: the palette URDF's palette_tag frame, the sticker as the
     overhead cameras measured it on the roof (its position and its in-plane turn)."""
@@ -824,7 +804,7 @@ def palette_from_tag(repo: Path | str = REPO):
     if parent != "palette_root":
         raise ValueError(f"{relpath}: palette_tag must hang off palette_root")
     transform = _np.eye(4)
-    transform[:3, :3] = _rpy_matrix(*rpy)
+    transform[:3, :3] = _tool_spec._rpy_matrix(rpy)
     transform[:3, 3] = xyz
     return transform
 
@@ -860,7 +840,7 @@ def base_from_root_matrix(repo: Path | str = REPO, arm: str = "right"):
     base_xyz, base_rpy, base_parent = _urdf_fixed_origin(root, f"{prefix}/base_link")
     if base_parent != "root":
         raise ValueError(f"{URDF_RELPATH}: {prefix}/base_link must hang off root")
-    rot = _rpy_matrix(*base_rpy)                 # base axes expressed in root
+    rot = _tool_spec._rpy_matrix(base_rpy)       # base axes expressed in root
     root_from_base = [[rot[i][j] for j in range(3)] + [base_xyz[i]] for i in range(3)] + [[0, 0, 0, 1]]
     import numpy as _np
     return _np.linalg.inv(_np.array(root_from_base, float))
@@ -1124,8 +1104,6 @@ def dataset_ink_metadata(tool, repo: Path | str = REPO, arm: str = "right",
     inks = load_inks(repo)
     slots = {}
     for slot_id, slot in palette.items():
-        if slot.arm != arm:
-            continue
         sl = load[slot_id]
         ink_id = sl.ink_id
         ink = inks.get(ink_id) if ink_id else None

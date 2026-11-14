@@ -1,4 +1,4 @@
-"""Readers of a ROS run's ledger.jsonl (tatbot_session.ledger), shared by the session, the CLI and research."""
+"""Readers of a ROS run's ledger.jsonl (tatbot_session.ledger), shared by the session and the CLI."""
 from __future__ import annotations
 
 import json

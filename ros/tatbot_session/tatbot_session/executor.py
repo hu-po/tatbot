@@ -23,17 +23,36 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
+from tatbot_contracts.ros_program import cartridge
 from tatbot_description import names
 
-from tatbot_session import charge, closeup, config, curved, gauge, geometry, machine, ready, rules, track
+from tatbot_session import (
+    charge,
+    closeup,
+    config,
+    curved,
+    gauge,
+    geometry,
+    machine,
+    ready,
+    rules,
+    timing,
+    track,
+)
 from tatbot_session import ledger as ledger_mod
 from tatbot_session.lease import in_cap, in_cap_refusal
-from tatbot_session.ports import WALL, Event, Phase
+from tatbot_session.ports import WALL, Event, Phase, SurfaceSource
 
 P = Phase   # Draw.Feedback's PHASE_* numbers
 # A flat page whose wrist gauge points stand farther than this off their plane is a curved skin: refused, never
 # drawn flat (on 2026-10-13 a flat page on the curved holder rode high at its edges and deep in its middle).
 CURVED_PAGE_M = 0.0015
+# After a probe touch's back-off the probe must read released within PROBE_SETTLE_S and stay so PROBE_QUIET_S, at most
+# PROBE_SETTLE_TRIES times. Its own switch chatters as a 3RL's nozzle leaves the stylus: bursts of 2-5 triggers over
+# up to 0.9 s, its LED with them (palette camera at 10 fps, 2026-11-02); a 0.5 s wait failed three runs that day.
+PROBE_SETTLE_S = 2.0
+PROBE_QUIET_S = 0.3
+PROBE_SETTLE_TRIES = 3
 
 
 def motion_result(status, text, activity, allowed=('ok',)):
@@ -77,6 +96,15 @@ def _median_move(moves) -> tuple[float, float, int, float] | None:
         return None
     return (float(np.median([m[0] for m in moves])), float(np.median([m[1] for m in moves])), len(moves),
             float(np.median([m[3] for m in moves])))
+
+
+def _placed_page(rows, arm: str) -> dict | None:
+    """The newest page the ledger `rows` measured for `arm` and kept: the last the gauge holds placed on the print,
+    else the last kept at all."""
+    pages = [row["page"] for row in rows if row.get("arm") == arm and row.get("event") == "page"
+             and not _unconfirmed(row["page"])]
+    placed = [page for page in pages if (page.get("holds") or {}).get("used")]
+    return (placed or pages or [None])[-1]
 
 
 def _unconfirmed(page: dict) -> bool:   # a page row its holds moved past the curved limit, no check holds confirming it
@@ -124,10 +152,14 @@ class Ask:
 
 
 class ArmExecutor:
-    def __init__(self, node, io, kin, motion: dict, stack: dict, repo, *, clock=None, sensing=None, planner=None):
+    def __init__(self, node, io, kin, motion: dict, stack: dict, repo, *, clock=None, sensing=None, planner=None,
+                 surface_source: SurfaceSource | None = None, wrist=None):
         """node, io: ports.NodePort and ArmPort; clock: ports.Clock (the wall clock by default); sensing: ports.Sensing
-        (by default stack.yaml sensing.wrist's at each use, gauge.sensing); planner: where the next stroke is pre-planned (an
-        executor with submit(), one worker thread by default)."""
+        (by default stack.yaml sensing.wrist's at each use, gauge.sensing); surface_source: optional observation-only
+        immutable surface snapshots for planning; planner: where the next stroke is pre-planned (an
+        executor with submit(), one worker thread by default); wrist: ports.WristPort, a wrist camera for stencil
+        tracking that is not the rig's (None: the rig's, with sensing.wrist real)."""
+        self.surface_source, self.wrist_port = surface_source, wrist
         self.node, self.io, self.kin, self.motion, self.stack, self.repo = node, io, kin, motion, stack, repo
         gauge.wrist(stack)   # a sensing.wrist this hardware cannot take refuses here, as the node starts, not mid-draw
         self.clock = clock or WALL
@@ -146,6 +178,13 @@ class ArmExecutor:
         self.tracker = None   # stencil tracking (track.py) while a draw's ops run
         self._chain_snap = None   # the print correction a pen-down chain is planned with (track.Tracker.snapshot)
         self._stop_why = None   # why the stroke drawing now stops: the sheet moved under it (_moved_under)
+        self._jump_seen = -np.inf   # when (self.clock) a held reading last stopped a stroke: an older one stops none
+        # when (self.clock) the page last followed the wrist's readings ahead of the overhead's (_follow_filter): the
+        # overhead's watch and its follow judge the readings since. The older ones read the sheet where it lay before,
+        # which is now a stroke's stop off the page: on the rig (2026-11-12) a 19 mm push the wrist had followed to
+        # 0.5 mm was "held 122 s" by them, and the page was re-tracked for 26 s more.
+        self._wrist_led = -np.inf
+        self._retracked = None  # the op whose hover confirms a light re-track of the page (_retrack), until one does
         self._correction = None   # (mean, largest) correction of the op last dispatched, m
         self._goal_touch = False   # the draw goal's touch flag, for a page set up again mid-draw
         # the next setup_page sets the page up again mid-draw (_reacquire): _kept_page; and when _new_page set one up
@@ -193,19 +232,25 @@ class ArmExecutor:
         self.correction = np.eye(4)
         self._carried_yaw = None    # the heading (turn in its page) of the last page whose holds' offset is carried
         # The last touched correction, carried into the next setup as its starting page: the
-        # fixed-camera height sat 23-27 mm above the touched paper on the pink arm (bench
+        # fixed-camera height sat 23-27 mm above the touched paper on the WXAI follower (bench
         # 2026-09-26), which made every slow 0.5 mm/s touch leg ~60 s long.
         self.prior_correction = np.eye(4)
         self.carried: dict | None = None   # where the last accepted page touches found the paper (_carry_paper)
         self.page_record: dict = {}
         self.resource: dict | None = None   # the program resource installed now (tool, ink, supply)
         self.charged: set[str] = set()      # dipping resources dipped during this goal; a resume dips again
+        self.rinsed: str | None = None      # the resource a rinse just took the cartridge to, until its first dip
         self.drawn: dict[str, list[list]] = {}
-        self.trims: dict[str, float] = {}   # resource id -> the operator's pen trim (m), kept in the run's ledger
+        self.trims: dict[str, float] = {}   # cartridge (tool id) -> the operator's pen trim (m), in the run's ledger
         self.trim_end = 0.0                 # the trim the last stroke goal left the arm at
         self._trim_cap = None               # the deepest trim the stroke in hand takes (_cap_for); None: any
         self._fold = 0.0                    # the ride the stroke goal's pre-plan was sent by (_ride_fold)
+        self._rise = 0.0                    # how far its surface source's skin rose from its plan's (_risen)
+        self._planned_on: dict = {}         # op id -> the surface source's surface its plan was made on
         self.ledger = None                  # the running draw's, where trims are written
+        self.depth_held: set[str] = set()   # the cartridges whose depth the operator took at a depth hold, in the ledger
+        self.depth_holding = False          # a depth hold waits for the keys (depth_hold): + takes the depth
+        self._depth_taken = False           # ...and + was pressed
         self.dip_scales: dict[str, float] = {}   # resource id -> the operator's dip scale (charge.py), in the ledger
         self.inked_m = 0.0                  # the line drawn since the last dip in this goal
         self.dip_asked = False              # the numpad's + asked for a dip that has not begun
@@ -260,6 +305,8 @@ class ArmExecutor:
         """The curved page in use (tatbot_motion.surface.PageSurface over used()), or None: the flat page."""
         from tatbot_motion.surface import PageSurface, unfold
 
+        if getattr(self, "surface_source", None) is not None:
+            return self.surface_source.snapshot()
         if self.surface_field is None or self.camera is None:
             return None
         if self._surface_chart is None:
@@ -270,7 +317,11 @@ class ArmExecutor:
         """The planners' surface keywords on a curved page (page.surface.turn_pen: the pen turned to each normal,
         else square to the page as the gauge holds measured it); nothing on a flat one, whose calls stay as they were.
         A stroke riding its skin along its path (_ride_over) is planned on it (curved.Ridden)."""
-        surface, ridden, turned = self.surface(), self._ridden_for(op), self._turned()
+        source = getattr(self, "surface_source", None)
+        surface = self.surface() if source is None else source.snapshot(op)
+        if source is not None and op is not None and op.get("id"):
+            self._planned_on[op["id"]] = surface   # before the pen's turn and ride: what the source saw (_risen)
+        ridden, turned = self._ridden_for(op), self._turned()
         if surface is not None and turned:
             surface = curved.Turned(surface, [r["xy"] for r in turned], [r["lift_m"] for r in turned])
         if surface is not None and ridden is not None:
@@ -351,7 +402,7 @@ class ArmExecutor:
             self.busy.release()
 
     def continue_refusal(self, q_latched) -> str | None:
-        joint, tip = geometry.pose_moved(q_latched, self.io.measured(), self.kin.fk)
+        joint, tip = geometry.pose_moved(q_latched, self.io.measured(), self.kin)
         tool_changed = bool(self.tool_id) and config.fitted_tool(self.repo, self.arm) != self.tool_id
         return rules.continue_refusal(estop_ok=self.io.estop_ok, controller_error=self.io.flag("controller_error"),
                                       joint_moved_rad=joint, tip_moved_m=tip, tool_changed=tool_changed)
@@ -435,7 +486,7 @@ class ArmExecutor:
 
     def _estop_released(self) -> bool:
         """An e-stop's latch (pressed, or its heartbeat silent) with the e-stop reading released again, and
-        session.estop_release land: held while pressed, the arm lands once it is released (owner, 2026-10-24)."""
+        session.estop_release land: held while pressed, the arm lands once it is released (2026-10-24)."""
         return ((self.stack.get("session") or {}).get("estop_release", "decide") == "land" and self.io.latched
                 and self.io.estop_ok and self.io.latch_reason in (names.LATCH_ESTOP, names.LATCH_ESTOP_STALE))
 
@@ -502,8 +553,9 @@ class ArmExecutor:
 
         fitted, prepared = config.fitted_tool(self.repo, self.arm), (program.get("tool") or {}).get("id")
         if prepared and prepared != fitted:
-            raise RuntimeError(f"the program was prepared for {prepared}, but config/workspace.yaml fits {fitted} on "
-                               f"the {self.arm} arm: compile it for the fitted tool")
+            raise RuntimeError(f"the program was prepared for {prepared}, but {fitted} is fitted on the {self.arm} "
+                               f"arm: compile it for the fitted tool (--ee-tool {fitted}), or fit {prepared} "
+                               f"(`tatbot ros cartridge fit {prepared} --arm {self.arm}`)")
         riding = self.motion["pen"]["mode"] == tatbot_motion.RIDE
         self.pen = tatbot_motion.pen_down(self.motion, config.tool_datasheet(self.repo, fitted) if riding else None)
         self._pen_height()
@@ -572,6 +624,21 @@ class ArmExecutor:
     LAND_HOLD_M = 0.020   # a tip no lift took this far over the skin holds (_hold_unlifted): twice that near-scrape
     AT_REST_RAD = 0.2   # within this of the sleep pose on every arm joint the arm is at rest: no pen to withdraw
 
+    def _rest(self) -> np.ndarray:
+        """The arm's landed sleep pose (its model's `rest`)."""
+        return np.array(self.kin.arm_model.rest, float)
+
+    def _carriage_held(self, q: np.ndarray) -> np.ndarray:
+        """q, its carriage (an arm with one) where the arm holds it: the last command's."""
+        if self.kin.carriage is not None:
+            q[self.kin.carriage] = self.io.seed()[self.kin.carriage]
+        return q
+
+    def _at_rest(self) -> bool:
+        """Every revolute joint within AT_REST_RAD of the sleep pose: no pen in the work."""
+        r = self.kin.revolute
+        return bool(np.all(np.abs(self.io.measured()[r] - self._rest()[r]) < self.AT_REST_RAD))
+
     def _lift_clear(self, asked: bool = False) -> str | None:
         """Before landing: a tip under LAND_CLEAR_M over the page lifts along the normal, unlatching with the
         hold goal when the e-stop is released. With no page known (a stack restarted after a controller drop: on
@@ -588,7 +655,8 @@ class ArmExecutor:
         lands from the latched pose: a needle the work dragged off it, 2026-10-21 review), or anything here failed. A
         person's land (`asked`) lands from a hold they were told."""
         held, self._land_hold = self._land_hold, None
-        told = held is not None and held[2] and float(np.max(np.abs(self.io.measured()[:6] - held[0][:6]))) < 0.01
+        r = self.kin.revolute
+        told = held is not None and held[2] and float(np.max(np.abs(self.io.measured()[r] - held[0][r]))) < 0.01
         snag = (self.io.latched and self.io.latch_reason == names.LATCH_GUARD_SNAG) or (held is not None and held[1])
         said = []
 
@@ -697,12 +765,10 @@ class ArmExecutor:
     def _clearing_lift(self, snag: bool):
         """The lift before landing (_lift_clear) as (distance, direction or None for the page normal, how), or None
         when the pen is clear of the skin (_skin_height) or, with no page known, at rest."""
-        from tatbot_session import inspect as ins
-
         standoff = float(self.motion["approach"]["standoff_m"])
         height, clear = self._skin_height(), max(standoff, self.LAND_CLEAR_M)
         if self.camera is None:   # at rest, or clear of the cameras' page: nothing to withdraw
-            if np.all(np.abs(self.io.measured()[:6] - ins.REST[:6]) < self.AT_REST_RAD) or (
+            if self._at_rest() or (
                     height is not None and height >= clear - 0.001):
                 return None
             return float(self.motion["approach"]["withdraw_m"]), -self.tcp()[:3, 2], "along the pen"
@@ -787,22 +853,16 @@ class ArmExecutor:
         never the joints the arm happens to hold. The arm's tip height error depends on its IK branch (~5 mm per
         radian of joint 6), and on 2026-10-03 the same page reached from a locate view and from rest took
         branches with joint 6 at -0.10, +0.29 and +0.75 rad: the paper read 3.0, 4.7 and 7.0-7.9 mm."""
-        from tatbot_session import inspect as ins
-
         recorded = (self._page_ready() or {}).get("q")
-        seed = ins.REST.copy() if recorded is None else np.asarray(recorded, float).copy()
-        seed[6] = self.io.seed()[6]   # the carriage holds where it is
-        return seed
+        seed = self._rest() if recorded is None else np.asarray(recorded, float).copy()
+        return self._carriage_held(seed)   # the carriage holds where it is
 
     def _ready_for(self, page: np.ndarray, pattern_id) -> tuple[np.ndarray, np.ndarray]:
         """The heading and IK seed the ready move will take on `page` before its record exists (pen_heading,
         _ready_seed): the carried paper's ready pose on the same print, else pen_heading's search from rest, kept for
         the ready move (_located_heading). The locate's over-centre views go at them, so the ready move only descends."""
-        from tatbot_session import inspect as ins
-
         recorded = self._page_ready({"carried": self._carried_paper(page, {"pattern_id": pattern_id}, height=False)})
-        seed = ins.REST.copy() if recorded is None else np.asarray(recorded["q"], float).copy()
-        seed[6] = self.io.seed()[6]
+        seed = self._carriage_held(self._rest() if recorded is None else np.asarray(recorded["q"], float).copy())
         if recorded is not None:
             return np.asarray(recorded["heading"], float), seed
         self._located_heading = ready.pen_heading(self.kin, page, self.stack["page"]["clear_m"],
@@ -812,7 +872,7 @@ class ArmExecutor:
 
     def pen_heading(self) -> np.ndarray:
         """A tcp pose whose x axis is the pen heading (its turn about its own axis) that keeps every joint
-        farthest from its limits over the clear centre. The ballpoint is round, so the heading is free,
+        farthest from its limits over the clear centre. The tool is round, so the heading is free,
         and every later plan keeps the ready pose's heading: the one the arm arrived with put joint_3
         0.04 rad from its limit over a page near the base line (2026-09-26) where
         another left 0.6 rad. The page's recorded heading when it has one (_page_ready: this run's, else the one
@@ -840,11 +900,9 @@ class ArmExecutor:
         where it stopped, over the print, and the anchoring camera could not see it (2026-09-28); landing would
         restart the controller. A pen within the standoff lifts first; a path that would take it within half the
         standoff of the page is not taken, and the page wait then decides as before."""
-        from tatbot_session import inspect as ins
-
-        rest = ins.REST.copy()
-        rest[6] = self.io.seed()[6]
-        if float(np.max(np.abs(self.io.measured()[:6] - rest[:6]))) <= self.REST_RAD:
+        rest = self._carriage_held(self._rest())
+        r = self.kin.revolute
+        if float(np.max(np.abs(self.io.measured()[r] - rest[r]))) <= self.REST_RAD:
             return
         standoff = float(self.motion["approach"]["standoff_m"])
         self.lift_off("lift before clearing the cameras' view", ledger)
@@ -941,7 +999,7 @@ class ArmExecutor:
         self.page_record.setdefault("ready", {"q": q.tolist(), "heading": np.asarray(heading, float).tolist()})
         if recorded is None:
             return
-        off = float(np.max(np.abs(q[:6] - np.asarray(recorded["q"], float)[:6])))
+        off = float(np.max(np.abs(q[self.kin.revolute] - np.asarray(recorded["q"], float)[self.kin.revolute])))
         if off > self.BRANCH_RAD:
             self.event(Event.KIND_PAGE, f"the ready pose is {off:.2f} rad from this page's recorded one: another IK "
                        "branch, whose tip heights differ by millimetres")
@@ -1015,8 +1073,9 @@ class ArmExecutor:
             base_from_cam = self.kin.frame(q_view, frame)
             capture = f"depth{n}-{int(self.clock.utc() * 1e9)}"
             out = None if self.run_dir is None else self.run_dir / "locate" / capture
-            height, depth_observation, clearance = ros_depth.retain(cam, frames, depths, self.kin, q_view,
-                                                                   prior, out, self.arm)
+            height, depth_observation, clearance = ros_depth.retain(
+                cam, frames, depths, self.kin, q_view, prior, out, depth_frame=ins.camera_frame(self.arm, "depth"),
+                color_frame=frame)
             self._keep_skin(view, cam, depths, q_view)
             image, sol, why = self._view_read(cam, frames, base_from_cam, prior, tile, grid, curved_page, surface)
             self._say_view(n, sol, why)
@@ -1285,6 +1344,12 @@ class ArmExecutor:
             raise RuntimeError(f"{stale}; give the overhead cameras a clear view of the page, then draw again")
         return camera
 
+    def _name_the_sheet(self, cam: np.ndarray, info: dict) -> None:
+        """Say which sheet is the page when the overhead sees others of the print (tatbot_bridge.page.PageChooser)."""
+        if others := info.get("other_copies_m"):
+            self.event(Event.KIND_PAGE, f"the page is the sheet {np.linalg.norm(cam[:3, 3]) * 1e3:.0f} mm from the arm; "
+                       f"{len(others)} more of the print in view, {', '.join(f'{d * 1e3:.0f}' for d in others)} mm from it")
+
     def setup_page(self, program: dict | None, touch: bool, ledger=None) -> None:
         self.snag_guard(False)
         again, self._again = self._again, False
@@ -1295,6 +1360,7 @@ class ArmExecutor:
         last = None if kept is not None or fixed else self._last_page(again)
         found = self._wait_page(ledger, clear=again and kept is None and not fixed, last=last)
         cam, info = found or self._blind_prior(last, again)
+        self._name_the_sheet(cam, info)
         self.camera, self.overhead = cam, cam if found else np.asarray(last.get("overhead") or last["camera_at_setup"])
         self._marks_seen = [] if kept is not None else [m for _, m in self.node.measured_marks(
             self.clock.now() - float(self.stack["page"].get("max_lost_s", 5.0)))]
@@ -1332,12 +1398,14 @@ class ArmExecutor:
         contacts, prior = [], cam @ self.prior_correction   # the page the gauge holds are made on
         if touch:
             contacts = self.page_touches(self._touch_layout(program), ledger,
-                                         known=(carried or {}).get("offset_m") is not None or kept is not None)
+                                         known=(carried or {}).get("offset_m") is not None or kept is not None,
+                                         program=program)
         self._steady_overhead()
         n, o = cam[:3, 2], cam[:3, 3]
         normal, d = self._page_plane(contacts, cam, sources, cfg, warn_m)
         self._compare_planes(contacts, n, o)
         touched = self._hold_page(geometry.touched_page(cam, normal, d), prior, keep_prior=kept is not None)
+        placed_at = self.clock.now()
         if found is None and not (self.page_record.get("holds") or {}).get("used"):
             raise RuntimeError(f"the overhead reads no print and the gauge holds did not place the page on it "
                                f"({self._holds_read()}): not drawn; give the cameras a print they can read (a darker "
@@ -1345,11 +1413,12 @@ class ArmExecutor:
         self.correction = np.linalg.inv(cam) @ touched
         self.prior_correction = self.correction
         self.page_record.update(plane=[*normal.tolist(), d], touched=touched.tolist())
-        self.page_record["used"] = self.used().tolist()
+        used = self.used().tolist()
         self.page_record["correction"] = self.correction.tolist()
         self._fit_surface(program, ledger)
         self._confirm_holds()
-        self._mark_reference(self.overhead_at)   # after every hold: the sheet as the holds placed the page on it
+        self.page_record["used"] = used   # only a set-up that stands: it is what later readers take for the page
+        self._mark_reference(self.overhead_at, placed_at)   # the sheet the holds placed the page on
         if kept is None and found:   # a kept page's height is the holds', not the overhead's: the next run's start stays
             self._carry_paper(cam, info)   # the first's; a page the wrist placed has no overhead pose to carry it by
         self._reference_writing_height(program)
@@ -1465,22 +1534,23 @@ class ArmExecutor:
                    f"{local[0, 3] * 1e3:+.1f} {local[1, 3] * 1e3:+.1f} mm, {np.degrees(_yaw(local)):+.1f} deg from its "
                    "first")
 
-    def _mark_reference(self, since: float) -> None:
-        """Where the overhead read the print's markers as the page was set up: each corner's median over its readings
-        since `since`, the newest page.track.watch follow_s of them as the follow's median (else its newest three),
-        which sheet_moved measures the sheet's moves from, with the markers the arm hid from them that the readings
-        since `since` saw where it reads the sheet (geometry.marks_extended, within the watch's follow_m, follow_rad
-        and rise_m); in the page record for a resume. None, and refresh_page judges the overhead's pose, when its pages
-        carry no marker reading (a mock's) or the print has no marker layout. A page the wrist placed (_blind_prior)
-        with no reading since `since`: {}, due once the overhead reads again."""
-        cfg = self._watch()
-        recent = geometry.window(self._marks(since), cfg["follow_s"], 1)
+    def _mark_reference(self, since: float, until: float | None = None) -> None:
+        """Where the overhead read the print's markers as the holds placed the page: each corner's median over the
+        newest page.track.watch follow_s of its readings since `since` up to `until` (none by then: up to now; none at
+        all: its newest three), the watch reading from there (a mount slid 65 mm under a curved page's check holds was
+        a reference taken at the set-up's end, 2026-10-24), with the markers the arm hid that the readings since
+        `since` saw where it reads the sheet (geometry.marks_extended, within the watch's follow_m, follow_rad and
+        rise_m); kept for a resume. None (refresh_page judges the overhead's pose) without marker readings (a mock's)
+        or a marker layout; {} for a page the wrist placed (_blind_prior) with no reading since `since`."""
+        cfg, readings = self._watch(), self._marks(since)
+        held = [] if until is None else [r for r in readings if r[0] <= until]
+        recent = geometry.window(held or readings, cfg["follow_s"], 1)
         due = not recent and self.page_record.get("source") == "wrist"   # never the readings from before it went blind
         marks = {} if due else geometry.marks_median(recent or [m for _, m in self._marks(0.0)[-3:]])
         if marks and self._layout():
             marks = geometry.marks_extended(marks, [m for _, m in self._marks(since)], self._printed,
                                             self._overhead_up(), cfg["follow_m"], cfg["follow_rad"], cfg["rise_m"])
-        self.marked_at = self.clock.now()
+        self.marked_at = until if held else self.clock.now()
         self.marks = marks if (marks or due) and self._layout() else None
         self.page_record["overhead_marks"] = None if self.marks is None else {
             str(i): c.tolist() for i, c in self.marks.items()}
@@ -1595,7 +1665,7 @@ class ArmExecutor:
     def _surface_fit(self, holds: list, cfg: dict, program: dict | None = None) -> None:
         """The field through `holds` (curved.fit), in use and in the page record, its relief along `program`'s strokes."""
         size, drawing = self.stack["page"]["size_m"], self._stroke_uv(program) if program else np.zeros((0, 2))
-        field, report = curved.fit(self.used(), holds, cfg, bounds=(size[0] / 2 - 0.002, size[1] / 2 - 0.002),
+        field, report = curved.fit(self.used(), holds, bounds=(size[0] / 2 - 0.002, size[1] / 2 - 0.002),
                                    turned=self.sensing.wrist == "real" and curved.load_turn(self.arm) is not None,
                                    drawing=drawing if len(drawing) else None)
         self.surface_field, self._surface_chart = field, None
@@ -1604,10 +1674,10 @@ class ArmExecutor:
         self.page_record["surface"] = {"field": field.as_dict(), "report": report}
         relief = (f"{report['relief_m'] * 1e3:.2f} mm of relief along the strokes, " if report["drawing_m"] else "") + (
             f"{report['relief_extent_m'] * 1e3:.2f} mm over all the skin fitted")
-        self.event(Event.KIND_PAGE, "surface: a degree-{} field over {} points from {} gauge holds ({} under the tip), "
+        self.event(Event.KIND_PAGE, "surface: a field (stiffness {:g}) over {} points from {} gauge holds ({} under the tip), "
                    "{}; the wrist camera's turn {}, {:+.1f} {:+.1f} mrad {} about "
                    "their tips; each hold's skin off it {} mm (rms); without a hold the rest put its point {} mm "
-                   "off".format(field.degree, report["points"], len(holds), report["gauged"], relief,
+                   "off".format(field.stiffness, report["points"], len(holds), report["gauged"], relief,
                        report["turn"], *(v * 1e3 for v in report["camera_tilt_rad"]),
                        "left in the patches" if report["turn"] == "calibrated" else "taken out of the patches",
                        ", ".join(f"{v * 1e3:.2f}" for v in report["patch_rms_m"]),
@@ -2032,7 +2102,7 @@ class ArmExecutor:
         forearm's read 5.4 mm, 13.8 deg (2026-10-19). A page without them (a mock's) is judged by its pose, past
         page.replan_*."""
         page = self.stack["page"]
-        if page["source"] == "fixed" or self.camera is None:
+        if page["source"] == "fixed" or self.camera is None or self._static():
             return
         if self.marks is not None:
             return self._watch_marks(program, ledger, op_id)
@@ -2058,10 +2128,10 @@ class ArmExecutor:
         moved = self.sheet_moved()
         if moved is not None and abs(moved[3]) > self.WATCH_RISE_M:
             return self._reacquire(program, ledger, f"the print's markers read the sheet {moved[3] * 1e3:+.1f} mm along "
-                                   f"its normal, past {self.WATCH_RISE_M * 1e3:.0f} mm", op_id)
+                                   f"its normal, past {self.WATCH_RISE_M * 1e3:.0f} mm", op_id, retrack=True)
         verdict, why = self._waited(program, ledger, op_id)
         if verdict is not None and not self.stopping():
-            self._reacquire(program, ledger, f"the print's markers read the sheet {why}", op_id)
+            self._reacquire(program, ledger, f"the print's markers read the sheet {why}", op_id, retrack=True)
 
     HOVER_WATCH_S = 10   # a hover stop this long (a view cleared for the overhead, a rehover): the watch judges again
 
@@ -2108,7 +2178,8 @@ class ArmExecutor:
         page, cfg = self.stack["page"], self._watch()
         total = ((cfg["total_m"], cfg["total_rad"]) if self._curved() else
                  (page["replan_translation_m"], page["replan_rotation_rad"]))
-        return geometry.sheet_watch(self._timed_moves(self.marked_at), self._drawing(program), self._followed(), total, cfg)
+        return geometry.sheet_watch(self._timed_moves(max(self.marked_at, self._wrist_led)), self._drawing(program),
+                                    self._followed(), total, cfg)
 
     # The move the page has followed since setup (slid), 3 x 3 in its plane: the markers' moves' frame.
     def _followed(self) -> np.ndarray:
@@ -2227,7 +2298,7 @@ class ArmExecutor:
                 "force": force, "fiducial": fid, "method": "+".join(n for n, _, _ in estimates),
                 "stiffness_n_m": (force or {}).get("stiffness_n_m", 0.0), "rise_n": (force or {}).get("rise_n", 0.0)}
 
-    def page_touches(self, points_xy, ledger=None, known: bool = False) -> list[np.ndarray]:
+    def page_touches(self, points_xy, ledger=None, known: bool = False, program=None) -> list[np.ndarray]:
         """A guarded descent at each point; a trip counts once another meets it. The guard's contact force,
         read from the joint torques, also trips with nothing under the pen (a joint's stiction winding up
         at 0.2 mm/s ramps it like the paper does: two of three touches, 13 mm over the page, 2026-10-03).
@@ -2237,7 +2308,8 @@ class ArmExecutor:
         confirming descent turns the tool confirm_turn_deg about its axis, alternating sides: every joint and
         the cables' pull change, the page does not. Once the paper is known (`known`: the prior is where the
         last accepted touches tripped; or this run's first accepted touch), a descent starts known_above_m over
-        it and a trip more than known_band_m over it is in the air and not counted."""
+        it and a trip more than known_band_m over it is in the air and not counted. A curved page's holds that read
+        nothing get replacement holds after the last (_refill, with `program`)."""
         from tatbot_motion import plan_touch
 
         if self.camera is None:
@@ -2247,15 +2319,19 @@ class ArmExecutor:
         above = float(touch.get("start_above_m", 0.010))
         heading, contacts, self._hop_from = self.tcp(), [], None   # every touch's heading: the turns never add up
         paper = {"known": known, "level": 0.0}   # the paper's trip height over the prior page, once known
-        for i, xy in enumerate(points_xy):
+        points, failed = [np.asarray(p, float) for p in points_xy], []
+        for i, xy in enumerate(points):   # walked while it grows: a replacement hold joins it after the last
             trips, seen = [], []   # the trips that count, and every trip, as tip heights over the prior page (m)
-            self._next_hold = (functools.partial(self._next_curved_hold, points_xy[i + 1], above, heading)
-                               if self._curved() and i + 1 < len(points_xy) else None)
+            self._next_hold = (functools.partial(self._next_curved_hold, points[i + 1], above, heading)
+                               if self._curved() and i + 1 < len(points) else None)
             gauged = self._gauge_point(i, xy, paper, above, heading, ledger)
             self._next_hold = None
             if gauged is not None:   # page.height.gauge use: the gauge is the touch ([]: no steady reading there)
                 contacts += gauged
-                if i == len(points_xy) - 1:   # the holds before it lift on the way to the next (_hold_travel)
+                failed += [] if gauged else [xy + [step, 0.0] for step in self.GAUGE_STEPS_M]
+                if i == len(points) - 1 and (more := self._refill(program, failed, i + 1 - len(points_xy))) is not None:
+                    points.append(more)
+                if i == len(points) - 1:   # the holds before it lift on the way to the next (_hold_travel)
                     self.lift(f"touch {i} lift", ledger)
                 continue
             while True:
@@ -2283,6 +2359,20 @@ class ArmExecutor:
                     break
                 self._touch_held(i, status, text, ledger)
         return contacts
+
+    def _refill(self, program, failed: list, extra: int):
+        """A replacement hold's page point (curved.refill) when a curved page's holds read nothing at `failed` and the
+        holds that read leave `program` past page.surface.reach_m of them; None otherwise, or after REFILL_HOLDS.
+        _fit_surface still refuses what they leave."""
+        if program is None or not failed or extra >= self.REFILL_HOLDS or not self._curved():
+            return None
+        reach = float(curved.config(self.stack)["reach_m"])
+        xy = curved.refill(program, [t["xy"] for t in self.page_record["touches"]], failed, reach,
+                           self.stack["page"]["clear_m"], self.stack["page"].get("inset_m"))
+        if xy is not None:
+            self.event(Event.KIND_PAGE, f"the holds that read leave the drawing past {reach * 1e3:.0f} mm of them: a "
+                       f"replacement hold at ({xy[0] * 1e3:+.1f} {xy[1] * 1e3:+.1f}) mm")
+        return xy
 
     def _touch_held(self, i: int, status: str, text: str, ledger=None) -> None:
         """A descent that ended without a trip: none within max_travel_m is an error, a cancel stops the run, a
@@ -2349,16 +2439,44 @@ class ArmExecutor:
         """The wrist D405 with depth; stack.yaml wrist_tap republishes each grab_both's last frames on the tatbot bus
         for the demo viewer, and opens its preview cameras while this one is open (scripts/lib/wrist_tap.py: display
         only, off at its first error)."""
+        if self.wrist_port is not None:
+            return self.wrist_port.open(self)
         from tatbot_bridge import stack
 
         from tatbot_session import inspect as ins
 
         shared = {"repo": self.repo, "arm": self.arm, "open_bus": lambda: stack.open_bus(stack.bus_endpoint()),
                   "run_id": getattr(self.run_dir, "name", "")}
-        tap = ins.wrist_tap.factory(self.stack.get("wrist_tap"), frames=(ins.CAMERA_FRAME, ins.DEPTH_FRAME), **shared)
+        tap = ins.wrist_tap.factory(self.stack.get("wrist_tap"), frames=(ins.camera_frame(self.arm),
+                                    ins.camera_frame(self.arm, "depth")), **shared)
         preview = ins.wrist_tap.previews(self.stack.get("wrist_tap"), **shared, open_camera=functools.partial(
             ins.WristCamera, depth=True))
         return ins.WristCamera(serial=serial, depth=True, tap=tap, preview=preview)
+
+    def idle_feed(self):
+        """Both wrist D405s on the demo viewer between readings (stack.yaml wrist_tap.idle, wrist_claim.IdleFeed):
+        opened as previews once no reading has claimed them for `quiet_s` and the rig is awake, closed at the next
+        claim. None off real hardware, when the tap or the feed is off, or with none of its cameras on this arm."""
+        import wrist_cameras
+        from tatbot_bridge import stack
+        from tatbot_cli import rig
+
+        from tatbot_session import inspect as ins
+
+        tap = self.stack.get("wrist_tap") or {}
+        idle = tap.get("idle") or {}
+        if self.stack["hardware"] != "real" or not tap.get("enabled") or not idle.get("enabled"):
+            return None
+        mounted = {camera["role"] for camera in wrist_cameras.mounted_for_arm(self.repo, self.arm)}
+        cameras = [role for role in idle.get("cameras") or () if role in mounted]
+        if not cameras:
+            return None
+        start = ins.wrist_tap.previews(
+            {"enabled": True, "preview": {**(tap.get("preview") or {}), "cameras": cameras}},
+            repo=self.repo, arm=self.arm, open_bus=lambda: stack.open_bus(stack.bus_endpoint()),
+            open_camera=functools.partial(ins.WristCamera, depth=True, claim=False))
+        return ins.wrist_claim.IdleFeed(start, quiet_s=float(idle.get("quiet_s", ins.wrist_claim.QUIET_S)),
+                                        asleep=lambda: rig.asleep() is not None)
 
     # A setup's wrist D405 opens once, at its first reading, and stays open to the goal's end or the tracker
     # (track.Tracker.start). Opened at each one it cost ~2 s (the pipeline and 30 frames of auto exposure) at each of a
@@ -2465,6 +2583,9 @@ class ArmExecutor:
     def _gauge_limit(self) -> float:   # page.height.gauge_spread_m: a reading whose frames disagree past it is no point
         return float((self.stack["page"].get("height") or {}).get("gauge_spread_m", 0.0005))
 
+    GAUGE_STEPS_M = (0.0, 0.004, -0.004)   # a hold's places across the page: its own, then to either side
+    REFILL_HOLDS = 6   # a curved page's replacement holds at most (_refill)
+
     def _gauge_point(self, i: int, xy, paper: dict, above: float, heading, ledger=None) -> list | None:
         """page.height.gauge check or use, with the wrist gauge fitted for the fitted tool (gauge.py): the pen held
         where touch i starts, the paper's point under it by the wrist camera, recorded in page_record["gauge"]; for
@@ -2479,8 +2600,8 @@ class ArmExecutor:
         if self._curved():   # a known paper's plane is ~2 mm off a forearm's crest: every hold at the full height
             if not (later := bool(self.page_record.get("gauge"))):   # the setup's first hold
                 self._seed_hold(prior, xy)
-            hover, self._hold_frame = self._hold_start(prior, xy, above, later), prior
-        for step in (0.0, 0.004, -0.004):
+            hover, self._hold_frame = self._hold_start(prior, xy, above, later, i), prior
+        for step in self.GAUGE_STEPS_M:
             at = np.asarray(xy, float) + [step, 0.0]
             read, hover = self._gauge_try(i, at, hover, above, prior, heading, ledger)
             if read is not None and curved.disagree(read) <= self._gauge_limit():
@@ -2530,7 +2651,7 @@ class ArmExecutor:
 
         from tatbot_session import inspect as ins
 
-        points, _ = ros_depth.base_points(cam, depths, self.kin.frame(q, f"{self.arm}/realsense_depth_optical_frame"))
+        points, _ = ros_depth.base_points(cam, depths, self.kin.frame(q, ins.camera_frame(self.arm, "depth")))
         gauged = gauge.calibration_path(self.arm)
         cal = json.loads(gauged.read_text()) if gauged.exists() else {}
         tcp = self.kin.fk(q)
@@ -2593,7 +2714,30 @@ class ArmExecutor:
     # again, where the first hold, by that depth, read 9.96 mm.
     HOLD_SKIN_M = 0.0015
 
-    def _hold_start(self, prior: np.ndarray, xy, above: float, later: bool) -> float:
+    # Before any of those, a later hold starts HOLD_NEAR_SKIN_M over the skin the nearest firm reading of this setup put
+    # within HOLD_NEAR_M of it (_skin_near): one grid step. On the bef888 silicone (2026-10-25) the far column stood
+    # ~20 mm by the stand and took two steps every row, and a resume's near column stood 4.4-5.6 mm by the first hold's
+    # quadric. Replayed over 83 curved set-ups (618 later holds, 2026-10-13..25), 218 holds again became 126, starts
+    # under 7 mm 52 became 27, and no hold so placed started under 6.0 mm (those holds before: 1.1 mm).
+    HOLD_NEAR_M = 0.028
+    HOLD_NEAR_SKIN_M = 0.0005
+
+    def _skin_near(self, prior: np.ndarray, xy) -> tuple[float, float, int] | None:
+        """(skin height over `prior`, distance, touch) of this setup's firm reading nearest xy within HOLD_NEAR_M, before
+        the hold the pen stands at when one is: as the hop planned ahead from it saw (else replanned, ~1.2 s, 10-25)."""
+        inv, best, at = np.linalg.inv(prior), {}, self._hop_from[0] if self._hop_from else None
+        for read in self.page_record.get("gauge") or []:
+            far, own = float(np.hypot(*(np.asarray(read["xy"], float)[:2] - np.asarray(xy, float)[:2]))), read["touch"] == at
+            if far < self.HOLD_NEAR_M and far < best.get(own, (0, 1.0))[1] and self._firm(read):
+                best[own] = (float((inv @ np.r_[read["point"], 1.0])[2]), far, int(read["touch"]))
+        return best.get(False) or best.get(True)
+
+    def _hold_start(self, prior: np.ndarray, xy, above: float, later: bool, touch: int | None = None) -> float:
+        if later and (near := self._skin_near(prior, xy)) is not None:
+            if touch is not None:   # the hold's own start, not _plan_ahead's
+                self.event(Event.KIND_PAGE, f"touch {touch}: starts over the skin touch {near[2]} read "
+                           f"{near[1] * 1e3:.1f} mm from it, {near[0] * 1e3:+.1f} mm over the page")
+            return above + near[0] + self.HOLD_NEAR_SKIN_M
         if later and self._start is not None and self._start[1].find_simplex(np.asarray(xy, float)[:2]) >= 0:
             return self._over_field(self._start[0], prior, xy, above + self.HOLD_SKIN_M)
         if later and (wrist := self._skin_over(prior, xy)) is not None:
@@ -2674,15 +2818,14 @@ class ArmExecutor:
 
     @staticmethod
     def _skin_of(prior: np.ndarray, patch, point):
-        """One hold's skin as a quadric over `prior` (a PageSurface) through its patch and its point, or None."""
+        """One hold's skin as a field over `prior` (a PageSurface) through its patch and its point, or None."""
         from tatbot_motion.surface import PageSurface, fit_height
 
         if patch is None or len(patch) < 300:
             return None
         local = np.c_[np.r_[patch, [point]], np.ones(len(patch) + 1)] @ np.linalg.inv(prior).T
         try:
-            return PageSurface(prior, fit_height(local[:, :3], np.r_[np.ones(len(patch)), 50.0], degree=2,
-                                                 reject_m=0.001))
+            return PageSurface(prior, fit_height(local[:, :3], np.r_[np.ones(len(patch)), 50.0], reject_m=0.001))
         except ValueError:
             return None
 
@@ -2724,7 +2867,8 @@ class ArmExecutor:
             extra = {"heights_m": heights,
                      "tool_tilt_deg": float(np.degrees(np.arccos(np.clip(-tcp[:3, 2] @ prior[:3, 2], -1.0, 1.0))))}
         read = {"touch": i, "xy": [float(v) for v in xy], "tcp": tcp.tolist(), "q": q.tolist(), "height_m": g,
-                "spread_m": float(np.ptp(heights)), "frames": len(heights), "point": point.tolist(), **extra}
+                "spread_m": float(np.ptp(heights)), "frames": len(heights), "point": point.tolist(), **extra,
+                **({} if getattr(sensed, "pen_seen", True) else {"pen_seen": False})}
         for other in sensed.further:   # the further cameras' heights: in the hold's when they agree with its own
             hs, role = other["heights_m"], other["view"]["role"]
             read.setdefault("cameras", {})[role] = {"height_m": float(np.median(hs)) if hs else None, "used": other["used"]}
@@ -2736,7 +2880,8 @@ class ArmExecutor:
         self.page_record.setdefault("gauge", []).append(read)
         self.event(Event.KIND_PAGE, f"touch {i}: the wrist gauge puts the paper {g * 1e3:.2f} mm under the tip, at "
                    f"({point[0]:.4f} {point[1]:.4f} {point[2]:.4f}) m ({len(heights)} frames, spread "
-                   f"{np.ptp(heights) * 1e3:.2f} mm)")
+                   f"{np.ptp(heights) * 1e3:.2f} mm)" + ("" if read.get("pen_seen", True) else
+                                                         "; no frame showed the pen: read at its fitted place"))
         return read
 
     HOP_TURN_RAD = 0.01   # a hold whose pen turns farther from the one the pen stands at is lifted off and travelled to
@@ -2904,7 +3049,7 @@ class ArmExecutor:
     # fresh set-up's shift is the tool: the gauge's calibrated tip stands that far across the axis from the drawing
     # TCP (2026-10-20, five set-ups). On a forearm its four holds read +5.2 -11.7 mm agreeing to 1.0 / 0.1 mm and its
     # check holds the same within 1.8: refused, the tracker moved strokes 12 mm on one marker, then set up again.
-    # HOLD_AGREE_M, HOLD_CONFIRM_M and HOLD_SHIFT_MAX_M are twice what they were before the owner doubled every stop
+    # HOLD_AGREE_M, HOLD_CONFIRM_M and HOLD_SHIFT_MAX_M are twice what they were before every stop was doubled
     # (2026-10-20); the curved limit 12 mm, not 18 (9 before): past it nothing stops, the check holds cross-check the
     # move, and the 2026-10-20 set-ups' shifts read 7.9 mm at most, the tool's ~7.9 mm among them.
     HOLD_SHIFT_CURVED_M, HOLD_AGREE_M, HOLD_CONFIRM_M = 0.012, 0.003, 0.006
@@ -2975,7 +3120,7 @@ class ArmExecutor:
     # point the moved page plans the TCP at; else (the skin moved between them, or the holds misread) the page is set
     # up again once, afresh (_new_page), and a page still unconfirmed then goes on, said, the hovers' stencil watch
     # judging moves from its holds' readings; it is never placed for a later set-up, whose holds are made where this
-    # one's were (its seed). Refusing ended an inking draw for good at a mid-draw set-up (owner, 2026-10-20: adapt,
+    # one's were (its seed). Refusing ended an inking draw for good at a mid-draw set-up (2026-10-20: adapt,
     # never stop and refuse); going straight on inked a page the newer check readings put past HOLD_CONFIRM_M.
     def _confirm_holds(self) -> None:
         """A page the holds moved past the curved limit, confirmed by the check holds' own readings of the print."""
@@ -3046,9 +3191,9 @@ class ArmExecutor:
         """Pen mode, contact heading and machine for one program resource; its tool must be the fitted one."""
         fitted = config.fitted_tool(self.repo, self.arm)
         if resource['tool']['id'] != fitted:
-            raise RuntimeError(f"{resource['id']} needs the {resource['tool']['id']} tool, but config/workspace.yaml "
-                               f"fits {fitted} on the {self.arm} arm: fit it there, `tatbot ros deploy`, `tatbot ros up`, "
-                               "`tatbot ros calib run`, then resume the run")
+            raise RuntimeError(f"{resource['id']} needs the {resource['tool']['id']} tool, but {fitted} is fitted on "
+                               f"the {self.arm} arm: fit it (`tatbot ros cartridge fit {resource['tool']['id']} --arm "
+                               f"{self.arm}`), measure its tip, then resume the run")
         self.resource = resource
         self.motion = copy.deepcopy(self.motion)
         self.motion['pen']['mode'], self.tool_id = resource['pen_mode'], fitted
@@ -3060,6 +3205,8 @@ class ArmExecutor:
                                               if 'hover_height_m' in resource else {})}
             self._hover_clear(fitted, float(self.motion['pen']['hover']['height_m']))
         self.prepare_pen({})
+        fade = resource['tool'].get('fade_lift_mm')   # the program's, its fading strokes validated against it
+        self.pen = dataclasses.replace(self.pen, fade_m=None if fade is None else float(fade) / 1000.0)
 
     HOVER_CLEAR_M = 0.001   # a hover keeps the tube's end this far over the needles' farthest reach
 
@@ -3079,10 +3226,15 @@ class ArmExecutor:
         self._goal_touch = touch
         ops, rows = program["ops"], ledger.rows()
         start = next((i for i, op in enumerate(ops) if op["id"] == from_op), 0) if from_op else 0
-        self.drawn, self.charged = {}, set()
-        self.trims = {row["resource"]: float(row["trim_m"]) for row in rows
-                      if row.get("event") == "pen_trim" and row.get("arm") == self.arm}
-        self.trim_end, self._fold, self._trim_cap = 0.0, 0.0, None
+        self.drawn, self.charged, self.rinsed = {}, set(), None
+        tools = {r["id"]: cartridge(r) for r in program["resources"]}
+        self.trims = {row.get("cartridge") or tools.get(row["resource"], row["resource"]): float(row["trim_m"])
+                      for row in rows if row.get("event") == "pen_trim" and row.get("arm") == self.arm}
+        kept = sorted(self.trims.items())   # a resume's, before a --trim-mm a new run starts at
+        self.depth_held = {row["cartridge"] for row in rows if row.get("event") == "depth_hold"
+                           and row.get("arm") == self.arm and row.get("state") == "taken"}
+        self._start_trims(program, ledger)
+        self.trim_end, self._fold, self._rise, self._trim_cap = 0.0, 0.0, 0.0, None
         self.dip_scales, self.inked_m, self.dip_asked, self.op_now = charge.scales(rows, self.arm), 0.0, False, ""
         self._skin_off = 0.0
         self.ride_base = float(self.motion["pen"]["ride"]["fraction"])   # this goal's fresh motion.yaml
@@ -3098,7 +3250,9 @@ class ArmExecutor:
 
             cap.withdraw_after_restart(self, program, marker, ledger)
         page = self._resumed = self._retained_page(rows)
-        if page is None and not rows:
+        if page is None and self._static():
+            page = self._resumed = self._static_page()
+        elif page is None and not rows:
             self._resumed = self._seed_page()
         if page is not None and self.restore_page(page, ledger):
             regauged = self._fresh = self._regauge(program, ledger)   # its first hover's reading on fresh holds or not
@@ -3109,9 +3263,9 @@ class ArmExecutor:
                 ledger.append("page", self.arm, page=self.page_record, workspace=self.workspace())
         else:
             self._new_page(program, touch, ledger)
-        if self.trims:
+        if kept:
             self.event(Event.KIND_PEN_TRIM, "trims kept from the run: " + ", ".join(
-                f"{res} {trim * 1e3:+.1f} mm" for res, trim in sorted(self.trims.items())))
+                f"{res} {trim * 1e3:+.2f} mm" for res, trim in kept))
             self._ease_trims(ledger, "the run resumed")
         if self.dip_scales:
             self.event(Event.KIND_DIP, "dip scales kept from the run: " + ", ".join(
@@ -3179,17 +3333,19 @@ class ArmExecutor:
         return resources[(changed[-1] if changed else ops[0])["resource_id"]]
 
     def workspace(self) -> dict:
-        """The arm's config/workspace.yaml section (fitted tool, calibrated tip, joint offsets) as the ledger has it."""
+        """The arm's workspace section (fitted tool, calibrated tip, joint offsets) as the ledger has it."""
         return json.loads(json.dumps(config.workspace_arm(self.repo, self.arm), default=str))
 
     SEED_MAX_AGE_S = 24 * 3600.0   # a seed only aims the search (and its wide aims); 3 h missed a print set up 3.7 h before
 
     def _seed_page(self) -> dict | None:
         """A fresh run's place to start the wrist's search when the overhead reads no print: the newest earlier run's
-        retained page on this node, its print the stack's and its ledger under SEED_MAX_AGE_S old. Only a seed
-        (_last_page, _blind_prior): the page is set up afresh, its field and correction measured again; nothing of it
-        is restored. A small print the overhead cannot read (a 2x2 forearm piece, 2026-10-21) otherwise leaves a fresh
-        run nothing to aim the wrist at after a restart."""
+        placed page on this node, its print the stack's and its ledger under SEED_MAX_AGE_S old, whatever tool and
+        calibration placed it. Only a seed (_last_page, _blind_prior): the page is set up afresh, its field and
+        correction measured again; nothing of it is restored. A small print the overhead cannot read (a 2x2 forearm
+        piece, 2026-10-21) otherwise leaves a fresh run nothing to aim the wrist at after a restart, and so did a print
+        the last cartridge inked: after the chicano TATBOT's black the overhead read 1 of its 17 markers, and the red,
+        another cartridge, refused the black's page as a seed (2026-11-10)."""
         if self.run_dir is None:
             return None
         import time
@@ -3202,12 +3358,35 @@ class ArmExecutor:
                 rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
             except (OSError, ValueError):
                 continue
-            seed = self._retained_page(rows)
+            seed = _placed_page(rows, self.arm)
             if seed is not None and seed.get("pattern_id") == pattern and "correction" in seed:
                 self.event(Event.KIND_PAGE, f"no page yet: the wrist starts its search where {path.parent.name} last "
                                             "placed this print; the page is set up afresh")
                 return seed
         return None
+
+    def _static(self) -> str:
+        """stack.yaml page.static_run: the sheet is fixed on its mount, and every fresh run draws on the page
+        that run measured, its pose, markers and surface, with no overhead confirming it and no watch moving it."""
+        return str(self.stack["page"].get("static_run") or "")
+
+    def _static_page(self) -> dict:
+        """The page the static run measured for this arm (_placed_page); refused when that run placed none of the
+        stack's print. Its height is gauged again at its own points (_regauge), as a resume's."""
+        run = self._static()
+        if self.run_dir is None:
+            raise RuntimeError(f"page.static_run {run}: a run with no directory has no other run's ledger to read")
+        try:
+            rows = [json.loads(line) for line in (self.run_dir.parent / run / "ledger.jsonl").read_text().splitlines()
+                    if line.strip()]
+        except OSError as error:
+            raise RuntimeError(f"page.static_run {run}: no ledger ({error})") from error
+        page = _placed_page(rows, self.arm)
+        if page is None or page.get("pattern_id") != self.stack["page"].get("pattern_id"):
+            raise RuntimeError(f"page.static_run {run} placed no page of {self.stack['page'].get('pattern_id')} "
+                               f"for {self.arm}")
+        self.event(Event.KIND_PAGE, f"a static sheet: the page {run} measured, kept as it was")
+        return page
 
     def _retained_page(self, rows) -> dict | None:
         """The run's last measured page, when the fitted tool and its calibration are unchanged since: a resume
@@ -3218,12 +3397,10 @@ class ArmExecutor:
         rows = [row for row in rows if row.get("arm") == self.arm and row.get("event") == "page"]
         if not rows or rows[-1].get("workspace") != self.workspace():
             return None
-        pages = [row["page"] for row in rows if row.get("workspace") == self.workspace() and not _unconfirmed(row["page"])]
-        placed = [page for page in pages if (page.get("holds") or {}).get("used")]
-        return (placed or pages or [None])[-1]
+        return _placed_page([row for row in rows if row.get("workspace") == self.workspace()], self.arm)
 
-    # A retained page is kept while the overhead sees its sheet this near (RETAIN_M, RETAIN_RAD: 3 mm, 2.5 deg until the
-    # owner doubled every stop, 2026-10-20), and risen or sunk RETAIN_RISE_M at most: its old field stays under the
+    # A retained page is kept while the overhead sees its sheet this near (RETAIN_M, RETAIN_RAD: 3 mm, 2.5 deg until every
+    # stop was doubled, 2026-10-20), and risen or sunk RETAIN_RISE_M at most: its old field stays under the
     # strokes, a rise is depth, and a hover whose gauge reads no skin has no other bound.
     RETAIN_M, RETAIN_RAD, RETAIN_RISE_M = 0.006, 0.087, 0.003
 
@@ -3239,7 +3416,7 @@ class ArmExecutor:
         marks = {int(i): np.asarray(c, float) for i, c in (page.get("overhead_marks") or {}).items()}
         if (page.get("holds") or {}).get("used") and page.get("used") is not None:
             self.placed = {"page": np.asarray(page["used"], float), "overhead": setup}
-        if self.stack["page"]["source"] != "fixed":
+        if self.stack["page"]["source"] != "fixed" and not self._static():
             if self._curved() and not marks:   # its pose's tilt and height are a plane's over a curved skin
                 self.event(Event.KIND_PAGE, "retained page: a curved page kept without the overhead's markers; setting "
                            "the page up again")
@@ -3291,7 +3468,7 @@ class ArmExecutor:
     def _regauge(self, program: dict, ledger) -> bool:
         """A resumed run keeps its page's place on the print and, with the wrist gauge in use, measures the paper's
         height again at the same points (no contact, ~70 s): the arm's tip height drifted ~2 mm over an hour on
-        2026-10-03, more than the ballpoint's ~0.8 mm band of solid lines, and a cartridge swap takes minutes. The
+        2026-10-03, more than that day's pen's ~0.8 mm band of solid lines, and a cartridge swap takes minutes. The
         retained height stays when the gauge's points make no plane. True when the height was measured again."""
         if not self._gauge_ready():
             return False
@@ -3302,7 +3479,7 @@ class ArmExecutor:
             {}, None, 0.0, None, None, [])
         self._over_skin = []   # the locate's depth is the skin as it lay then
         prior = self.camera @ self.prior_correction   # the retained page: its place on the print, the holds' seed
-        contacts = self.page_touches(self._touch_layout(program), ledger, known=True)
+        contacts = self.page_touches(self._touch_layout(program), ledger, known=True, program=program)
         cfg = self.stack["page"].get("height") or {}
         plane = self._gauge_plane(contacts, self.camera[:3, 2], cfg) if len(contacts) >= 3 else None
         if plane is None:
@@ -3347,39 +3524,49 @@ class ArmExecutor:
         if rinse:
             self.rinse(resource, op["id"], index, ledger)
             self.prepare_resource(resource)
+            self.rinsed = resource["id"]
             ledger.append("done", self.arm, op=op["id"], index=index, resource=resource["id"])
             self.event(Event.KIND_OP_DONE, f"resource {resource['id']}: {resource['ink_id']}, rinsed", op["id"])
             return
         run_name = self.run_dir.name if self.run_dir else ""
-        text = (f"fit {resource['ink_id']} ({resource['tool']['id']}, resource {resource['id']}) on the {self.arm} arm, "
+        wipe = "wipe the print, then " if op.get("wipe") else ""   # tatbot_ink.order: a lighter ink over a darker
+        text = (f"{wipe}fit {resource['ink_id']} ({resource['tool']['id']}, resource {resource['id']}) on the {self.arm} arm, "
                 f"then resume: tatbot ros draw <program> --arm {self.arm} --resume {run_name}")
         self.event(Event.KIND_PAUSE, text, op["id"])
         self.land(text)
 
     def rinse(self, resource: dict, op_id: str, index: int, ledger) -> None:
         """The cartridge's last ink rinsed out before `resource` takes its own: one dip into the activation's cap of
-        water with its rinse dwell, the machine running; an interrupted one withdraws and rinses again."""
+        water with its rinse dwell, the machine running; an interrupted one withdraws and rinses again. The new ink's
+        first dip then holds the activation's first_dip_dwell_s, when it has one (`dip`)."""
         from tatbot_session import cap
 
         act = resource["activation"]
         water = {**resource, "slot": act["slot"], "ink_id": act["ink_id"],
                  "dip": {**resource["dip"], "dwell_s": act["dwell_s"], "above_ink_m": act["above_ink_m"]}}
+        first = f"; its first dip holds {act['first_dip_dwell_s']:g} s" if act.get("first_dip_dwell_s") else ""
         self.event(Event.KIND_PAGE, f"rinsing {self.resource['ink_id']} out in {act['slot']} ({act['ink_id']}, "
-                   f"{act['dwell_s']:g} s) before {resource['ink_id']}", op_id)
+                   f"{act['dwell_s']:g} s) before {resource['ink_id']}{first}", op_id)
         while not cap.dip(self, water, op_id, index, ledger):
             pass
 
     def dip(self, op_id: str, index: int, ledger) -> None:
         """A palette dip for the resource on the arm; an interrupted one withdraws and dips again (continue) or
-        lands. It charges the cartridge afresh and answers a numpad dip asked before it began."""
+        lands. It charges the cartridge afresh and answers a numpad dip asked before it began. The first dip after a
+        rinse holds the rinse's first_dip_dwell_s, so the rinsed cartridge takes up its new colour."""
         from tatbot_session import cap
 
         if self.resource is None:
             raise RuntimeError("no resource installed on the arm")
+        resource = self.resource
+        first = (resource.get("activation") or {}).get("first_dip_dwell_s") if self.rinsed == resource["id"] else None
+        if first:
+            resource = {**resource, "dip": {**resource["dip"], "dwell_s": first}}
         self.dipping = True
         try:
-            while not cap.dip(self, self.resource, op_id, index, ledger):
+            while not cap.dip(self, resource, op_id, index, ledger):
                 pass
+            self.rinsed = None
             with self._lock:
                 asked, self.dip_asked = self.dip_asked, False
         finally:
@@ -3459,6 +3646,7 @@ class ArmExecutor:
                 raise RuntimeError(f"op {op['id']} draws with {op['resource_id']}, but {res['id']} is on the "
                                    "arm: its tool change was skipped (--from-op)")
             elif op["op"] == "dip":
+                self._depth_first(program, index + 1, ledger)   # before the dip inks the needles
                 self.dip_op(ops, index, ledger)
             elif ledger_mod.op_status(rows, self.arm, op["id"]) == "sent":
                 self.event(Event.KIND_UNCERTAIN, "left `sent` by a crash: decide redraw or skip", op["id"])
@@ -3470,6 +3658,7 @@ class ArmExecutor:
                 else:
                     ledger.append("aborted", self.arm, op=op["id"], index=index, arc_m=0.0, reason="redraw")
             else:
+                self._depth_first(program, index, ledger)
                 why = self._dip_first(ops, index, ledger_mod.resume_arc(rows, self.arm, op["id"]))
                 if why:
                     self._dip_before(op, index, ledger, why)
@@ -3506,10 +3695,42 @@ class ArmExecutor:
 
         if snap is not None:   # stencil tracking: the points moved by the print's residual (page_filter.PageFilter)
             op = snap.corrected(op)[0]
-        return self.knots(plan_op(op, base_from_page=self.used(), q_seed=seed, kin=self.kin, motion=self.motion,
+        flying = self._flying(program)
+        motion = flying.pop("motion", self.motion)
+        return timing.plan(self, op, snap, lambda: self.knots(plan_op(op, base_from_page=self.used(), q_seed=seed, kin=self.kin,
+                                  motion=motion,
                                   speed_m_s=float(program.get("draw_speed_m_s", 0.0035)), from_arc_m=from_arc,
                                   pen_down_at_start=pen_down, lift_at_end=lift_at_end,
-                                  pen=self._ride_pen() if pen is None else pen, **self._on_surface(op)))
+                                  pen=self._ride_pen() if pen is None else pen, **self._on_surface(op), **flying)))
+
+    def _flying(self, program: dict | None = None) -> dict:
+        """plan_op's keywords for stroke ends drawn moving: the motion with draw.ends: fly, the print's clear area
+        their runs stay inside, and the arm's clearance (the collision guard a goal is refused by when sent), so a
+        flying plan it would refuse is planned with stopping ends instead. The run's ends are its program's
+        draw_ends (`tatbot ros draw --ends`), else motion.yaml draw.ends. Nothing with stopping ends: today's call."""
+        draw = self.motion.get("draw") or {}
+        ends = (program or {}).get("draw_ends") or draw.get("ends", "stop")
+        if ends != "fly":
+            return {"motion": {**self.motion, "draw": {**draw, "ends": ends}}} if draw.get("ends", "stop") != ends else {}
+        from tatbot_motion import PlanError
+
+        clearance = getattr(self.io, "clearance", None)
+
+        def check(rows):
+            why = clearance(self.arm, rows) if clearance is not None else None
+            if why:
+                raise PlanError(why)
+
+        return {"motion": {**self.motion, "draw": {**draw, "ends": ends}}, "clear_m": self.stack["page"]["clear_m"],
+                "check": check}
+
+    @staticmethod
+    def _ends_text(traj) -> str:
+        """What a planned stroke's ends do, for its op_sent line; nothing with stopping ends (draw.ends: stop)."""
+        ends = traj.info.get("ends")
+        if not ends:
+            return ""
+        return f"; ends {ends['start']}/{ends['end']}" + "".join(f" ({why})" for why in ends["why"])
 
     def preplan(self, program: dict, index: int, seed: np.ndarray, rows) -> None:
         """Plan the next stroke while the current one runs, seeded at the current plan's end."""
@@ -3578,17 +3799,19 @@ class ArmExecutor:
         pen_down = bool(op.get("continues")) or from_arc > 0
         lift = self.lift_at_end(program, op, rows, drawn_m=charge.contact_m(op) - from_arc)
         snap = self._snap(op)
-        pre, self._preplan, self._fold = self._preplan, None, 0.0
+        pre, self._preplan, self._fold, self._rise = self._preplan, None, 0.0, 0.0
+        self._planned_on = {k: v for k, v in self._planned_on.items() if k == op["id"]}
         if (pre is not None and pre[0] == op["id"] and pre[2] == lift and from_arc <= 0
                 and (fold := self._ride_fold(pre[4])) is not None and self._same_field(op, pre[3], snap)
-                and self._preplan_ridden is self._ridden_for(op)):   # its skin's profile, read at its hover
+                and self._preplan_ridden is self._ridden_for(op)   # its skin's profile, read at its hover
+                and (rise := self._same_surface(op, fold)) is not None):
             try:
                 traj = pre[1].result()[1]
             except Exception as exc:  # noqa: BLE001 - a failed pre-plan is planned again below
                 self.event(Event.KIND_REPLAN, f"pre-plan failed: {exc}", op["id"])
                 traj = None
             if traj is not None:
-                self._fold = fold
+                self._fold, self._rise = fold, rise
                 sent = self.trimmed(traj, self.trim_end)
                 drift = dispatch_drift(sent, self.io.measured(), self.kin, self.motion)
                 if drift["ok"] and self._folded(traj, sent, op["id"]):
@@ -3597,10 +3820,69 @@ class ArmExecutor:
                 if not drift["ok"]:
                     self.event(Event.KIND_REPLAN, "drift at dispatch: {:.1f} mrad, {:.2f} mm".format(
                         drift["joint_rad"] * 1000, drift["tip_m"] * 1000), op["id"])
-        self._fold = 0.0
+        self._fold = self._rise = 0.0
         traj = self.plan(program, op, from_arc, pen_down, self.io.seed(), lift_at_end=lift, snap=snap)
         self._use_snap(op, snap)
+        self._rise = self._bounded_rise(self._risen(op))   # a continuation planned on its chain's surface, since risen
         return traj, self.trimmed(traj, 0.0)
+
+    # A surface source (ports.SurfaceSource) hands each plan the skin as its cameras then read it, and a pre-plan is
+    # made while the stroke before it draws: in the simulator's tracked runs a stroke started 6 to 9 s after its
+    # surface, and missed a moving skin by its move in that time though the estimate was right to 0.05 mm when taken.
+    # At dispatch the newest surface is read again over the stroke's points. Its mean rise along the planned normals
+    # is sent with the pre-plan by the trim, as the ride's fold is (not held to _folded's approach: a continuation
+    # joins pen-down already following its chain's skin, and the goal follows it in the skin anyway), and a
+    # skin that changed shape past page.surface.source_replan_m is planned again. That alone left most of the miss:
+    # a stroke's goal is its travel, its descent and then its line, 5 to 8 s of approach before a second of drawing.
+    # So through the goal, up to its last drawn knot, the rise at the stroke's start and then under the pen is read
+    # every FOLLOW_EVERY_S and eased in by the trim's retarget. page.surface.source_follow: goal does both,
+    # dispatch the first alone, off neither (a plan keeps the surface it was made on).
+    def _risen(self, op: dict, uv=None) -> np.ndarray | None:
+        """How far (+: up its planned normals) the surface source's newest skin stands from the one `op` was planned
+        on, at print points uv (the op's own by default); None without a source or a plan of the op on it."""
+        source = getattr(self, "surface_source", None)
+        planned = self._planned_on.get(op.get("id")) if source is not None else None
+        if planned is None or curved.config(self.stack)["source_follow"] == "off":
+            return None
+        uv = np.asarray(op["points_m"], float)[:, :2] if uv is None else np.atleast_2d(uv)
+        was, normal = planned.lift(uv)
+        return np.einsum("ij,ij->i", source.snapshot().lift(uv)[0] - was, normal)
+
+    def _bounded_rise(self, risen) -> float:
+        """The mean of `risen` as the trim can send it with the cartridge's trim and the ride's fold: within the
+        trim's limit."""
+        if risen is None:
+            return 0.0
+        limit, used = float(self.motion["pen"]["trim"]["limit_m"]), self.trim_in_use() + self._fold
+        return float(np.clip(used + float(np.mean(risen)), -limit, limit)) - used
+
+    def _same_surface(self, op: dict, fold: float) -> float | None:
+        """The rise a pre-plan is sent by (0.0 without a surface source), or None when its surface changed shape
+        past page.surface.source_replan_m since, or the rise with `fold` passes the trim's limit: planned again."""
+        risen = self._risen(op)
+        if risen is None:
+            return 0.0
+        mean, limit = float(risen.mean()), float(self.motion["pen"]["trim"]["limit_m"])
+        bent = float(np.abs(risen - mean).max())
+        if bent > float(curved.config(self.stack)["source_replan_m"]) or abs(self.trim_in_use() + fold + mean) > limit:
+            self.event(Event.KIND_REPLAN, f"the skin rose {mean * 1e3:+.2f} mm and changed shape by {bent * 1e3:.2f} mm "
+                       "since the pre-plan", op["id"])
+            return None
+        if abs(mean) >= self.FOLLOW_STEP_M:
+            self.event(Event.KIND_PAGE, f"its pre-plan sent {mean * 1e3:+.2f} mm by its skin's rise since", op["id"])
+        return mean
+
+    def _follow_surface(self, op: dict, arc_m: float) -> None:
+        """The running stroke goal's rise (the trim's retarget eases it in) from the surface source's skin now at the
+        stroke's point arc_m along it; a change under FOLLOW_STEP_M is left."""
+        if curved.config(self.stack)["source_follow"] != "goal":
+            return
+        rise = self._bounded_rise(self._risen(op, track.point_at(op, arc_m)))
+        if abs(rise - self._rise) >= self.FOLLOW_STEP_M:
+            self._rise = rise
+
+    FOLLOW_STEP_M = 0.00005   # the estimate's own scatter stroke to stroke on a still skin (0.05 mm)
+    FOLLOW_EVERY_S = 0.2      # the wrist cameras' frame period in the tracked runs; a trim change eases in 0.2 s at least
 
     # A stroke's ride is set at its own hover, after its pre-plan was made at the ride before (preplan), and planning
     # it again at dispatch held the needles over the skin with the machine on 2-6 s (median 3.5) at 8 drift re-plans
@@ -3650,8 +3932,8 @@ class ArmExecutor:
 
         if snap is not None:
             op = snap.corrected(op)[0]
-        return self.knots(plan_hover(op, base_from_page=self.used(), q_seed=seed, kin=self.kin, motion=self.motion,
-                                     from_arc_m=from_arc, pen=self.pen, **self._on_surface()))
+        return timing.plan(self, op, snap, lambda: self.knots(plan_hover(op, base_from_page=self.used(), q_seed=seed, kin=self.kin, motion=self.motion,
+                                     from_arc_m=from_arc, pen=self.pen, **self._on_surface())))
 
     def _hover_stop(self, program: dict, op: dict, from_arc: float, ledger, index: int = 0) -> None:
         """Stop over a stroke's start before it descends and measure the pen tip on the print there, so the stroke
@@ -3677,7 +3959,11 @@ class ArmExecutor:
             return
         self._chain_snap = None   # a chain left goes down again planned with the newest field, this hover's reading in it
         start = timelaw.trim_polyline(np.asarray(op["points_m"], float), from_arc)[0]
-        verdict = self._measure_over(op, f"{op['id']}-hover", start, self._pre_travel(op), from_arc, ledger)
+        looked = self.tracker.field.jump() > 0.0   # a held reading (it stopped the stroke, _jumped)
+        if looked and self._look_again(program, op, start, from_arc, ledger):
+            return self._rehover(program, op, index, start, from_arc, ledger)
+        verdict = self._measure_over(op, f"{op['id']}-hover", start, None if looked else self._pre_travel(op), from_arc,
+                                     ledger)
         if self._skin_only or (verdict is None and not self.tracker.field.samples):
             return self._skin_alone(program, op, index, start, from_arc, ledger)
         if verdict is None:
@@ -3686,15 +3972,43 @@ class ArmExecutor:
                 return
         else:
             self._unread = 0
-        if verdict == "held":
-            view, at = self._second_view(op, start)
-            verdict = self._measure_over(view, f"{op['id']}-hover2", at, None, from_arc, ledger)
+        verdict = self._second_look(op, start, verdict, from_arc, ledger)
         if self._rigid() and self.tracker.rigid.confirmed:
             return self._rigid_follow(program, op, start, from_arc, ledger, index)
-        if self._curved() and self._skin_watch(program, op, index, ledger):
+        if verdict in ("added", "moved") and self._follow_filter(program, ledger, op["id"]):
+            return self._rehover(program, op, index, start, from_arc, ledger)
+        if self._retrack_unread(program, op, verdict, ledger) or (
+                self._curved() and self._skin_watch(program, op, index, ledger)):
             return self._rehover(program, op, index, start, from_arc, ledger)
         if verdict not in ("added", "moved"):
             self._follow_unread(program, op, ledger)
+
+    def _second_look(self, op: dict, start, verdict: str | None, from_arc: float, ledger) -> str | None:
+        """A hover's held reading measured again from the second view (_second_view): its verdict there; any other
+        verdict as it is."""
+        if verdict != "held":
+            return verdict
+        view, at = self._second_view(op, start)
+        return self._measure_over(view, f"{op['id']}-hover2", at, None, from_arc, ledger)
+
+    def _look_again(self, program: dict, op: dict, start, from_arc: float, ledger) -> bool:
+        """A hover with a held reading to confirm looks from the second view first (over the stroke's start it would
+        read the same place again); True when the reading there was taken and the page followed the sheet
+        (_follow_filter)."""
+        verdict = self._second_look(op, start, "held", from_arc, ledger)
+        return verdict in ("added", "moved") and self._follow_filter(program, ledger, op["id"])
+
+    def _retrack_unread(self, program: dict, op: dict, verdict: str | None, ledger) -> bool:
+        """A re-tracked page (_retrack) stands once the filter takes a hover's wrist reading on it (`verdict` added or
+        moved); one it does not take sets the page up afresh, and True: the hover measures again on it."""
+        if self._retracked is None:
+            return False
+        if verdict in ("added", "moved"):
+            self._retracked = None
+            self.event(Event.KIND_PAGE, "track: the wrist reads the print on the re-tracked page: it stands", op["id"])
+            return False
+        self._reacquire(program, ledger, "no wrist reading of the print confirmed the re-tracked page", op["id"])
+        return True
 
     # A print the wrist camera has read nowhere in this goal (_hover_stop): an inking pen's hovers go on for the skin
     # alone, its only depth reading (_ride_over), no print read nor set-up for it; other hover stops end.
@@ -3746,7 +4060,7 @@ class ArmExecutor:
                 self.clock.sleep(1.0)
         if self._sheet_may_have_left(program, ledger):
             self._reacquire(program, ledger, "no print under the hover, and the overhead cannot place the sheet "
-                                             "where the page is")
+                                             "where the page is", op["id"], retrack=True)
             if not self._hover_on():
                 return None, False
         elif not cleared:
@@ -4054,8 +4368,8 @@ class ArmExecutor:
                                    rise, rigid)
 
     OFF_SETUP = (0.006, 3)   # this many stroke ends this far off the plan one way set the page up again: the left
-    # forearm's ends read 2.1 mm at most, half of it the wrist's read error there (2026-10-20); 3 mm until the owner
-    # doubled every stop
+    # forearm's ends read 2.1 mm at most, half of it the wrist's read error there (2026-10-20); 3 mm until every stop
+    # was doubled
     OFF_CLEAR_M = 0.002   # a stroke may land this far onto the stencil's border before the page is set up for it
 
     def _off_plan(self, program: dict, op: dict, index: int, ledger) -> None:
@@ -4079,7 +4393,7 @@ class ArmExecutor:
     def _off_clear(self, program: dict, op: dict, index: int, ledger) -> None:
         """Before a stroke that the strokes' consistent offset from the plan (Tracker.off_plan) would carry past the
         print's clear area by more than OFF_CLEAR_M the page is set up again, rather than draw on the stencil's border;
-        never a pause (owner, 2026-10-20: no keys for decisions). Tracking that only logs measures where strokes land."""
+        never a pause (2026-10-20: no keys for decisions). Tracking that only logs measures where strokes land."""
         clear = (program.get("page") or {}).get("clear_m")
         if self.tracker is None or op.get("continues") or not clear:
             return
@@ -4113,8 +4427,13 @@ class ArmExecutor:
                                                       float(cfg.get("reach_rad", 0.05)))
 
     def _corrects(self) -> bool:
-        """Stencil tracking corrects strokes for a moved sheet (page.track.mode correct) with the real wrist camera."""
-        return (self.stack["page"].get("track") or {}).get("mode") == "correct" and self.sensing.wrist == "real"
+        """Stencil tracking corrects strokes for a moved sheet (page.track.mode correct) with a wrist camera to read
+        it by (the rig's, or a wrist port's)."""
+        return (self.stack["page"].get("track") or {}).get("mode") == "correct" and self.tracks()
+
+    def tracks(self) -> bool:
+        """Whether a wrist camera can read the print through a draw: the rig's (sensing.wrist real) or a wrist port's."""
+        return self.sensing.wrist == "real" or self.wrist_port is not None
 
     def _sheet_may_have_left(self, program: dict | None = None, ledger=None) -> bool:
         """After a hover found no print: the overhead's pose, measured within page.max_lost_s (the arm over the page
@@ -4231,10 +4550,10 @@ class ArmExecutor:
         self._follow_sheet(slide, ledger, op["id"], why)
         return "followed"
 
-    def _follow_sheet(self, slide: np.ndarray, ledger, op_id: str, why: str = "") -> None:
-        """Move the page in use by the part of the overhead's measured slide it has not followed (no touches, no
-        holds: the overhead measures a slide to ~1-2 mm though its own pose is several mm off the print), recorded as
-        a page row so a resume takes the page where it went."""
+    def _follow_sheet(self, slide: np.ndarray, ledger, op_id: str, why: str = "", seen: str = "the overhead sees") -> None:
+        """Move the page in use by the part of the sheet's measured slide it has not followed (no touches, no holds:
+        the overhead measures a slide to ~1-2 mm though its own pose is several mm off the print; `seen` says who
+        measured it), recorded as a page row so a resume takes the page where it went."""
         step, old = slide @ np.linalg.inv(self.slid), self.used()
         self.correction = np.linalg.inv(self.camera) @ step @ self.camera @ self.correction
         self.slid = slide
@@ -4248,8 +4567,33 @@ class ArmExecutor:
         if self.placed is not None:
             self.placed = {"page": new, "overhead": self.page_overhead()}
         ledger.append("page", self.arm, page=self.page_record, workspace=self.workspace())
-        self.event(Event.KIND_PAGE, f"track: the overhead sees the sheet move {d[0, 3] * 1e3:+.1f} {d[1, 3] * 1e3:+.1f} mm, "
+        self.event(Event.KIND_PAGE, f"track: {seen} the sheet move {d[0, 3] * 1e3:+.1f} {d[1, 3] * 1e3:+.1f} mm, "
                    f"{np.degrees(_yaw(d)):+.1f} deg: the page follows it{why}", op_id)
+
+    # A sheet the wrist's readings put a stroke's stop away (page.track.stop_m) is followed at the hover that took the
+    # reading, the overhead aside: with the arm over the sheet the overhead often reads nothing, and on a curved page
+    # a stroke whose points alone moved 30 mm rode the skin where the holds measured it, 2-3 mm off the skin it then
+    # stood over, its print read by 4 markers at 1.3 mm rms where 17 read at 0.4 before (sim2 xarm-mount-shove,
+    # 2026-11-12). The page moves, its skin's field with it, as a holder pushed across the table does; a print that
+    # slid over a skin that stayed is told by the next hover's skin reading (_skin_watch), which sets the page up.
+    # Under stop_m the filter's correction moves the strokes' points, as it always has.
+    def _follow_filter(self, program: dict, ledger, op_id: str) -> bool:
+        """The page follows the sheet's move as the tracker's filter has it (its slide and turn about the drawing's
+        centre, PageFilter.sheet), once that stands the drawing past page.track.stop_m from where the page has it
+        (_follow_sheet); what the tracker read in the arm base before it is cleared (track.Tracker.followed). True
+        when the page moved; never with stop_m 0."""
+        stop = float((self.stack["page"].get("track") or {}).get("stop_m", 0.0))
+        frame = np.linalg.inv(self.slid) @ self.used()   # the page set up, its follows out
+        slide = frame @ curved.in_plane(self.tracker.field.sheet()) @ np.linalg.inv(frame)
+        step, points = slide @ np.linalg.inv(self.slid), self._drawing(program)
+        at = self.used() @ np.c_[points, np.zeros(len(points)), np.ones(len(points))].T
+        moved = float(np.max(np.linalg.norm((step @ at - at)[:3], axis=0)))
+        if not stop or moved <= stop:
+            return False
+        self._follow_sheet(slide, ledger, op_id, ", its skin with it", seen="the wrist's readings agree")
+        self.tracker.followed()
+        self._wrist_led = self.clock.now()
+        return True
 
     def _recent_poses(self) -> list:
         """The overhead's newest measured poses of the page (WATCH_POSES of them) since the page was set up."""
@@ -4262,7 +4606,7 @@ class ArmExecutor:
         read: the overhead's tilt and height are a plane's over a curved skin. Else its poses against its own at setup."""
         if self.marks is not None:   # their page.track.watch follow_s median (a gap holds the newest)
             return np.linalg.inv(self.slid) @ self.used(), [curved.in_plane(m[2]) for m in geometry.window(
-                self._timed_moves(), self._watch()["follow_s"])]
+                self._timed_moves(max(self.overhead_at, self._wrist_led)), self._watch()["follow_s"])]
         base = self.overhead if self.overhead is not None else self.camera
         return base, [] if base is None else [np.linalg.inv(base) @ pose for pose in self._recent_poses()]
 
@@ -4274,10 +4618,14 @@ class ArmExecutor:
         frame, moves = self._slides()
         return _median_pose(frame, [frame @ m for m in moves]) @ np.linalg.inv(frame) if moves else None
 
-    def _reacquire(self, program: dict, ledger, why: str, op_id: str = "") -> None:
+    def _reacquire(self, program: dict, ledger, why: str, op_id: str = "", retrack: bool = False) -> None:
         """Set the page up again mid-draw (the wrist camera is the page setup's while it runs) and start tracking
-        again from its gauge holds. A pen within the standoff first lifts along the normal of the page it stands on,
-        before any travel (a pen-down continuation, a resumed stroke, a hover under the standoff)."""
+        again from its gauge holds; for a move the overhead's markers measure (`retrack`), a light re-track first
+        (_retrack). A pen within the standoff first lifts along the normal of the page it stands on, before any travel
+        (a pen-down continuation, a resumed stroke, a hover under the standoff)."""
+        if retrack and self._retrack(program, ledger, why, op_id):
+            return
+        self._retracked = None
         self.event(Event.KIND_PAGE, f"track: {why}; setting the page up again", op_id)
         since, self._skin_off = self.clock.utc(), 0.0
         self.stop_preplan()
@@ -4290,6 +4638,100 @@ class ArmExecutor:
         self._chain_snap = self._correction = None
         self._track_since = since
         self.tracker = track.Tracker.start(self, since=since, centre=self._drawing(program)[-1])
+
+    # A light re-track (page.track.retrack_m): the overhead's settled readings of the print's markers carry the page in
+    # use, its skin's field riding on it, by their move in its plane and along its normal, and the next hover's wrist
+    # reading confirms it. Replayed on the corpus's mid-run set-ups (2026-10-24), the twelve whose moves settled under
+    # 50 mm carried the page 0.7-4.4 mm (median 1.9) from where the set-up's holds put it at the drawing's corners, 1.9
+    # mm along the normal at most (up to 9 mm without the rise) and 5 deg; the others moved on, moved 76 mm, or read a
+    # second copy of the print 154 mm off. A 45 mm forearm move that day took 2 min 27 s set up afresh. A rise also reads
+    # as a slide across the overhead's rays (h tan of its view, ~0.7 h): taken out, the carried pages stood farther from
+    # the holds' (median 3.4 mm against 2.6), so it stays in, and the hover's reading takes what is left.
+    RETRACK_POSES, RETRACK_STILL_M, RETRACK_STILL_RAD = 5, 0.002, 0.035
+    RETRACK_RAD = 0.35   # a turn past this sets the page up afresh: replayed, a mount slid 30 mm and turned 15 deg
+    # (2026-10-24) carried 1.4 mm from the holds' page, a forearm turned 19.6 deg 0.8 mm; none turned further
+    RETRACK_SHEET_M, RETRACK_SHEET_RAD = 0.003, 0.05   # the filter's sheet after a re-track: the carry's error
+
+    def _retrack(self, program: dict, ledger, why: str, op_id: str = "") -> bool:
+        """Carry the page in use by the sheet's move as the overhead's readings of the print's markers read it once
+        they agree (_settled_moves): in its plane and along its normal, from the page set up (its follows taken out).
+        The watch starts again from those readings, the filter's sheet within the carry's error (its arm's part and the
+        cameras' offsets stand), and the next hover's reading must confirm it (_retrack_unread) before a stroke goes down.
+        False, and the caller sets the page up afresh, when page.track.retrack_m is 0, no hover's reading can confirm
+        it, no settled readings come, the move at the drawing passes retrack_m or RETRACK_RAD, its markers bend past
+        the watch's bend_m (the skin changed shape), or an inking pen's print would turn round the arm (_rolled)."""
+        limit = float((self.stack["page"].get("track") or {}).get("retrack_m", 0.0))
+        if not limit or not self.marks or self.tracker is None or not self.tracker.correcting or self._skin_only \
+                or not self._hover_on() or _unconfirmed(self.page_record):
+            return False
+        self.stop_preplan()
+        self.machine_off()
+        self.lift_off("lift before re-tracking the page", ledger)
+        settled = self._settled_moves(program, ledger)
+        if settled is None:
+            self.event(Event.KIND_PAGE, f"track: {why}; the overhead reads the sheet nowhere still", op_id)
+            return False
+        moves, since = settled
+        move, rise, bend = geometry.median_move(moves)
+        far, turn = geometry.apart(move, np.eye(3), self._drawing(program)), _yaw(move)
+        frame = np.linalg.inv(self.slid) @ self.camera @ self.correction   # the page set up, its follows out
+        rolled = self.motion["pen"]["mode"] != "hover" and self._rolled(
+            program, frame @ curved.in_plane(move) @ np.linalg.inv(frame), op_id)
+        past = (f"{far * 1e3:.1f} mm at the drawing, past page.track.retrack_m" if far > limit else
+                f"turned {np.degrees(turn):+.1f} deg" if abs(turn) > self.RETRACK_RAD else
+                f"its markers bent {bend * 1e3:.1f} mm" if bend > self._watch()["bend_m"] else rolled or "")
+        if past:
+            self.event(Event.KIND_PAGE, f"track: {why}; not re-tracked: the sheet {past}", op_id)
+            return False
+        self.tracker.drain(wait=True)   # the readings taken on the page before
+        carried = frame @ curved.in_plane(move) @ geometry.translation([0.0, 0.0, rise])
+        base = self.overhead if self.overhead is not None else self.camera
+        self.overhead = carried @ np.linalg.inv(frame) @ base   # the overhead's pose of the sheet, moved with it
+        self.correction, self.slid = np.linalg.inv(self.camera) @ carried, np.eye(4)
+        self.overhead_at, self.rigid_total, self._skin_off = self.clock.now(), (np.eye(3), np.eye(3)), 0.0
+        self._chain_snap = self._correction = None
+        self._mark_reference(since)   # the sheet where it stands now
+        self.tracker.retracked(self.RETRACK_SHEET_M, self.RETRACK_SHEET_RAD)
+        new = self.used()
+        self.page_record.update(used=new.tolist(), correction=self.correction.tolist(),
+                                overhead=self.page_overhead().tolist(), slid=self.slid.tolist())
+        self.page_record.setdefault("retracked", []).append({"t": self.clock.utc(), "move": move.tolist(),
+                                                             "rise_m": rise, "readings": len(moves), "why": why})
+        if self.placed is not None:
+            self.placed = {"page": new, "overhead": self.page_overhead()}
+        ledger.append("page", self.arm, page=self.page_record, workspace=self.workspace())
+        self._retracked = op_id
+        self.event(Event.KIND_PAGE, f"track: {why}; the page re-tracked, its skin with it: carried {far * 1e3:.1f} mm "
+                   f"at the drawing, {np.degrees(turn):+.1f} deg, {rise * 1e3:+.1f} mm along its normal as {len(moves)} "
+                   "readings of the print's markers agree; a hover's reading confirms it", op_id)
+        return True
+
+    def _settled_moves(self, program: dict, ledger) -> tuple[list, float] | None:
+        """The overhead's newest RETRACK_POSES marker moves of the last gate_s (_timed_moves) once each stands within
+        RETRACK_STILL_M of their median at the drawing and RETRACK_STILL_RAD of its turn, and the first one's time;
+        waited for up to WAIT_S, the arm clearing the overhead's view when none came in CLEAR_S (MARKS_S more then);
+        None if they never agree. Replayed, the first five after a set-up's call read a limb still moving 46 mm off
+        that settled 19 mm off (2026-10-24)."""
+        pts, gate = self._drawing(program), self._watch()["gate_s"]
+        began = self.clock.now()
+        until, cleared = began + self.WAIT_S, False
+        while not self.stopping():
+            timed = self._timed_moves(self.clock.now() - gate)[-self.RETRACK_POSES:]
+            moves = [m for _, m in timed]
+            if len(moves) == self.RETRACK_POSES:
+                med = geometry.median_move(moves)[0]
+                if all(geometry.apart(m[2], med, pts) <= self.RETRACK_STILL_M
+                       and abs(m[1] - _yaw(med)) <= self.RETRACK_STILL_RAD for m in moves):
+                    if cleared:
+                        self.go_ready(ledger)
+                    return moves, timed[0][0]
+            if self.clock.now() >= until:
+                break
+            if not cleared and self.clock.now() >= began + self.CLEAR_S and not self._timed_moves(began):
+                self.clear_view(ledger)
+                cleared, until = True, max(until, self.clock.now() + self.MARKS_S)
+            self.clock.sleep(1.0)
+        return None
 
     def _new_page(self, program: dict, touch: bool, ledger) -> None:
         self.setup_page(program, touch, ledger)
@@ -4320,7 +4762,21 @@ class ArmExecutor:
 
     # --- the operator's pen trim (motion.yaml pen.trim, ros/README.md 4.4) -------------------------
     def trim_target(self) -> float:
-        return self.trims.get(self.resource["id"], 0.0) if self.resource else 0.0
+        return self.trims.get(cartridge(self.resource), 0.0) if self.resource else 0.0
+
+    def _start_trims(self, program: dict, ledger) -> None:
+        """`tatbot ros draw --trim-mm`: each of the program's cartridges starts at its start_trim_m, a pen_trim row like
+        a key press's; one the run's ledger already holds a trim for keeps it, so a resume never moves the operator's."""
+        start = program.get("start_trim_m")
+        if start is None:
+            return
+        limit = float(self.motion["pen"]["trim"]["limit_m"])
+        if abs(start) > limit + 1e-9:
+            raise RuntimeError(f"--trim-mm {start * 1e3:+.2f} is past the trim's limit of ±{limit * 1e3:.1f} mm")
+        for cart in sorted({cartridge(resource) for resource in program["resources"]} - set(self.trims)):
+            self.trims[cart] = float(start)
+            ledger.append("pen_trim", self.arm, cartridge=cart, trim_m=round(float(start), 7), start=True)
+            self.event(Event.KIND_PEN_TRIM, f"{cart} starts at {start * 1e3:+.2f} mm: the run's --trim-mm")
 
     # With the +-4 mm trim, depth keyed for one sunk stretch of a forearm carried, one trim per cartridge, onto strokes,
     # set-ups' fresh fields and resumes it was never pressed for, up to the 3RL's whole reach: its tube 1.0 mm over the
@@ -4335,13 +4791,17 @@ class ArmExecutor:
     # set. Replayed over that forearm's presses at +-4 mm (2026-10-20): 41 presses on a stroke whose hover read the skin
     # 0.15 mm under the field held at -2.65 instead of -4.0, the resume's -4.0 eased to -2.5, the two strokes read
     # 3.7-4.1 mm under took -4.0, and nine earlier strokes held 0.06-0.24 mm. The eased trim is a pen_trim row
-    # (eased_from_m) a resume starts from; the cap is the sent row's trim_cap_m, which the trim bar shows.
+    # (eased_from_m) a resume starts from; the cap is the sent row's trim_cap_m, which the trim bar shows. The cap is its
+    # own key, page.surface.rigid.trim_stop_m (3.3 mm in stack.yaml; 2026-11-11, after a depth hold on silicone
+    # stopped the keys at 2.5), apart from the skin_stop_m the skin watch sets the page up again at.
     def _cap_for(self, read: list) -> float | None:
         """The deepest trim a stroke over skin read `read` (m over the field) takes; None but for a needle cartridge."""
         if self.pen is None or not self.pen.machine or self.pen.reach_m is None:
             return None
         rise = float((self.page_record.get("surface") or {}).get("rise_m", 0.0))
-        return -(float(curved.config(self.stack)["rigid"]["skin_stop_m"]) + (max(0.0, rise - max(read)) if read else 0.0))
+        rigid = curved.config(self.stack)["rigid"]
+        stop = float(rigid.get("trim_stop_m", rigid["skin_stop_m"]))   # a stack that names none: its one stop
+        return -(stop + (max(0.0, rise - max(read)) if read else 0.0))
 
     def _capped(self, cap: float | None) -> float:
         return self.trim_target() if cap is None else max(self.trim_target(), cap)
@@ -4354,26 +4814,29 @@ class ArmExecutor:
         """Say a stroke takes the trim shallower than the keys set it; high: the most skin read along it over its plan."""
         if (used := self.trim_in_use()) > (keys := self.trim_target()) + 1e-9:
             over = "no skin read at its own hover" if high is None else f"the skin read along it {high * 1e3:+.2f} mm over it at most"
-            self.event(Event.KIND_PEN_TRIM, f"{self.resource['id']} {keys * 1e3:+.1f} mm held at {used * 1e3:+.2f} mm on "
-                       f"{op_id}: the needles go no deeper than page.surface.rigid.skin_stop_m past its plan, {over}", op_id)
+            self.event(Event.KIND_PEN_TRIM, f"{cartridge(self.resource)} {keys * 1e3:+.2f} mm held at {used * 1e3:+.2f} mm on "
+                       f"{op_id}: the needles go no deeper than page.surface.rigid.trim_stop_m past its plan, {over}", op_id)
 
     def _ease_trims(self, ledger, why: str) -> None:
         """A fresh field's (a set-up's or a resume's): each trim kept deeper than _cap_for([]) back to it, and said."""
         most = self._cap_for([])
-        for res, trim in sorted(self.trims.items()):
+        for cart, trim in sorted(self.trims.items()):
             if most is not None and trim < most - 1e-9:
-                self.trims[res] = most
-                ledger.append("pen_trim", self.arm, resource=res, trim_m=round(most, 7), eased_from_m=round(trim, 7))
-                self.event(Event.KIND_PEN_TRIM, f"{res} {trim * 1e3:+.1f} mm eased back to {most * 1e3:+.1f} mm: {why}, "
+                self.trims[cart] = most
+                ledger.append("pen_trim", self.arm, cartridge=cart, trim_m=round(most, 7), eased_from_m=round(trim, 7))
+                self.event(Event.KIND_PEN_TRIM, f"{cart} {trim * 1e3:+.2f} mm eased back to {most * 1e3:+.2f} mm: {why}, "
                            "and a deeper trim reaches only where the hovers read the skin sunk")
 
     def trimmed(self, traj, start_m: float):
         """traj with the pen trim (and its pre-plan's ride fold: _ride_fold), easing from start_m (where the arm is) to
-        the cartridge's."""
-        from tatbot_motion import Trim, compose
+        the cartridge's, and there before a descent enters its slow stretch (tatbot_motion.slow_from_s)."""
+        from tatbot_motion import Trim, compose, slow_from_s
 
-        trim, target = Trim(start_m), self.trim_in_use() + self._fold
-        return compose(traj, trim if abs(target - start_m) < 1e-9 else trim.to(0.0, target, self.motion["pen"]["trim"]))
+        trim, target = Trim(start_m), self.trim_in_use() + self._fold + self._rise
+        if abs(target - start_m) < 1e-9:
+            return compose(traj, trim)
+        by = slow_from_s(traj, self.motion["approach"]["final_m"])
+        return compose(traj, trim.to(0.0, target, self.motion["pen"]["trim"], by))
 
     def _retarget(self, plan):
         """ArmIO.execute's retarget: the goal again, easing to a changed trim from pen.trim.lead_s ahead; None while
@@ -4383,7 +4846,7 @@ class ArmExecutor:
         cfg = self.motion["pen"]["trim"]
 
         def retarget(elapsed: float, active):
-            trim, target = active.info["trim"], self.trim_in_use() + self._fold
+            trim, target = active.info["trim"], self.trim_in_use() + self._fold + self._rise
             if abs(trim.end_m - target) < 1e-9 or elapsed < trim.settled_s():
                 return None
             new = trim.to(elapsed + float(cfg["lead_s"]), target, cfg)
@@ -4393,7 +4856,8 @@ class ArmExecutor:
 
     def on_key(self, key: str) -> None:
         """A numpad key: up/down move the cartridge's trim a step within its limit, reset sets 0, each a ledger
-        row a resume starts from; dip (+) and fewer_dips (-) step its dip scale (dip_key); enter answers a waiting
+        row a resume starts from. The trim is the cartridge's (its tool's), so it carries through a rinse to the
+        next colour (2026-11-02); dip (+) and fewer_dips (-) step its dip scale (dip_key); enter answers a waiting
         pause or latch CONTINUE."""
         if key in ("dip", "fewer_dips"):
             return self.dip_key(key)
@@ -4407,17 +4871,19 @@ class ArmExecutor:
         if self.ledger is None or self.resource is None:
             return self.event(Event.KIND_PEN_TRIM, f"{key}: no draw is running, so no cartridge to trim")
         step, limit = (float(self.motion["pen"]["trim"][name]) for name in ("step_m", "limit_m"))
-        res, old, most, of = self.resource["id"], self.trim_target(), int(limit / step + 1e-6), f" of ±{limit * 1e3:.1f}"
+        res, cart = self.resource["id"], cartridge(self.resource)
+        old, most, of = self.trim_target(), int(limit / step + 1e-6), f" of ±{limit * 1e3:.1f}"
         steps = 0 if key == "reset" else round(old / step) + (1 if key == "up" else -1)
         new = max(-most, min(most, steps)) * step
         if abs(new - old) < 1e-12:
-            return self.event(Event.KIND_PEN_TRIM, f"{res} stays {new * 1e3:+.1f} mm" + (f": its limit{of}" if steps else ""))
-        self.trims[res] = new
-        self.ledger.append("pen_trim", self.arm, resource=res, trim_m=round(new, 7))
+            return self.event(Event.KIND_PEN_TRIM, f"{cart} stays {new * 1e3:+.2f} mm" + (f": its limit{of}" if steps else ""))
+        self.trims[cart] = new
+        self.ledger.append("pen_trim", self.arm, resource=res, cartridge=cart, trim_m=round(new, 7))
         used = self.trim_in_use()
         held = f", held at {used * 1e3:+.2f} mm by the skin read along the stroke" if used > new + 1e-9 else ""
         over = f": the path {(self.pen.height_m + used) * 1e3:.2f} mm over the page" if self.pen else ""
-        self.event(Event.KIND_PEN_TRIM, f"{res} {new * 1e3:+.1f} mm{of}{held}{over}")
+        on = f" ({res} on it)" if res != cart else ""
+        self.event(Event.KIND_PEN_TRIM, f"{cart} {new * 1e3:+.2f} mm{of}{on}{held}{over}")
 
     # --- the operator's dips (charge.py, ros/README.md 6) ---------------------------------------------
     def dip_scale(self) -> float:
@@ -4428,6 +4894,9 @@ class ArmExecutor:
         the dip) and every later dip a step sooner; - (fewer_dips): every later dip a step later. Each a dip_scale
         ledger row a resume starts the resource at. Nothing changes without a running draw, for a resource that
         takes no dips, or on + while a dip runs or is asked."""
+        if key == "dip" and self.depth_holding:
+            self._depth_taken = True   # depth_hold says what it took
+            return
         res, ledger, sign = self.resource, self.ledger, "+" if key == "dip" else "-"
         with self._lock:
             why = None
@@ -4470,29 +4939,129 @@ class ArmExecutor:
     # round a bottle mid-stroke (2026-10-24) the overhead and four wrist readings agreed on the move within 5 s, and the
     # stroke drew on the old place 8 s more until the e-stop. Past page.track.stop_m the stroke stops, lifts, and goes
     # on from its arc after the checks between strokes (the sheet followed, or the page set up again).
+    # The phases of a stroke's goal in which the wrist reads the print and a moved sheet stops it: the descent from the
+    # hover and the settle as well as the line. A fixture shoved while the pen came down was first read half a second
+    # into the line, 2.7 mm of it drawn on the old place (sim2, 2026-11-12).
+    READ_PHASES = (P.PHASE_DESCEND, P.PHASE_SETTLE, P.PHASE_DRAW)
+
     def _moved_under(self, op: dict, arc_m: float) -> str | None:
         """Why the stroke drawing now must stop: the filter's correction at the pen past page.track.stop_m from the one
-        the stroke is drawn with (_chain_snap), or None."""
+        the stroke is drawn with (_chain_snap), or a reading that puts the print that far from where the filter has
+        it, held until a second agrees (PageFilter.add): the pen does not ink on while it waits for one, and the
+        hover it lifts to looks again. A held reading stops one stroke: one no hover confirmed (_jump_seen) stops
+        nothing more. None otherwise."""
         stop = float((self.stack["page"].get("track") or {}).get("stop_m", 0.0))
         if not stop or self._chain_snap is None or self.tracker is None or not self.tracker.correcting:
             return None
         at = {"points_m": [track.point_at(op, arc_m).tolist()]}
         moved = float(np.linalg.norm(self.tracker.snapshot().corrected(at)[1][0] - self._chain_snap.corrected(at)[1][0]))
-        return None if moved <= stop else (f"the print's correction at the pen moved {moved * 1e3:.1f} mm from the one "
-                                           f"{op['id']} draws with (page.track.stop_m {stop * 1e3:.0f} mm)")
+        if moved > stop:
+            return (f"the print's correction at the pen moved {moved * 1e3:.1f} mm from the one {op['id']} draws with "
+                    f"(page.track.stop_m {stop * 1e3:.0f} mm)")
+        return self._jumped(op)
+
+    def _jumped(self, op: dict) -> str | None:
+        """_moved_under's held reading alone, asked at every tick of a drawing stroke: the readings in (the tracker's
+        tick drained them), no snapshot taken."""
+        stop = float((self.stack["page"].get("track") or {}).get("stop_m", 0.0))
+        if not stop or self._chain_snap is None or self.tracker is None or not self.tracker.correcting:
+            return None
+        jump = self.tracker.field.jump(self._jump_seen)   # one reading's: a moved sheet, or a misread: the hover tells
+        if jump <= stop:
+            return None
+        self._jump_seen = self.clock.now()
+        return (f"a reading puts the print {jump * 1e3:.1f} mm from where {op['id']} draws, past page.track.stop_m "
+                f"{stop * 1e3:.0f} mm, and no second has agreed yet")
+
+    def _over_start(self, program: dict, op: dict, index: int, from_arc: float, ledger, judge: bool) -> bool:
+        """Before a stroke's goal: the page as it lies now and the skin read at the stroke's hover. False when `judge`
+        and the sheet moved meanwhile."""
+        self.refresh_page(program, ledger, op["id"])   # a big move: set up again before the arm goes over it
+        self._off_plan(program, op, index, ledger)
+        self._off_clear(program, op, index, ledger)
+        self._watch_sheet(program, op, from_arc, ledger)
+        began = self.clock.now()
+        self._hover_stop(program, op, from_arc, ledger, index)
+        return not (judge and self._moved_meanwhile(program, began, op["id"]))
+
+    # --- the depth hold (ros/README.md 4.4) -------------------------------------------------------------
+    # On a person the depth is the operator's to see, not the gauge's to guess: the heart of 2026-11-07 was finished
+    # 2.7 mm from where the skin was felt, after a first stroke 2 mm too deep. So before a needle cartridge's first dip
+    # the pen goes to its first stroke's start as that stroke would, the machine running and no ink on the needles, at
+    # pen.trim.hold.start_m, and holds there while the keys trim it (the cap a stroke takes holds it too, so the depth
+    # taken is one the strokes reach). + takes it: a depth_hold row a resume keeps, then the lift, the dip and the run.
+    # Its rows (holding, then taken or left) are what the viewer's trim cell shows the hold by.
+    def _depth_due(self, program: dict, index: int, ledger) -> bool:
+        ops, cfg = program["ops"], self.motion["pen"]["trim"].get("hold")
+        if not cfg or program.get("substrate") not in cfg["substrates"] or index >= len(ops):
+            return False
+        op, res = ops[index], self.resource
+        return (op["op"] == "stroke" and op["resource_id"] == res["id"] and not op.get("continues")
+                and self._cap_for([]) is not None and cartridge(res) not in self.depth_held
+                and ledger_mod.resume_arc(ledger.rows(), self.arm, op["id"]) <= 0)
+
+    def _depth_first(self, program: dict, index: int, ledger) -> None:
+        """The depth hold at the stroke at `index`, until its depth is taken, when one is due there."""
+        while self._depth_due(program, index, ledger):
+            self.depth_hold(program, index, ledger)
+
+    def depth_hold(self, program: dict, index: int, ledger) -> None:
+        from tatbot_motion import dwell
+
+        op, res, cfg = program["ops"][index], self.resource, self.motion["pen"]["trim"]["hold"]
+        cart, self.op_now = cartridge(res), op["id"]
+        if cart not in self.trims:
+            self.trims[cart] = float(cfg["start_m"])
+            ledger.append("pen_trim", self.arm, resource=res["id"], cartridge=cart, trim_m=round(self.trims[cart], 7),
+                          start=True)
+        self._over_start(program, op, index, 0.0, ledger, judge=False)
+        self._ride_over(program, index, 0.0)
+        self.snag_guard(True)
+        if not self.machine_running(op["id"], index, ledger, again=False):
+            return self.lift_off(f"{op['id']} lift to measure the skin again", ledger)
+        snap = self._snap(op)
+        self._preplan, self._fold, self._rise = None, 0.0, 0.0
+        traj = self.plan({**program, "draw_ends": "stop"}, op, 0.0, False, self.io.seed(), snap=snap)
+        self._use_snap(op, snap)
+        down = int(np.flatnonzero(np.asarray(traj.phase) == P.PHASE_DRAW)[0])
+        self.event(Event.KIND_PEN_TRIM, f"depth hold at the start of {op['id']}: the needle runs with no ink, {cart} at "
+                   f"{self.trim_target() * 1e3:+.2f} mm; Fn+S presses it, Fn+W lifts it, Fn+E takes the depth and dips",
+                   op["id"])
+        ledger.append("depth_hold", self.arm, op=op["id"], resource=res["id"], cartridge=cart, state="holding",
+                      **({"trim_cap_m": round(self._trim_cap, 6)} if self._trim_cap is not None else {}))
+        self.feedback(phase=P.PHASE_SETTLE, op_id=op["id"], index=index)
+        start, at, self._depth_taken, self.depth_holding = 0, 0.0, False, True
+        try:
+            while True:
+                plan = dwell(traj, start, down, float(cfg["window_s"]), 1.0 / self.knot_rate)
+                status, reached, _ = self.io.execute(self.trimmed(plan, at), retarget=self._retarget(plan),
+                                                     should_stop=lambda: self.stopping() or self._depth_taken)
+                sent = self.io.active   # a key press replaced it
+                at = self.trim_end = float(sent.info["trim"].value(sent.t[reached]))
+                if status != "ok" or self._depth_taken:
+                    break
+                start = down   # nobody took it: another window, from where it holds
+        finally:
+            self.depth_holding = False
+            self.machine_off()
+        taken = self._depth_taken and status in ("ok", "cancelled") and not self.stopping()
+        ledger.append("depth_hold", self.arm, op=op["id"], resource=res["id"], cartridge=cart,
+                      state="taken" if taken else "left", trim_m=round(self.trim_target(), 7), held_m=round(at, 7))
+        if taken:
+            self.depth_held.add(cart)
+            self.event(Event.KIND_PEN_TRIM, f"depth taken: {cart} draws at {at * 1e3:+.2f} mm; dipping", op["id"])
+        elif status == "cancelled" and not self.land_requested:
+            raise Cancelled()
+        else:
+            self._latched(program, op, index, ledger, status, 0)
+        self.lift_off(f"{op['id']} lift after the depth hold", ledger)
 
     def stroke(self, program: dict, index: int, ledger) -> None:
         op = program["ops"][index]
         length = geometry.stroke_length(op["points_m"], closed=bool(op.get("closed")))
         from_arc, trips, judged = ledger_mod.resume_arc(ledger.rows(), self.arm, op["id"]), 0, False
         while True:
-            self.refresh_page(program, ledger, op["id"])   # a big move: set up again before the arm goes over it
-            self._off_plan(program, op, index, ledger)
-            self._off_clear(program, op, index, ledger)
-            self._watch_sheet(program, op, from_arc, ledger)
-            began = self.clock.now()
-            self._hover_stop(program, op, from_arc, ledger, index)
-            if not judged and self._moved_meanwhile(program, began, op["id"]):
+            if not self._over_start(program, op, index, from_arc, ledger, judge=not judged):
                 judged = True   # once a stroke: refresh_page judges it, the hover measures again
                 continue
             if self._dip_first(program["ops"], index, from_arc):
@@ -4508,9 +5077,10 @@ class ArmExecutor:
             ledger.append("sent", self.arm, op=op["id"], index=index, arc_m=from_arc, **self._correction_row(),
                           **({"ride_m": round(self._ride[1], 6)} if self._ride[1] else {}),
                           **({"trim_cap_m": round(self._trim_cap, 6)} if self._trim_cap is not None else {}),
-                          **({"fold_m": round(self._fold, 6)} if self._fold else {}))
-            self.event(Event.KIND_OP_SENT, f"{len(traj.t)} knots, {traj.t[-1]:.1f} s from arc {from_arc * 1000:.1f} mm",
-                       op["id"])
+                          **({"fold_m": round(self._fold, 6)} if self._fold else {}),
+                          **({"rise_m": round(self._rise, 6)} if self._rise else {}))
+            self.event(Event.KIND_OP_SENT, f"{len(traj.t)} knots, {traj.t[-1]:.1f} s from arc {from_arc * 1000:.1f} mm"
+                       + self._ends_text(traj), op["id"])
             self._arc_now, self._stop_why = from_arc, None
             status, reached, text = self.io.execute(sent, should_stop=functools.partial(self._stroke_stop, from_arc),
                                                     on_tick=self._ticker(program, index, op, traj, ledger),
@@ -4559,11 +5129,9 @@ class ArmExecutor:
     def _withdraw(self, op_id: str, decide: bool) -> bool:
         from tatbot_motion.clik import PlanError
 
-        from tatbot_session import inspect as ins
-
         self.machine_off()
         ok, text = (False, why) if (why := self.continue_refusal(self.io.measured())) else self.io.unlatch()
-        if ok and not np.all(np.abs(self.io.measured()[:6] - ins.REST[:6]) < self.AT_REST_RAD):   # at rest: no pen in the work
+        if ok and not self._at_rest():   # at rest: no pen in the work
             try:
                 status, _, text = self.io.execute(self.lift_plan(float(self.motion["approach"]["standoff_m"]),
                                                                  -self.tcp()[:3, 2]))   # out, a land or cancel asked or not
@@ -4600,9 +5168,11 @@ class ArmExecutor:
     def _ticker(self, program, index, op, traj, ledger):
         """on_tick for a stroke goal: the arc reached, feedback at 10 Hz, drawn samples at 20 Hz, the pre-plan once, the
         tracker's frames while it draws."""
-        state = {"fb": 0.0, "drawn": 0.0, "pre": False, "line": [], "moved": -np.inf}
+        state = {"fb": 0.0, "drawn": 0.0, "pre": False, "line": [], "moved": -np.inf, "rise": -np.inf}
         self.drawn.setdefault(op["id"], []).append(state["line"])
         inv_page = np.linalg.inv(self.used())
+        drawing = np.flatnonzero(np.asarray(traj.phase) == P.PHASE_DRAW)
+        last_draw = int(drawing[-1]) if len(drawing) else -1
 
         def tick(i: int) -> None:
             now = self.clock.now()
@@ -4619,15 +5189,29 @@ class ArmExecutor:
                 state["drawn"] = now
                 tip = self.kin.fk(self.io.q)[:3, 3]
                 state["line"].append((inv_page @ np.append(tip, 1.0))[:2].tolist())
-            if traj.phase[i] == P.PHASE_DRAW and self.tracker is not None and np.isfinite(traj.arc_m[i]):
-                self.tracker.while_drawing(op, float(traj.arc_m[i]))   # the wrist read as it draws (stroke_s)
-                if self._stop_why is None and traj.t[i] - state["moved"] >= self.MOVED_EVERY_S:
-                    state["moved"] = float(traj.t[i])
-                    self._stop_why = self._moved_under(op, float(traj.arc_m[i]))
-                    if self._stop_why is not None:
-                        self.event(Event.KIND_PAGE, f"track: {self._stop_why}: stopping it, lifted", op["id"])
+            if self._planned_on and i <= last_draw and traj.t[i] - state["rise"] >= self.FOLLOW_EVERY_S:
+                state["rise"] = float(traj.t[i])
+                self._follow_surface(op, self._arc_now)   # over its start through the approach, then under the pen
+            if traj.phase[i] in self.READ_PHASES and self.tracker is not None:
+                self._read_under(op, traj, i, state)
 
         return tick
+
+    def _read_under(self, op: dict, traj, i: int, state: dict) -> None:
+        """A stroke goal's tick as the pen comes down and as it draws: the wrist read (page.track.stroke_s) at the arc
+        it has reached, and the sheet asked whether it moved under it: a held reading at every tick, the filter's
+        correction every MOVED_EVERY_S."""
+        arc = float(traj.arc_m[i]) if np.isfinite(traj.arc_m[i]) else self._arc_now
+        self.tracker.while_drawing(op, arc)
+        if self._stop_why is not None:
+            return
+        if traj.t[i] - state["moved"] >= self.MOVED_EVERY_S:
+            state["moved"] = float(traj.t[i])
+            self._stop_why = self._moved_under(op, arc)
+        else:
+            self._stop_why = self._jumped(op)
+        if self._stop_why is not None:
+            self.event(Event.KIND_PAGE, f"track: {self._stop_why}: stopping it, lifted", op["id"])
 
     # --- touch (the Touch action) --------------------------------------------------------------
     def touch_single(self, start: np.ndarray, direction: np.ndarray, max_travel_m: float, speed_m_s: float,
@@ -4740,7 +5324,7 @@ class ArmExecutor:
     def back_off(self, traj, index: int, direction: np.ndarray) -> dict:
         """After a probe trigger: back out motion.yaml probe.back_off_m the way the tip came (toward where
         the plan had it that far before the stop: -direction on the slow leg), unguarded, then wait up to
-        0.5 s for the probe to read released."""
+        PROBE_SETTLE_S for the probe to read released and to stay so PROBE_QUIET_S, PROBE_SETTLE_TRIES times at most."""
         distance = float(self.motion["probe"]["back_off_m"])
         tip = np.asarray(traj.tip)[:index + 1]
         behind = np.flatnonzero(np.linalg.norm(tip - tip[-1], axis=1) >= distance)
@@ -4748,7 +5332,10 @@ class ArmExecutor:
         back = back / np.linalg.norm(back)
         status, _, text = self.io.execute(self.lift_plan(distance, back), should_stop=self.stopping)
         motion_result(status, text, 'probe back-off')
-        if not self.io.wait(lambda: not self.io.flag("probe_triggered"), 0.5):
-            raise RuntimeError(f"the probe still reads triggered {distance * 1000:.1f} mm back from the touch "
-                               "(a stuck stylus, or a broken wire)")
-        return {"direction": back.tolist(), "distance_m": distance}
+        for _ in range(PROBE_SETTLE_TRIES):
+            if not self.io.wait(lambda: not self.io.flag("probe_triggered"), PROBE_SETTLE_S):
+                break
+            if not self.io.wait(lambda: self.io.flag("probe_triggered"), PROBE_QUIET_S):
+                return {"direction": back.tolist(), "distance_m": distance}
+        raise RuntimeError(f"the probe still reads triggered {distance * 1000:.1f} mm back from the touch "
+                           "(a stuck stylus, or a broken wire)")

@@ -5,7 +5,6 @@ import selectors
 import shutil
 import signal
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -29,12 +28,6 @@ def runtime_profile():
                         'locked-runtime integration not checked')
         assert probe.returncode == 0, probe.stderr
     return profile
-
-
-def test_research_backend_help_needs_only_stdlib():
-    result = subprocess.run([sys.executable, '-S', str(REPO/'scripts/research.py'), '--help'],
-                            capture_output=True, text=True, timeout=10)
-    assert result.returncode == 0 and 'candidate' in result.stdout, result.stderr
 
 
 def test_offline_runtime_names_the_missing_managed_interpreter(tmp_path, monkeypatch):

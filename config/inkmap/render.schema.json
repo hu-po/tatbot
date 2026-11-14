@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tatbot.dev/schemas/inkmap/render.schema.json",
+  "title": "Inkmap robot render",
+  "description": "What `tatbot art separate --brief` gives back to Inkmap: the predicted ink of one placement as a picture on white at its canvas, and what it measured. A picture, not strokes: it is bound to the art, width and mirror it was made for.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "content_sha256", "art_sha256", "width_mm", "height_mm", "mirror", "image", "minutes", "dips", "rinses", "lost_inks", "weakest_source"],
+  "properties": {
+    "schema": { "const": "tatbot.inkmap-render/1" },
+    "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "art_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The art record it was separated from, whose digest covers the inks." },
+    "width_mm": { "type": "number", "exclusiveMinimum": 0 },
+    "height_mm": { "type": "number", "exclusiveMinimum": 0 },
+    "mirror": { "type": "boolean", "description": "The placement was mirrored, and so already is this picture." },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["media_type", "sha256", "width_px", "height_px", "data_base64"],
+      "properties": {
+        "media_type": { "const": "image/png" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "width_px": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "height_px": { "type": "integer", "minimum": 1, "maximum": 16384 },
+        "data_base64": { "type": "string", "minLength": 1 }
+      }
+    },
+    "minutes": { "type": "number", "minimum": 0 },
+    "dips": { "type": "integer", "minimum": 0 },
+    "rinses": { "type": "integer", "minimum": 0 },
+    "lost_inks": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }, "description": "Inks of the load that drew nothing at this size." },
+    "weakest_source": { "type": "string", "minLength": 1 }
+  }
+}

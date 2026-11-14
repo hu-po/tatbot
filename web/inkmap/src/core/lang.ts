@@ -5,7 +5,9 @@
 import stylesJson from "../../../../config/inkmap/styles.json" with { type: "json" };
 import {
   INKLANG_VERSION,
+  NUMBER_WORDS,
   SITES,
+  UNITS,
   ZONES,
   isZone,
   normalizeWords,
@@ -202,4 +204,22 @@ export function parseSentence(sentence: string): TattooProgram {
   };
   validateProgram(program);
   return program;
+}
+
+/** Words after a measure that make it a distance from somewhere, not a size. */
+const RELATION_AFTER = new Set(["above", "below", "behind", "beside", "in", "from", "under", "over"]);
+const SIZE_WORDS = new Set(["wide", "across", "long", "tall", "big"]);
+
+/** A size in a sentence, such as "a 3 inch swallow" or "80 mm wide", and the sentence without it. InkLang says where a
+ *  design goes, never how big, so the size comes out before the placement is read. It is taken as the design's width. */
+export function takeWidth(sentence: string): { text: string; widthMm: number | null } {
+  const tokens = normalizeWords(sentence);
+  for (let index = 1; index < tokens.length; index++) {
+    const unit = UNITS.get(tokens[index]);
+    const amount = NUMBER_WORDS.get(tokens[index - 1]) ?? Number(tokens[index - 1]);
+    if (unit === undefined || !(amount > 0) || RELATION_AFTER.has(tokens[index + 1])) continue;
+    const end = SIZE_WORDS.has(tokens[index + 1]) ? index + 2 : index + 1;
+    return { text: [...tokens.slice(0, index - 1), ...tokens.slice(end)].join(" "), widthMm: Math.round(amount * unit * 10_000) / 10 };
+  }
+  return { text: sentence, widthMm: null };
 }

@@ -1,4 +1,4 @@
-"""The v6 placement reader and the artwork records it embeds, read with no Node bridge."""
+"""The v7 placement reader and the source art it embeds, and the DBV3 artwork records, read with no Node bridge."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from tatbot_surface.program_contract import validate_tattoo_program
 from tatbot_surface.repo import repo_root
 
 EXAMPLES = repo_root() / "config" / "inkmap" / "examples"
-DESIGNS = repo_root() / "web" / "inkmap" / "public" / "designs"
+DESIGNS = repo_root() / "config" / "sim2" / "acquired"
 DBV3 = ("dbv3-orbit", "dbv3-ridges", "dbv3-sprout")
 
 
@@ -26,10 +26,10 @@ def _design(name: str) -> dict:
     return json.loads((DESIGNS / name / "artwork.json").read_text())
 
 
-def test_v6_placement_loads_and_old_schemas_are_generically_unsupported():
-    placement = load_placement(EXAMPLES / "forearm-placement-v6.json")
+def test_v7_placement_loads_and_old_schemas_are_generically_unsupported():
+    placement = load_placement(EXAMPLES / "forearm-placement-v7.json")
     assert placement["placements"][0]["anchor"]["face"] == 8729
-    for version in (1, 2, 3, 4, 5):
+    for version in (1, 2, 3, 4, 5, 6):
         old = copy.deepcopy(placement)
         old["schema_version"] = version
         with pytest.raises(ContractError, match="unsupported schema/model"):
@@ -51,7 +51,7 @@ def test_document_digest_is_key_order_independent():
 
 
 def test_placement_resolution_provenance_must_match_anchor_and_body():
-    placement = load_placement(EXAMPLES / "forearm-placement-v6.json")
+    placement = load_placement(EXAMPLES / "forearm-placement-v7.json")
     resolved = copy.deepcopy(placement)
     item = resolved["placements"][0]
     corpus = json.loads((EXAMPLES / "inklang" / "corpus-v1.json").read_text())
@@ -72,15 +72,19 @@ def test_placement_resolution_provenance_must_match_anchor_and_body():
 
 
 def test_embedded_generated_designs_must_be_present_and_valid():
-    placement = load_placement(EXAMPLES / "forearm-placement-v6.json")
+    placement = load_placement(EXAMPLES / "forearm-placement-v7.json")
     placement["placements"][0]["design_id"] = "gen-orbit"
     with pytest.raises(ContractError, match="gen-orbit is not embedded"):
         validate_placement(placement)
-    placement["designs"]["gen-orbit"] = _design("dbv3-orbit")
+    placement["designs"]["gen-orbit"] = copy.deepcopy(placement["designs"]["ring"])
     assert validate_placement(placement) is placement
-    placement["designs"]["gen-orbit"]["program"]["layers"][0]["elements"][0]["width_m"] *= 2
-    with pytest.raises(ValueError, match="wrong_hash"):
+    placement["designs"]["gen-orbit"]["art_px"][2] += 1
+    with pytest.raises(ValueError, match="content digest differs"):
         validate_placement(placement)
+    stroke = copy.deepcopy(placement)
+    stroke["designs"]["gen-orbit"] = _design("dbv3-orbit")
+    with pytest.raises(ValueError, match="expected fields"):
+        validate_placement(stroke)
 
 
 @pytest.mark.parametrize("name", DBV3)

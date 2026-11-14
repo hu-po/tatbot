@@ -33,6 +33,7 @@ const WIRE_MAGIC: &str = "tatbot-vision-frame-set";
 const WIRE_VERSION: u32 = 1;
 const MAX_HEADER_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES: usize = 128 * 1024 * 1024;
+const MAX_FRAMES: usize = 16;
 /// Longest a subscriber waits for the capture owner to bind its listener.
 /// The owners' units are `Type=notify` and report ready once bound (see
 /// `systemd`), so an `After=` consumer normally connects at once; the window
@@ -161,6 +162,10 @@ impl UnixFramePublisher {
     /// Publish one set. Returns the number of clients that accepted the full
     /// message; slow or disconnected clients are removed.
     pub fn publish(&mut self, set: &SynchronizedFrameSet) -> Result<usize> {
+        anyhow::ensure!(
+            set.frames.len() <= MAX_FRAMES,
+            "frame count exceeds transport limit"
+        );
         self.poll_accept()?;
         let publish_unix_ns = transport_wall_ns();
         let mut headers = Vec::with_capacity(set.frames.len());
@@ -330,7 +335,7 @@ fn read_frame_set(stream: &mut impl Read) -> Result<ReceivedFrameSet> {
         anyhow::bail!("unsupported frame transport header");
     }
     anyhow::ensure!(
-        header.frames.len() <= 16,
+        header.frames.len() <= MAX_FRAMES,
         "frame count exceeds transport limit"
     );
     let total = header
@@ -373,7 +378,7 @@ pub fn encode_frame_set(
     envelope: Option<serde_json::Value>,
 ) -> Result<Vec<u8>> {
     anyhow::ensure!(
-        set.frames.len() <= 16,
+        set.frames.len() <= MAX_FRAMES,
         "frame count exceeds transport limit"
     );
     let mut frames = Vec::new();
@@ -830,15 +835,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn unix_transport_round_trip_preserves_frame_set() {
-        let directory = tempfile::tempdir().unwrap();
-        let socket = directory.path().join("frames.sock");
-        let mut publisher = UnixFramePublisher::bind(&socket).unwrap();
-        let mut client = UnixFrameClient::connect(&socket).unwrap();
-        let frame = FrameRecord {
+    fn small_frame(sensor_name: &str) -> FrameRecord {
+        FrameRecord {
             metadata: FrameMetadata {
-                sensor_name: "camera1".into(),
+                sensor_name: sensor_name.into(),
                 sensor_kind: SensorKind::PoE,
                 sequence: 7,
                 profile: StreamProfile {
@@ -870,7 +870,39 @@ mod tests {
                 height: 1,
                 bytes: vec![1, 2, 3, 4, 5, 6],
             },
+        }
+    }
+
+    #[test]
+    fn publish_refuses_a_set_no_client_could_decode() {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("frames.sock");
+        let mut publisher = UnixFramePublisher::bind(&socket).unwrap();
+        let mut client = UnixFrameClient::connect(&socket).unwrap();
+        let set_of = |count: usize| SynchronizedFrameSet {
+            sequence: 4,
+            timestamp_basis: "normalized_unix_ns".into(),
+            timestamp_ns: 3_000,
+            maximum_skew_ns: 2,
+            frames: (0..count)
+                .map(|index| {
+                    let name = format!("camera{index}");
+                    (name.clone(), small_frame(&name))
+                })
+                .collect(),
         };
+        assert_eq!(publisher.publish(&set_of(MAX_FRAMES)).unwrap(), 1);
+        assert_eq!(client.recv().unwrap().frames.len(), MAX_FRAMES);
+        assert!(publisher.publish(&set_of(MAX_FRAMES + 1)).is_err());
+    }
+
+    #[test]
+    fn unix_transport_round_trip_preserves_frame_set() {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("frames.sock");
+        let mut publisher = UnixFramePublisher::bind(&socket).unwrap();
+        let mut client = UnixFrameClient::connect(&socket).unwrap();
+        let frame = small_frame("camera1");
         let set = SynchronizedFrameSet {
             sequence: 4,
             timestamp_basis: "normalized_unix_ns".into(),

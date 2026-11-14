@@ -55,7 +55,7 @@ def _open_args(p):
                    help="the window's row cap, an absolute size (default 1GB; the station's portrait demo page "
                         "uses 4GB); the unit's hard MemoryMax is this plus 1 GiB")
     p.add_argument("--restart", action="store_true",
-                   help="close a running window first: a window never reconnects to a hub that restarted")
+                   help="close a running window first, to open it with a new cap or on a new path to the hub")
     p.add_argument("--fullscreen", action="store_true",
                    help="fill the display (no title or top bar) once the window maps, and give the focus back "
                         "to the window that held it: the station's demo page behind its agent terminal")
@@ -66,6 +66,11 @@ def _open_args(p):
       invariants=INV + ("The window runs as the transient user unit tatbot-viewer-window (systemd-run --user, "
                         "MemoryMax = the cap + 1 GiB); a running window is left as it is, so a second open "
                         "is a no-op, unless --restart closes it first.",
+                        "The unit keeps the window on its hub (rerun_session::keep_window): 15 s without a "
+                        "connection from the unit, or without the hub answering, closes it, and it opens again "
+                        "once the hub answers, behind the focused window, on the same proxy. A window that "
+                        "closes by itself ends the unit, except the fullscreen demo page, which comes back; "
+                        "`viewer stop` (and rig sleep) ends both.",
                         "Once it maps the window is maximized, or with --fullscreen made fullscreen, by an EWMH "
                         "request to the X11 window manager (scripts/lib/x11_window.py): no key is typed and a "
                         "window already in that state is not asked again; nothing happens off X11.",))

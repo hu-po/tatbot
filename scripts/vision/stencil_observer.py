@@ -91,11 +91,24 @@ def window(pixels, shape, margin_px=32):
             min(width, int(np.ceil(hi[0] + pad)) + 1), min(height, int(np.ceil(hi[1] + pad)) + 1))
 
 
+def placed(found, camera, root_from_camera, capture_ns, page_m):
+    """One sheet of the print as rgbd_pose placed it in `camera`, in the root."""
+    pose = root_from_camera @ found['camera_from_target']
+    return {'camera': camera, 'anchors': found['markers'], 'loo_rms_m': found['rms_m'], 'pose': pose,
+            'corners': page_corners(pose, page_m, PAGE_CORNERS_UV), 'capture_ns': int(capture_ns),
+            'pixels': found['pixels'],
+            'anchor_points': found['points_camera'] @ root_from_camera[:3, :3].T + root_from_camera[:3, 3],
+            'translation_sigma_m': max(TRANSLATION_SIGMA_M, found['rms_m']), 'rotation_sigma_rad': ROTATION_SIGMA_RAD,
+            'markers': {'read': found['markers'], 'seen': found['seen'], 'ids': found['ids'],
+                        'rms_m': found['rms_m']}}
+
+
 def marker_anchor(views, tile, reading, page_m, windows=None):
-    """(the tile placed by its markers in the fixed RGB-D view that reads the most of them, None) or (None, why).
-    `views`: {name: (frame, root_from_camera)}; `reading`: rgbd_pose's detector arguments (overhead_reading).
-    `windows` ({view: (x0, y0, x1, y1)}, updated): read each view first in the window about last turn's placement
-    there, then in the whole frame when that places nothing. On the ros node the upsampled small-marker reading
+    """(the tile placed by its markers in the fixed RGB-D view that reads the most of them, None) or (None, why), its
+    'copies' the other sheets of the print in that view. `views`: {name: (frame, root_from_camera)}; `reading`:
+    rgbd_pose's detector arguments (overhead_reading). `windows` ({view: (x0, y0, x1, y1)}, updated): read each view
+    first in the window about last turn's placement there, then in the whole frame when that places nothing; a turn
+    that read copies keeps no window, which would hide all but one. On the ros node the upsampled small-marker reading
     took 250 ms and 0.67 s of CPU a turn over the whole frame, 55 ms and 0.2 s in the window (the plain reading 45
     ms and 0.17 s; 2026-10-19)."""
     best, reasons = None, []
@@ -109,7 +122,7 @@ def marker_anchor(views, tile, reading, page_m, windows=None):
         found = tile_stencil.rgbd_pose(frame['image'], rgbd['depth_m'], rgbd['rays'], tile, roi_xyxy=roi, **reading)
         if roi is not None and not found['found']:
             found = tile_stencil.rgbd_pose(frame['image'], rgbd['depth_m'], rgbd['rays'], tile, **reading)
-        if windows is not None and found['found']:
+        if windows is not None and found['found'] and not found['copies']:
             windows[name] = window(found['pixels'], frame['image'].shape)
         if not found['found']:
             reasons.append(f"{name}: {found['reason']}")
@@ -118,36 +131,40 @@ def marker_anchor(views, tile, reading, page_m, windows=None):
     if best is None:
         return None, '; '.join(reasons) or 'no fixed RGB-D view'
     name, found, root_from_camera, stamp = best
-    pose = root_from_camera @ found['camera_from_target']
-    corners = page_corners(pose, page_m, PAGE_CORNERS_UV)
-    return {'camera': name, 'anchors': found['markers'], 'loo_rms_m': found['rms_m'], 'pose': pose,
-            'corners': corners, 'capture_ns': int(stamp), 'pixels': found['pixels'],
-            'anchor_points': found['points_camera'] @ root_from_camera[:3, :3].T + root_from_camera[:3, 3],
-            'translation_sigma_m': max(TRANSLATION_SIGMA_M, found['rms_m']), 'rotation_sigma_rad': ROTATION_SIGMA_RAD,
-            'markers': {'read': found['markers'], 'seen': found['seen'], 'ids': found['ids'],
-                        'rms_m': found['rms_m']}}, None
+    return {**placed(found, name, root_from_camera, stamp, page_m),
+            'copies': [placed(copy, name, root_from_camera, stamp, page_m) for copy in found['copies']]}, None
+
+
+def support_of(anchor, reason, bundle_id):
+    """What a target stands on: its anchor's markers, corners and sigmas, else the reason it has none."""
+    measured = anchor is not None
+    return {'schema': SUPPORT_SCHEMA, 'anchor_camera': anchor['camera'] if measured else None,
+            'anchors': anchor['anchors'] if measured else 0, 'loo_p95_m': None,
+            'loo_rms_m': anchor['loo_rms_m'] if measured else None,
+            'model': 'fiducial_markers' if measured else None, 'method': 'fiducial_markers' if measured else None,
+            'translation_sigma_m': anchor['translation_sigma_m'] if measured else None,
+            'rotation_sigma_rad': anchor['rotation_sigma_rad'] if measured else None,
+            'sigma_method': 'fiducial markers on the depth under them (registration bias floor)' if measured else None,
+            'corners_m': anchor['corners'].tolist() if measured else None,
+            'clear_corners_m': anchor['corners'].tolist() if measured else None,
+            # markers.ids[k] names anchor_points_m[4k:4k+4], each corner on its ray at its own depth, and
+            # anchor_pixels[4k:4k+4], where it was read in the anchor camera's image (pixel centres at integers)
+            'anchor_points_m': anchor['anchor_points'].tolist() if measured else [],
+            'anchor_pixels': np.round(anchor['pixels'], 1).tolist() if measured else [],
+            'markers': anchor['markers'] if measured else None, 'cameras': {},
+            'reason': reason, 'motion_authority': False, 'reference_physical_instance_id': None,
+            'physical_instance_id': None, 'physical_instance_identity_verified': False,
+            'physical_instance_capture_ns': None, 'bundle_id': bundle_id}
 
 
 def target(pattern, manifest, anchor, reason, bundle_id):
-    """One print's published target: measured from its anchor, else lost with the reason."""
+    """One print's published target: measured from its anchor, else lost with the reason. The print's other sheets in
+    view ride in its support as `copies`, each a pose, its sigmas and a support of its own."""
     measured = anchor is not None
-    support = {'schema': SUPPORT_SCHEMA, 'anchor_camera': anchor['camera'] if measured else None,
-               'anchors': anchor['anchors'] if measured else 0, 'loo_p95_m': None,
-               'loo_rms_m': anchor['loo_rms_m'] if measured else None,
-               'model': 'fiducial_markers' if measured else None, 'method': 'fiducial_markers' if measured else None,
-               'translation_sigma_m': anchor['translation_sigma_m'] if measured else None,
-               'rotation_sigma_rad': anchor['rotation_sigma_rad'] if measured else None,
-               'sigma_method': 'fiducial markers on the depth under them (registration bias floor)' if measured else None,
-               'corners_m': anchor['corners'].tolist() if measured else None,
-               'clear_corners_m': anchor['corners'].tolist() if measured else None,
-               # markers.ids[k] names anchor_points_m[4k:4k+4], each corner on its ray at its own depth, and
-               # anchor_pixels[4k:4k+4], where it was read in the anchor camera's image (pixel centres at integers)
-               'anchor_points_m': anchor['anchor_points'].tolist() if measured else [],
-               'anchor_pixels': np.round(anchor['pixels'], 1).tolist() if measured else [],
-               'markers': anchor['markers'] if measured else None, 'cameras': {},
-               'reason': reason, 'motion_authority': False, 'reference_physical_instance_id': None,
-               'physical_instance_id': None, 'physical_instance_identity_verified': False,
-               'physical_instance_capture_ns': None, 'bundle_id': bundle_id}
+    support = support_of(anchor, reason, bundle_id)
+    support['copies'] = [{'world_from_target': copy['pose'].tolist(), 'translation_sigma_m': copy['translation_sigma_m'],
+                          'rotation_sigma_rad': copy['rotation_sigma_rad'], 'support': support_of(copy, None, bundle_id)}
+                         for copy in (anchor['copies'] if measured else [])]
     return {'pattern_id': pattern, 'reference_id': manifest['reference_id'], 'reference_physical_instance_id': None,
             'physical_instance_id': None, 'physical_instance_identity_verified': False,
             'physical_instance_capture_ns': None, 'seed': str(manifest['seed']), 'target_frame': 'world',

@@ -1,17 +1,17 @@
-"""`python3 -m tatbot_description [--arms right] [--hardware mock|fake|real] [-o FILE]`: print the URDF.
+"""`python3 -m tatbot_description [--arms ARMS] [--hardware mock|fake|real] [-o FILE]`: print the URDF.
 
 For check_urdf and inspection; the launch builds the same text in process.
 """
 import argparse
 import sys
 
-from tatbot_description import robot_description
+from tatbot_description import drawing_arm, robot_description
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python3 -m tatbot_description")
     parser.add_argument("--repo", default=None, help="checkout holding urdf/ and config/ (default $TATBOT_REPO)")
-    parser.add_argument("--arms", default="right", help="comma list")
+    parser.add_argument("--arms", default=None, help="comma list (default: the drawing arm, stack.yaml arms)")
     parser.add_argument("--hardware", choices=("mock", "fake", "real"), default=None,
                         help="add <ros2_control> (default: kinematics only)")
     parser.add_argument("--registration", action="append", default=[], metavar="ARM=PATH",
@@ -19,7 +19,7 @@ def main(argv=None) -> int:
     parser.add_argument("-o", "--output", default="-")
     ns = parser.parse_args(argv)
     registrations = dict(item.split("=", 1) for item in ns.registration)
-    text = robot_description(ns.repo, arms=tuple(ns.arms.split(",")), hardware=ns.hardware,
+    text = robot_description(ns.repo, arms=tuple((ns.arms or drawing_arm(ns.repo)).split(",")), hardware=ns.hardware,
                              registrations=registrations or None)
     if ns.output == "-":
         sys.stdout.write(text + "\n")

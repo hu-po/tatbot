@@ -23,6 +23,7 @@ can read back.
 | --- | --- |
 | describe a placement, such as **on the left forearm** | resolve an exact spot with InkLang; choose from buttons if the wording is ambiguous |
 | click a design, then click the body | place it — a ghost follows your pointer until you click |
+| **Import art** | bring your own design as a PNG or JPEG |
 | **A** / **D** | rotate on the skin (hold **Shift** for bigger steps) |
 | **W** / **S** | make it larger / smaller |
 | **Enter** or ✓ Accept | keep it and pick the next one |
@@ -30,9 +31,9 @@ can read back.
 | click a placed tattoo | select it again — sliders and mirror are in the sidebar |
 | ♂ / ♀ and the colour dots | switch body, change skin tone (natural or otherwise) |
 | drag the background | orbit; scroll to zoom |
-| download JSON / load JSON | save your layout and bring it back later |
+| **File** | save a project backup and bring it back later, or export a tattoo brief |
 
-Placing and saving happen in your browser; the JSON file is written to your
+Placing and saving happen in your browser; your art and files stay on your
 own computer.
 
 InkLang is the placement system behind the description box. It normalizes the
@@ -44,12 +45,14 @@ also works; its design words and placement clause stay separate internally.
 
 ## What is in a saved layout
 
-Each tattoo is stored as a **surface anchor** — a spot on the body mesh — plus
-a rotation and a size in millimetres, and the file records exactly which body
-it was made on. The original placement description, normalized meaning, and
-body-surface resolution travel with that anchor. That is deliberately not a
-picture. A layout is a sketch, not a robot instruction, reachability result, or
-contact qualification. Nothing here operates a machine or tattoos a person.
+Each tattoo is stored as its design's image plus a **surface anchor** — a spot
+on the body mesh — a rotation and a size in millimetres, and the file records
+exactly which body it was made on. The original placement description,
+normalized meaning, and body-surface resolution travel with that anchor. The
+robot's strokes are not made here: Tatbot's art pipeline makes them later from
+the image, at the size you chose. A layout is a sketch, not a robot
+instruction, reachability result, or contact qualification. Nothing here
+operates a machine or tattoos a person.
 
 ## Credits
 
@@ -60,8 +63,8 @@ contact qualification. Nothing here operates a machine or tattoos a person.
   (c) Meta Platforms, Inc. and affiliates), both Apache-2.0. It is not a scan
   of anyone.
 - Rendering: [three.js](https://threejs.org/) via React Three Fiber.
-- Designs: a handful of placeholder line drawings; the point is the placement,
-  not the flash.
+- Designs: three flash designs generated with Google Flow and kept by the
+  Tatbot team. They are not public domain and no licence is granted.
 
 Made by [Tatbot](https://tatbot.ai) · code on
 [GitHub](https://github.com/hu-po/tatbot) · hello@tatbot.ai

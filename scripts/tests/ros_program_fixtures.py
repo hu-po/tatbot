@@ -3,8 +3,8 @@ from tatbot_contracts.ros_fitted import fitted_resource
 
 
 def program():
-    tool = {'id': 'ball', 'ink': 'cartridge', 'datasheet_sha256': 'a'*64,
-            'line_width_m': .0005, 'line_width_status': 'measured', 'substrates': ['paper'],
+    tool = {'id': 'refill', 'ink': 'cartridge', 'datasheet_sha256': 'a'*64,
+            'line_width_m': .0005, 'line_width_status': 'measured', 'substrates': ['flat'],
             'stroke_mm': None, 'tip_out_at_top_mm': None, 'cartridge_activation': {'action': 'exchange'}}
     resource = fitted_resource(tool, 'press')
     preparation = {'schema': 'tatbot-preparation/2', 'adapter': 'dbv3-paths-to-ros/2', 'motion_sha256': 'b'*64,

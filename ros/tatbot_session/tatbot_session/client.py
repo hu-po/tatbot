@@ -1,11 +1,12 @@
 """`ros2 run tatbot_session client <verb> ...`: what `tatbot ros draw|touch|decide|status` run on the arm node.
 
-    client draw PROGRAM [--arm right] [--from-op ID] [--run-id ID]   # PROGRAM may be '' with --run-id
-    client touch [--arm right]                                       # three page touches, the plane
-    client jog --joint N --delta D [--arm right] [--speed RAD_S]     # one joint from its measured position
+    client draw PROGRAM [--arm ARM] [--from-op ID] [--run-id ID]     # PROGRAM may be '' with --run-id
+    client touch [--arm ARM]                                         # three page touches, the plane
+      draw and touch: [--sheet-at=X,Y]   the page is the sheet nearest this point, mm in <arm>/base_link
+    client jog --joint N --delta D [--arm ARM] [--speed RAD_S]       # one joint from its measured position
     client decide ARM continue|land|skip|redraw
-    client land [--arm right]
-    client wake --arm right                                          # a landed arm back, the other untouched
+    client land [--arm ARM]                                          # --arm: the drawing arm (stack.yaml arms)
+    client wake --arm ARM                                            # a landed arm back, the other untouched
     client cancel                                                    # every draw/touch goal; the arm holds
     client status [--json]
 
@@ -35,9 +36,9 @@ from action_msgs.msg import GoalStatus
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
-from tatbot_description import names
+from tatbot_description import drawing_arm, names
 from tatbot_interfaces.action import Draw, Land, Touch
-from tatbot_interfaces.msg import Event, SafetyState
+from tatbot_interfaces.msg import Event, Page, SafetyState
 from tatbot_interfaces.srv import Decide
 
 from tatbot_session import config, geometry, rules
@@ -48,6 +49,7 @@ PHASES = {v: k[6:].lower() for k, v in vars(Draw.Feedback).items() if k.startswi
 DECISIONS = {"continue": Decide.Request.CONTINUE, "land": Decide.Request.LAND, "skip": Decide.Request.SKIP,
              "redraw": Decide.Request.REDRAW}
 WAKE_S = 0.2   # the longest a signal waits for its handler
+SHEET_WAIT_S = 30.0   # --sheet-at: how long the overhead may take to measure the chosen sheet
 
 
 def _print_event(msg: Event) -> None:
@@ -156,7 +158,49 @@ def _cancel_all(node: Node, args) -> int:
     return 0
 
 
+def _choose_sheet(node: Node, arm: str, at: str) -> bool:
+    """Make the sheet of the print nearest `at` (x,y mm in <arm>/base_link) the page: the bridge's page_at
+    (tatbot_bridge.page.PageChooser.choose_at). Then wait until the bridge measures it there, so that the session never
+    starts from the page before, whose last pose still counts as current."""
+    from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+    from rcl_interfaces.srv import SetParameters
+
+    if not arm:
+        print("--sheet-at needs --arm: the point is in that arm's base", file=sys.stderr)
+        return False
+    seen = []
+    sub = node.create_subscription(Page, names.PAGE_TOPIC, seen.append, 10)
+    value = ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=f"{arm},{at}")
+    try:
+        answer = _call(node, SetParameters, f"/{names.BRIDGE_NODE}/set_parameters",
+                       SetParameters.Request(parameters=[Parameter(name="page_at", value=value)])).results[0]
+        if not answer.successful:
+            print(f"--sheet-at {at}: {answer.reason}", file=sys.stderr)
+            return False
+        # A frame exposed after the bridge took the choice is drained after it too, so it is chosen anew.
+        since, deadline = time.time_ns(), time.monotonic() + SHEET_WAIT_S
+        while time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=WAKE_S)
+            if any(msg.source == Page.SOURCE_MEASURED and _stamp_ns(msg.pose.header.stamp) > since for msg in seen):
+                return True
+        print(f"--sheet-at {at}: the overhead read no sheet of the print within page.copies same_m of it in "
+              f"{SHEET_WAIT_S:.0f} s; `tatbot ros page` says where the sheets in view stand (the arm may hide one)",
+              file=sys.stderr)
+        return False
+    except RuntimeError as error:
+        print(f"--sheet-at: {error}", file=sys.stderr)
+        return False
+    finally:
+        node.destroy_subscription(sub)
+
+
+def _stamp_ns(stamp) -> int:
+    return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
+
+
 def _draw(node: Node, args) -> int:
+    if args.sheet_at and not _choose_sheet(node, args.arm, args.sheet_at):
+        return 2
     program = Path(args.program).read_text() if args.program else ""
     goal = Draw.Goal(program_json=program, arms=[args.arm] if args.arm else [], from_op=args.from_op,
                      run_id=args.run_id)
@@ -176,7 +220,7 @@ def _draw(node: Node, args) -> int:
             print(json.dumps({"ok": ok, "done": result.done, "skipped": result.skipped,
                               "uncertain": list(result.uncertain), "run_id": result.run_id, "run_dir": result.run_dir,
                               "message": result.message}))
-        swap = None if ok or cancelled or result is None else _swap(result.run_dir, args.arm)
+        swap = None if ok or cancelled or result is None else _swap(result.run_dir)
         if swap is None:
             return 0 if ok else 1
         arm, text = swap
@@ -187,15 +231,16 @@ def _draw(node: Node, args) -> int:
         goal = Draw.Goal(program_json="", arms=[arm], from_op="", run_id=result.run_id)
 
 
-def _swap(run_dir: str, arm: str) -> tuple[str, str] | None:
+def _swap(run_dir: str) -> tuple[str, str] | None:
     """(arm, what to fit) when the run stopped at a cartridge swap the keypad can answer: its next op a tool change
-    left `sent` (the arm landed for it) on an arm stack.yaml gives the keypad; else None."""
+    left `sent` (the arm landed for it) while stack.yaml runs a keypad, which serves the arm the stack drives, the
+    program's; else None."""
     keypad = config.load_stack().get("keypad") or {}
     run = Path(run_dir or "")
-    if not keypad.get("port") or not (run / "program.json").is_file() or arm not in ("", keypad.get("arm")):
+    if not keypad.get("port") or not (run / "program.json").is_file():
         return None
-    arm = keypad["arm"]
-    ops, rows = json.loads((run / "program.json").read_text())["ops"], ledger_mod.read(run / "ledger.jsonl")
+    program = json.loads((run / "program.json").read_text())
+    arm, ops, rows = program["arm"], program["ops"], ledger_mod.read(run / "ledger.jsonl")
     index = ledger_mod.next_index(ops, rows, arm)
     if index is None or ops[index]["op"] != "tool_change" or ledger_mod.op_status(rows, arm, ops[index]["id"]) != "sent":
         return None
@@ -238,6 +283,8 @@ def _touch_goal(args) -> Touch.Goal:
 
 
 def _touch(node: Node, args) -> int:
+    if args.sheet_at and not _choose_sheet(node, args.arm, args.sheet_at):
+        return 2
     ok, result, _ = _run_goal(node, Touch, names.TOUCH_ACTION, _touch_goal(args))
     if result is not None:
         print(json.dumps({"ok": ok, "tripped": result.tripped, "plane": list(result.plane),
@@ -358,25 +405,36 @@ def _goal_running(node: Node, arm: str) -> bool:
     return bool(seen) and any(g.status in active for g in seen[-1].status_list)
 
 
-def _inspect_views(io, kin, cam, used, centre, extent, frame, out_dir, args):
-    """Visit the inspect poses: aim, move, settle, grab and rectify. Returns (views, poses), or (None, [])
-    when a move does not finish."""
-    import cv2
-    import numpy as np
+def _inspect_self_gap(arm: str):
+    """How far `arm` at joints q stands from itself (tatbot_motion.collision.Guard.self_gap), or None, said on stderr,
+    when no registration places it. The inspection's moves go through this process's ArmIO, not the session's guarded
+    goals, so its view choice checks each view and its joint way against the arm itself (inspect.path_clear). This
+    process reads the installed stack.yaml, whose `arms` is the WXAI's, not the launch's, so the guard is built for
+    the arm the inspection drives (2026-11-10: the xArm's look at the chicano TATBOT found no rest of its own,
+    KeyError 'xarm')."""
     from tatbot_description import repo_root
     from tatbot_motion import load_motion
     from tatbot_motion.collision import Guard
 
     from tatbot_session import config
+
+    guard, why = Guard.from_stack(repo_root(None), {**config.load_stack(), "arms": [arm]}, load_motion())
+    if guard is None:
+        print(f"inspect: views chosen WITHOUT a self-collision check: {why}", file=sys.stderr)
+        return None
+    return lambda q: guard.self_gap(arm, q)
+
+
+def _inspect_views(io, kin, cam, used, centre, extent, frame, out_dir, args):
+    """Visit the inspect poses: aim, move, settle, grab and rectify. Returns (views, poses), or (None, [])
+    when a move does not finish."""
+    import cv2
+    import numpy as np
+
     from tatbot_session import inspect as ins
     from tatbot_session.ready import joint_move, solve_ik
 
-    # These moves go through this process's ArmIO, not the session's guarded goals: the choice checks each view
-    # and its joint way against the arm itself (inspect.path_clear).
-    guard, why = Guard.from_stack(repo_root(None), config.load_stack(), load_motion())
-    if guard is None:
-        print(f"inspect: views chosen WITHOUT a self-collision check: {why}", file=sys.stderr)
-    self_gap = None if guard is None else (lambda q: guard.self_gap(args.arm, q))
+    self_gap = _inspect_self_gap(args.arm)
     views, poses = [], []
     best = None
     for n in range(max(1, args.poses)):
@@ -418,14 +476,16 @@ def _inspect_views(io, kin, cam, used, centre, extent, frame, out_dir, args):
 
 def _rest(io, kin, args) -> None:
     """Back to the rest (sleep) pose by a joint move, motors holding: inspect never leaves the arm up."""
-    from tatbot_session import inspect as ins
+    import numpy as np
+
     from tatbot_session.ready import joint_move
 
     if kin is None or io.latched or not args.rest:
         return
     q = io.measured()
-    rest = ins.REST.copy()
-    rest[6] = q[6]
+    rest = np.array(kin.arm_model.rest, float)
+    if kin.carriage is not None:
+        rest[kin.carriage] = q[kin.carriage]
     status, _, text = io.execute(joint_move(kin.joint_names, q, rest, max_rad_s=args.speed, max_m_s=0.002,
                                             rate_hz=100.0, kin=kin))
     print(f"{time.strftime('%H:%M:%S')} [{args.arm}] rest: {status} {text}".rstrip(), flush=True)
@@ -467,8 +527,12 @@ def _closeup_hold(io, kin, cam, used, xy, heading, cal, window, motion, cfg, arg
     hover, approach = float(cfg.get("closeup_hover_m", 0.012)), float(cfg.get("closeup_approach_m", 0.040))
     above = geometry.tool_down_pose(used, xy, hover + approach, heading)
     q = io.measured()
-    moves = [lambda: joint_move(kin.joint_names, q, solve_ik_seeded(kin, above, q), max_rad_s=args.speed,
-                                max_m_s=0.002, rate_hz=100.0, kin=kin),
+    over = solve_ik_seeded(kin, above, q)
+    if not ins.wrist_in_range(kin, over):
+        wrist = np.round(over[list(kin.arm_model.wrist)], 2).tolist()
+        raise RuntimeError(f"close-up hold {n}: the wrist would stand at {wrist} rad, "
+                           f"outside {kin.arm_model.wrist_range_rad}: is the run's page right?")
+    moves = [lambda: joint_move(kin.joint_names, q, over, max_rad_s=args.speed, max_m_s=0.002, rate_hz=100.0, kin=kin),
              lambda: to_knots(plan_lift(q_seed=io.measured(), direction=-normal, distance_m=approach, kin=kin,
                                         motion=motion), 100.0)]
     for make in moves:
@@ -500,7 +564,7 @@ def _closeup_hold(io, kin, cam, used, xy, heading, cal, window, motion, cfg, arg
         pages, paper = [], gauge.on_paper(cam.raw_depth[0], cam.depth_metadata, frame, colors[0].shape)
         for img in colors:
             img = img.copy()
-            img[closeup.pen_mask(img) | ~paper] = 0   # the pen by its teal, and any cartridge by its depth
+            img[~paper] = 0   # the cartridge, and anything else off the paper, by its depth
             page = ins.rectify(img, here, pose, cam.k, cam.dist, window, args.px_per_mm, surface=shape)
             page[far] = 0
             pages.append(page)
@@ -564,7 +628,8 @@ def _closeup(io, kin, used, page, program, clear_m, out_dir, motion, args) -> di
         best = result["at_best_shift"]["resources"][rid]
         print(f"{time.strftime('%H:%M:%S')} [{args.arm}] close-up {rid}: ink along "
               + ("unseen" if r["ink"] is None else f"{r['ink'] * 100:.0f}%") + " of the plan; "
-              + ("" if best["ink"] is None else f"{best['ink'] * 100:.0f}% {shift[0] * 1e3:+.1f} {shift[1] * 1e3:+.1f} mm off it"),
+              + ("no shift finds more" if best["ink"] is None or not any(shift)
+                 else f"{best['ink'] * 100:.0f}% {shift[0] * 1e3:+.1f} {shift[1] * 1e3:+.1f} mm off it"),
               flush=True)
     return {"resources": result["resources"], "best_shift_m": shift}
 
@@ -593,6 +658,9 @@ def _inspect(node: Node, args) -> int:
         return 2
     page = json.loads((run / "page.json").read_text())
     program = json.loads((run / "program.json").read_text())
+    if "used" not in page:
+        print(f"{run.name}: its page set-up never finished, so there is no page to look at", file=sys.stderr)
+        return 2
     used = np.array(page["used"], dtype=float)
     stack_page = config.load_stack().get("page") or {}
     if str(page.get("pattern_id") or "").startswith("stencil-"):   # the print the run drew on (`ros up --pattern`)
@@ -660,6 +728,189 @@ def _inspect(node: Node, args) -> int:
         spinner.join(timeout=2.0)
 
 
+def _views_page(args) -> dict:
+    """What the views aim by: {"points" (page m), "pages" (base_from_page each), "run", "page" (its record),
+    "sheets" (the overhead's, recorded)}. With --overhead-pages every sheet of that print the overhead tracker reads
+    is a page (with --sheet-at the one nearest that point), its centre the point unless --points; else --points on the
+    page of the newest set-up (or --run's);
+    no points, no page: the view where the arm stands. ValueError on a bad label, point or page."""
+    from tatbot_session import views
+
+    if not views.LABEL.fullmatch(Path(args.out).name):
+        raise ValueError(f"--out {args.out}: its last part names the views, letters, digits and _ . - only")
+    points = [(x / 1000.0, y / 1000.0) for x, y in views.points_mm(args.points)]
+    if args.sheet_at and not args.overhead_pages:
+        raise ValueError("--sheet-at chooses among the sheets the overhead reads: add --overhead-pages")
+    if args.overhead_pages:
+        sheets = _overhead_sheets(args)
+        if args.sheet_at:
+            sheets = views.sheet_at(sheets, [v / 1000.0 for v in views.points_mm(args.sheet_at, "--sheet-at")[0]],
+                                    float(config.load_stack()["page"]["copies"]["same_m"]))
+        return {"points": points or [(0.0, 0.0)], "pages": [s["base_from_page"] for s in sheets], "run": None,
+                "page": {}, "sheets": sheets}
+    if not points:
+        return {"points": [], "pages": [], "run": None, "page": {}, "sheets": []}
+    run = views.page_run(Path(args.logs), args.run)
+    used, page = views.page_record(run)
+    return {"points": points, "pages": [used], "run": run, "page": page, "sheets": []}
+
+
+def _overhead_sheets(args) -> list[dict]:
+    """Every sheet of --overhead-pages's print in one measured tracker sample, as pages in the arm's base."""
+    import queue as queue_mod
+
+    import stencil_reference
+    from tatbot_bridge import page as bridge_page
+    from tatbot_bridge import stack as bridge_stack
+    from tatbot_cli import nodes
+    from tatbot_description import load_stack, repo_root
+
+    from tatbot_session import views
+
+    pattern = views.resolve_print(stencil_reference.observer_references(), args.overhead_pages)
+    world_from_base = bridge_stack.world_from_arm_base(load_stack(), args.arm)
+    if world_from_base is None:
+        raise ValueError(f"{args.arm}: no adopted registration to the overhead (tatbot ros register)")
+    bus = bridge_stack.open_bus(nodes.bus_endpoint(nodes.load(repo_root(None)), address="lan"))
+    samples: queue_mod.Queue = queue_mod.Queue()
+    sub = bus.declare_subscriber(bridge_page.topic(pattern), lambda sample: samples.put(sample.payload.to_bytes()))
+    try:
+        deadline = time.monotonic() + args.seconds
+        while time.monotonic() < deadline:
+            try:
+                sample = bridge_page.parse(samples.get(timeout=max(0.05, deadline - time.monotonic())), pattern)
+            except queue_mod.Empty:
+                break
+            if sample is not None and sample["source"] == "measured":
+                return views.sheets(sample, world_from_base)
+    finally:
+        sub.undeclare()
+        bus.close()
+    raise ValueError(f"the overhead measured no sheet of {pattern} in {args.seconds:g} s")
+
+
+def _views_overhead(args, out_dir, write) -> dict:
+    """The overhead D555's view (views.overhead) through its owner's capture on the bus."""
+    from tatbot_bridge import capture
+    from tatbot_description import repo_root
+
+    from tatbot_session import views
+
+    camera = capture.Camera(repo_root(None))
+    try:
+        return views.overhead(camera, args.frames, out_dir=out_dir, write=write, now_ns=time.time_ns)
+    finally:
+        camera.close()
+
+
+def _views(node: Node, args) -> int:
+    """The lab's views (tatbot_session.views): with --overhead the overhead D555 first, then (unless --no-wrist)
+    every wrist D405 of the arm photographing each page point from a close-up hold over it, or with no points where
+    the arm stands; frames and views.json into --out."""
+    import cv2
+    import numpy as np
+
+    if not (args.wrist or args.overhead):
+        print("views: --no-wrist leaves only the overhead: add --overhead", file=sys.stderr)
+        return 2
+    try:
+        aim = _views_page(args)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    out_dir = Path(args.out).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write = lambda path, image: cv2.imwrite(str(path), image)   # noqa: E731
+    meta = {"label": out_dir.name, "arm": args.arm, "page_run": aim["run"].name if aim["run"] else None,
+            "overhead_pages": args.overhead_pages or None, "sheet_at": args.sheet_at or None,
+            "base_from_page": [np.asarray(p).tolist() for p in aim["pages"]], "points_m": [list(p) for p in aim["points"]],
+            "sheets": [{**s, **{key: np.asarray(s[key]).tolist() for key in ("base_from_page", "world_from_page")}}
+                       for s in aim["sheets"]],
+            "frames": args.frames, "views": [], "cameras": {}, "overhead": None,
+            "taken": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if args.overhead:
+        try:
+            meta["overhead"] = _views_overhead(args, out_dir, write)
+        except Exception as error:  # noqa: BLE001 - the overhead's owner answers over the bus, or not at all
+            print(f"views: no overhead capture: {error}", file=sys.stderr)
+            return 1
+    if args.wrist:
+        code = _views_wrist(node, args, aim, out_dir, write, meta)
+        if code:
+            return code
+    (out_dir / "views.json").write_text(json.dumps(meta, indent=1) + "\n")
+    print(json.dumps({"ok": True, "dir": str(out_dir), "views": len(meta["views"]), "cameras": sorted(meta["cameras"]),
+                      "overhead": meta["overhead"] is not None, "page_run": meta["page_run"]}))
+    return 0
+
+
+def _views_wrist(node: Node, args, aim: dict, out_dir, write, meta) -> int:
+    """The wrist views into `meta` (views, cameras): the holds over every page's points (`aim`, _views_page), or the
+    view where the arm stands."""
+    import threading
+
+    import wrist_cameras
+    from rclpy.callback_groups import ReentrantCallbackGroup
+    from rclpy.executors import MultiThreadedExecutor
+    from sensor_msgs.msg import JointState
+    from tatbot_description import repo_root, robot_description
+    from tatbot_motion import Kinematics, load_motion
+
+    from tatbot_session import inspect as ins
+    from tatbot_session import views
+    from tatbot_session.arm import ArmIO
+
+    if _goal_running(node, args.arm):
+        print(f"{args.arm}: a trajectory goal is running (a draw or touch); take views after it ends", file=sys.stderr)
+        return 1
+    group = ReentrantCallbackGroup()
+    io = ArmIO(node, args.arm, group)
+    node.create_subscription(JointState, names.JOINT_STATES_TOPIC, io.on_joint_state, 20, callback_group=group)
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
+    spinner = threading.Thread(target=executor.spin, daemon=True)
+    spinner.start()
+    cameras, kin = {}, None
+    try:
+        kin = Kinematics(robot_description(None, arms=(args.arm,)), args.arm)
+        io.wait(lambda: bool(io.safety), timeout=2.0)
+        if io.latched:
+            print(f"{args.arm}: latched ({io.latch_text()}); decide first", file=sys.stderr)
+            return 1
+        cfg = (config.load_stack().get("page") or {}).get("inspect") or {}
+        hover = args.hover if args.hover is not None else float(cfg.get("closeup_hover_m", 0.012))
+        approach = float(cfg.get("closeup_approach_m", 0.040))
+        aims = views.targets(aim["pages"], aim["points"])
+        over = (views.plan(kin, aims, views.heading(aim["page"], kin.fk(io.measured())), io.measured(),
+                           height_m=hover + approach) if aims else [])
+        for camera in wrist_cameras.mounted_for_arm(repo_root(None), args.arm):
+            cameras[camera["role"]] = ins.WristCamera(serial=camera["serial"])
+        if not cameras:
+            print(f"{args.arm}: carries no wrist camera (vision.toml)", file=sys.stderr)
+            return 2
+        if aims:
+            motion = load_motion()
+            _inspect_lift(io, kin, io.measured(), aims[0][0], motion, args)
+            records = views.capture(io, kin, cameras, [used for used, _ in aims], over, approach_m=approach,
+                                    motion=motion, frames=args.frames, settle_s=args.settle, speed_rad_s=args.speed,
+                                    out_dir=out_dir, write=write)
+        else:
+            records = views.rest_view(io, kin, cameras, frames=args.frames, out_dir=out_dir, write=write)
+        meta.update(views=records, cameras={role: {"serial": cam.serial, "k": cam.k.tolist(), "dist": cam.dist.tolist()}
+                                            for role, cam in cameras.items()})
+        return 0
+    except (RuntimeError, ValueError) as error:
+        print(f"views: {error}", file=sys.stderr)
+        return 1
+    finally:
+        for cam in cameras.values():
+            cam.close()
+        if aim["pages"]:
+            _rest(io, kin, args)
+        executor.shutdown(timeout_sec=1.0)
+        spinner.join(timeout=2.0)
+
+
 def _jog(node: Node, args) -> int:
     """A quintic move of one joint by --delta from its measured position (ready.joint_move), through the
     arm's trajectory controller; an e-stop press mid-jog holds the arm like any goal. Bench M0."""
@@ -669,14 +920,15 @@ def _jog(node: Node, args) -> int:
     from rclpy.callback_groups import ReentrantCallbackGroup
     from rclpy.executors import MultiThreadedExecutor
     from sensor_msgs.msg import JointState
-    from tatbot_description import robot_description
+    from tatbot_description import arm_model, robot_description
     from tatbot_motion import Kinematics
 
     from tatbot_session.arm import ArmIO
     from tatbot_session.ready import joint_move
 
-    if not 0 <= args.joint <= 6:
-        print("--joint is 0-5 (rad) or 6 (the carriage, m)", file=sys.stderr)
+    joints = arm_model.for_arm(args.arm).n
+    if not 0 <= args.joint < joints:
+        print(f"--joint is 0-{joints - 1}, in controller order (rad; the WXAI's carriage, 6, in m)", file=sys.stderr)
         return 2
     if _goal_running(node, args.arm):
         print(f"{args.arm}: a trajectory goal is running (a draw or touch); jog after it ends", file=sys.stderr)
@@ -750,6 +1002,9 @@ def _status(node: Node, args) -> int:
     return 0 if rows else 1
 
 
+SHEET_AT = "x,y mm in <arm>/base_link: the page is the sheet of the print nearest it, from now on"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="tatbot_session client")
     sub = parser.add_subparsers(dest="verb", required=True)
@@ -758,8 +1013,10 @@ def main(argv=None) -> int:
     p.add_argument("--arm", default="")
     p.add_argument("--from-op", default="")
     p.add_argument("--run-id", default="")
+    p.add_argument("--sheet-at", dest="sheet_at", default="", help=SHEET_AT)
     p = sub.add_parser("touch")
-    p.add_argument("--arm", default="right")
+    p.add_argument("--arm", default=drawing_arm())
+    p.add_argument("--sheet-at", dest="sheet_at", default="", help=SHEET_AT)
     p.add_argument("--start", type=float, nargs=3, metavar=("X", "Y", "Z"),
                    help="one touch from this tcp position in <arm>/base_link (m), at the tool's measured orientation")
     p.add_argument("--rpy", type=float, nargs=3, metavar=("R", "P", "Y"),
@@ -773,7 +1030,7 @@ def main(argv=None) -> int:
     p.add_argument("--max-travel", dest="max_travel", type=float, default=0.0, help="m (0: motion.yaml)")
     p = sub.add_parser("inspect")
     p.add_argument("--depth-only", action="store_true", help="capture native depth at the current held pose; no motion")
-    p.add_argument("--arm", default="right")
+    p.add_argument("--arm", default=drawing_arm())
     p.add_argument("--run", default="", help="a ros-draw run id (default: the newest)")
     p.add_argument("--logs", default="~/tatbot-logs/ros-draw")
     p.add_argument("--serial", default="", help="the wrist D405 (default: stack.yaml page.locate.camera's)")
@@ -789,9 +1046,29 @@ def main(argv=None) -> int:
     p.add_argument("--no-rest", dest="rest", action="store_false", help="stay at the last camera pose")
     p.add_argument("--no-closeup", dest="closeup", action="store_false",
                    help="skip the close-up ink holds (page.inspect.closeup) after the far views")
+    p = sub.add_parser("views")
+    p.add_argument("--arm", default=drawing_arm())
+    p.add_argument("--out", required=True, help="where the frames and views.json go; its name labels the views")
+    p.add_argument("--points", default="", help="page points x,y;x,y in mm to hold over (none: the view where the arm "
+                                                "stands, no motion)")
+    p.add_argument("--run", default="", help="the ros-draw or ros-touch run whose page to aim by (default the newest)")
+    p.add_argument("--logs", default="~/tatbot-logs", help="the log root holding ros-draw and ros-touch")
+    p.add_argument("--frames", type=int, default=9)
+    p.add_argument("--settle", type=float, default=0.8)
+    p.add_argument("--speed", type=float, default=0.3, help="joint speed, rad/s")
+    p.add_argument("--lift", type=float, default=0.040, help="lift the pen to this height first, m")
+    p.add_argument("--no-rest", dest="rest", action="store_false", help="stay at the last view")
+    p.add_argument("--hover", type=float, default=None, help="the pen's height over the page at a hold, m (default "
+                                                            "page.inspect.closeup_hover_m, 0.012)")
+    p.add_argument("--overhead", action="store_true", help="the overhead D555's view too, taken first")
+    p.add_argument("--overhead-pages", default="", help="aim by the overhead tracker instead of a set-up: every sheet "
+                                                        "of this print it reads (pattern id or its leading hex)")
+    p.add_argument("--seconds", type=float, default=5.0, help="how long to wait for the tracker's sample")
+    p.add_argument("--sheet-at", dest="sheet_at", default="", help="with --overhead-pages: " + SHEET_AT)
+    p.add_argument("--no-wrist", dest="wrist", action="store_false", help="no wrist views: the arm is not used")
     p = sub.add_parser("jog")
-    p.add_argument("--arm", default="right")
-    p.add_argument("--joint", type=int, required=True, help="0-5 (rad) or 6, the carriage (m)")
+    p.add_argument("--arm", default=drawing_arm())
+    p.add_argument("--joint", type=int, required=True, help="a joint in controller order: rad (the WXAI's 6, its carriage, m)")
     p.add_argument("--delta", type=float, required=True, help="rad, or m for the carriage")
     p.add_argument("--speed", type=float, default=None, help="peak speed: rad/s (default 0.02), or m/s for the carriage (0.002)")
     p = sub.add_parser("decide")
@@ -810,8 +1087,8 @@ def main(argv=None) -> int:
     if args.verb in ("draw", "touch"):
         node.create_subscription(Event, names.EVENTS_TOPIC, _print_event, 50)
     try:
-        return {"draw": _draw, "touch": _touch, "jog": _jog, "inspect": _inspect, "decide": _decide, "land": _land,
-                "wake": _wake, "cancel": _cancel_all, "status": _status}[args.verb](node, args)
+        return {"draw": _draw, "touch": _touch, "jog": _jog, "inspect": _inspect, "views": _views, "decide": _decide,
+                "land": _land, "wake": _wake, "cancel": _cancel_all, "status": _status}[args.verb](node, args)
     finally:
         try:
             node.destroy_node()

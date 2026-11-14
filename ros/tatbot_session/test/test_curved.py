@@ -71,6 +71,27 @@ def test_a_large_drawing_gets_a_grid_of_holds_within_reach_of_every_point():
     assert curved.coverage(program, holds, 0.020) <= 0.020
 
 
+def test_holds_that_read_nothing_get_replacements_away_from_their_places_until_every_point_is_within_reach():
+    """2026-10-24: three of a design's 25 holds read nothing at any of their three places, and one left its
+    lettering 23.7 mm from every hold that did. Replacements stand clear of every failed place and bring the drawing
+    back within reach; a drawing within reach gets none."""
+    xs = np.arange(-0.0375, 0.0375 + 1e-9, 0.001)   # a 75 mm filler: rows 5 mm apart, a point every millimetre
+    program = {"ops": [{"op": "stroke", "points_m": np.c_[xs, np.full(len(xs), y)].tolist()}
+                       for y in np.arange(-0.0375, 0.0375 + 1e-9, 0.005)]}
+    holds = curved.layout(program, [0.090, 0.134], reach_m=0.020)
+    assert curved.refill(program, holds, [], 0.020, [0.090, 0.134]) is None
+    lost = int(np.argmin(np.linalg.norm(holds - [0.0125, 0.0125], axis=1)))
+    failed = [holds[lost] + [step, 0.0] for step in (0.0, 0.004, -0.004)]
+    read = [h for k, h in enumerate(holds) if k != lost]
+    assert curved.coverage(program, read, 0.020) > 0.020
+    added = []
+    while (xy := curved.refill(program, read + added, failed, 0.020, [0.090, 0.134])) is not None:
+        assert np.min(np.linalg.norm(np.asarray(failed) - xy, axis=1)) >= curved.REFILL_AVOID_M
+        added.append(xy)
+        assert len(added) <= 3
+    assert added and curved.coverage(program, read + added, 0.020) <= 0.020 - curved.REFILL_MARGIN_M
+
+
 def test_layout_holds_the_centre_first():
     program = {"ops": [{"op": "stroke", "points_m": [[-0.01, -0.015], [0.01, 0.015]]}]}
     holds = curved.layout(program, [0.043, 0.088])
@@ -78,12 +99,13 @@ def test_layout_holds_the_centre_first():
     assert pytest.approx(np.abs(holds[1:]).max(axis=0).tolist()) == [0.01, 0.015]
 
 
-def _forearm(radius=0.04):
+def _forearm(radius=0.04, half=0.03):
+    """A forearm measured out to `half` either side of its crest, and a flat page."""
     from tatbot_motion.surface import HeightField, PageSurface, fit_height
 
-    xy = np.stack(np.meshgrid(np.linspace(-0.03, 0.03, 31), np.linspace(-0.04, 0.04, 21)), -1).reshape(-1, 2)
+    xy = np.stack(np.meshgrid(np.linspace(-half, half, 31), np.linspace(-0.04, 0.04, 21)), -1).reshape(-1, 2)
     pts = np.c_[xy, np.sqrt(radius ** 2 - xy[:, 0] ** 2) - radius]
-    return PageSurface(np.eye(4), fit_height(pts, degree=4)), PageSurface(np.eye(4), HeightField())
+    return PageSurface(np.eye(4), fit_height(pts)), PageSurface(np.eye(4), HeightField())
 
 
 def test_page_to_pixel_puts_print_points_on_the_skin_and_none_where_it_faces_away():
@@ -91,7 +113,7 @@ def test_page_to_pixel_puts_print_points_on_the_skin_and_none_where_it_faces_awa
     print point is the lifted skin point's pixel, and past the flank (the skin facing away) there is none."""
     from tatbot_session import inspect as ins
 
-    forearm, flat = _forearm()
+    forearm, flat = _forearm(half=0.039)   # measured round to the flank the last point lies on
     k, dist = np.array([[600.0, 0, 320], [0, 600.0, 240], [0, 0, 1]]), np.zeros(5)
     camera = np.eye(4)
     camera[:3, :3] = np.diag([1.0, -1.0, -1.0])
@@ -252,7 +274,7 @@ def _hold(h, xy, rng, bias=0.0):
 def test_five_holds_carry_a_forearms_curve_under_a_30_mm_design(radius, taper, tilt_deg, axis_deg, within):
     """A human forearm (30-60 mm radius, tapering 3%/cm, its axis tilted along the arm, turned on its rest) under a
     30 x 30 mm design on a 40 x 60 mm print: the drawing's corners and centre (curved.layout) cover it within the
-    reach, the degree-4 field from their skin lies within 0.35 mm of it with each hold 0.2 mm off at random (0.6 with
+    reach, the field from their skin lies within 0.35 mm of it with each hold 0.2 mm off at random (0.6 with
     the camera looking across the arm), and check holds at the edges' midpoints read it well inside the 0.9 mm gate
     (stack.yaml max_loo_m). Noise-free the field is within 0.1 mm in every case: the holds are not the limit."""
     h, rng = _arm(radius, taper, tilt_deg, axis_deg), np.random.default_rng(7)
@@ -261,7 +283,7 @@ def test_five_holds_carry_a_forearms_curve_under_a_30_mm_design(radius, taper, t
     holds = curved.layout(program, [0.034, 0.054])
     assert len(holds) == 5 and curved.coverage(program, holds, 0.020) < 0.020
     reads = [_hold(h, xy, rng, bias=rng.normal(0.0, 0.0002)) for xy in holds]
-    field, report = curved.fit(np.eye(4), reads, {"degree": 4}, bounds=(0.018, 0.028))
+    field, report = curved.fit(np.eye(4), reads, bounds=(0.018, 0.028))
     grid = np.stack(np.meshgrid(np.linspace(-0.015, 0.015, 31), np.linspace(-0.015, 0.015, 31)), -1).reshape(-1, 2)
     assert np.max(np.abs(field(grid) - h(grid))) < within
     for xy in curved.check_points(holds):
@@ -283,14 +305,14 @@ def test_the_relief_is_reported_along_the_strokes_not_over_the_forearms_flanks_t
     program = {"ops": [{"op": "stroke", "id": "s", "points_m": points.tolist()}]}
     holds = curved.layout(program, [0.034, 0.054])
     reads = [_hold(h, xy, rng, bias=rng.normal(0.0, 0.0002)) for xy in holds]
-    field, report = curved.fit(np.eye(4), reads, {"degree": 4}, bounds=(0.018, 0.028), drawing=points)
+    field, report = curved.fit(np.eye(4), reads, bounds=(0.018, 0.028), drawing=points)
     gauged = [r["point"][2] for r in reads]
     assert report["relief_extent_m"] > 0.008 > 0.0015 > report["relief_m"]
     assert report["relief_m"] == pytest.approx(np.ptp(field(points)))
     assert report["gauged_m"] == pytest.approx([min(gauged), max(gauged)], abs=1e-5)   # the fitted camera turn
     assert np.max(np.abs(field(points) - h(points))) < 0.00035
     assert report["drawing_m"][0] > min(gauged) - 0.0005 and report["drawing_m"][1] < max(gauged) + 0.0005
-    _, alone = curved.fit(np.eye(4), reads, {"degree": 4}, bounds=(0.018, 0.028))
+    _, alone = curved.fit(np.eye(4), reads, bounds=(0.018, 0.028))
     assert alone["relief_m"] == alone["relief_extent_m"] == pytest.approx(report["relief_extent_m"])
     assert alone["drawing_m"] is None
 
@@ -317,7 +339,7 @@ def test_a_checks_skin_is_turned_by_the_camera_tilt_the_fit_took_out_of_the_hold
     page = geometry.translation([0.30, 0.10, 0.05])
     page[:3, :3] = _rot([0.0, 0.0, 1.0], 30.0) @ _rot([1.0, 0.0, 0.0], 8.0)
     grid = np.stack(np.meshgrid(np.linspace(-0.03, 0.03, 31), np.linspace(-0.03, 0.03, 31)), -1).reshape(-1, 2)
-    field = fit_height(np.c_[grid, np.zeros(len(grid))], degree=2)
+    field = fit_height(np.c_[grid, np.zeros(len(grid))])
     rng, tip, w = np.random.default_rng(0), np.array([0.0, 0.0, 0.010]), np.array([0.0, 0.012])
     side = np.c_[rng.uniform(0.008, 0.020, 400), rng.uniform(-0.005, 0.005, 400), np.zeros(400)]
 
@@ -348,7 +370,7 @@ def _heart_surface():
     g = np.stack(np.meshgrid(np.linspace(-0.02, 0.02, 41), np.linspace(-0.02, 0.02, 41)), -1).reshape(-1, 2)
     page = geometry.translation([0.33, 0.02, 0.07])
     page[:3, :3] = _rot([0.0, 0.0, 1.0], 30.0) @ _rot([1.0, 0.0, 0.0], 5.0)
-    return PageSurface(page, fit_height(np.c_[g, h(g)], degree=4))
+    return PageSurface(page, fit_height(np.c_[g, h(g)]))
 
 
 @pytest.mark.parametrize("tilt_m", [0.0015, 0.0025])

@@ -102,9 +102,12 @@ dip:
   # A resource activated by a rinse (tatbot-inks/3 `activation: {method: rinse, slot, ink_id}`) takes the cartridge
   # from the last ink to its own in a cap of water, no landing: one dip there with the machine running, held longer
   # than an ink dip, the tube's end at the water's declared level so the stroking needles flush it (operator,
-  # 2026-10-05).
-  rinse_dwell_s: 10.0
+  # 2026-10-05). 30 s since 2026-11-02: 10 s was too short to wash the last ink out.
+  rinse_dwell_s: 30.0
   rinse_above_ink_m: 0.0
+  # The new ink's first dip after a rinse holds this many dwell_s, so the rinsed cartridge takes up its colour
+  # (2026-11-02).
+  rinse_first_dip_dwell_x: 2.0
 
 # --- ink supply, the simulator's volume model (scripts/lib/ink_spec.py) -----
 # Guesses (operator, 2026-08-28) the simulator and `tatbot ink` read; the ROS

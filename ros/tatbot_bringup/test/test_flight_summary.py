@@ -3,7 +3,10 @@ import importlib.util
 from pathlib import Path
 
 import numpy as np
+from tatbot_description import arm_model
 
+WXAI = arm_model.load("trossen-wxai")
+XARM = arm_model.load("ufactory-xarm7")
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "flight_summary.py"
 spec = importlib.util.spec_from_file_location("flight_summary", SCRIPT)
 fs = importlib.util.module_from_spec(spec)
@@ -35,7 +38,7 @@ def test_summary_of_a_synthetic_ring(tmp_path):
     ring = fs.read(path)
     assert len(ring) == n and fs.DTYPE.itemsize == 256
     assert fs.header(path) == {"version": 2, "arm": "right", "record_bytes": 256, "realtime0": 1700000000.5}
-    out = fs.summarize(ring, Kin())
+    out = fs.summarize(ring, WXAI, Kin())
     assert out["period_max_ms"] == 3.0 and out["jitter_ms"] == 0.5
     (latch,) = out["latches"]
     assert latch["reason"] == 1 and latch["estop_ok"] == 0 and latch["still_after_ms"] == 0.0
@@ -68,7 +71,23 @@ def test_tracking_splits_the_error_along_across_and_into_the_page():
     x = 0.004 * r["t"]
     r["sent_q"][:, 0], r["sent_qd"][:, 0] = x, 0.004
     r["q"][:, 0], r["q"][:, 1], r["q"][:, 2] = x - 0.0001, 0.0002, -0.0003   # Kin's tool +z points down
-    out = fs.tracking(r, Kin())
+    out = fs.tracking(r, Kin(), WXAI)
     assert out["seconds"] > 4
     assert abs(out["along_mm"]["p50"] + 0.1) < 1e-3 and abs(out["cross_mm"]["p50"] - 0.2) < 1e-3
     assert abs(out["depth_mm"]["p50"] - 0.3) < 1e-3
+
+
+def test_a_delayed_arm_is_measured_against_the_command_its_joints_answer():
+    """The xArm's joints follow the sent command its model's command_delay_s later: drawing along x at 4 mm/s they
+    trail the command of the same instant by 0.38 mm, the one they answer by nothing."""
+    n = 2000
+    r = np.zeros(n, dtype=fs.DTYPE)
+    r["t"] = np.arange(n) * 0.0025
+    r["phase"] = fs.RUNNING
+    x = 0.004 * r["t"]
+    r["sent_q"][:, 0], r["sent_qd"][:, 0], r["cmd_q"][:, 0] = x, 0.004, x
+    r["q"][:, 0] = 0.004 * (r["t"] - XARM.command_delay_s)
+    assert abs(fs.tracking(r, Kin(), XARM)["along_mm"]["p50"] + 0.004 * XARM.command_delay_s * 1000) < 1e-3
+    out = fs.summarize(r, XARM, Kin())
+    assert abs(out["tracking"]["along_mm"]["p50"]) < 1e-6 and abs(out["tip_lag_mm"]["max"]) < 1e-6
+    assert fs.answered(r, WXAI.command_delay_s) is r

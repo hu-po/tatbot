@@ -69,8 +69,6 @@
  "external": [
   "tatbot.arm-guide-owner/1",
   "tatbot.arm-registration/1",
-  "tatbot.artwork-feedback/1",
-  "tatbot.artwork-review/1",
   "tatbot.camera-intrinsics/1",
   "tatbot.capture-clock-exchange/1",
   "tatbot.capture-fresh-selection/1",
@@ -78,7 +76,6 @@
   "tatbot.d405-handeye/1",
   "tatbot.device-exposure-clock/1",
   "tatbot.draw-samples/1",
-  "tatbot.inkmap-design/1",
   "tatbot.joint-plan/1",
   "tatbot.raw-device-clock-probe/1",
   "tatbot.raw-device-clock-sample/1",

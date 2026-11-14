@@ -35,10 +35,9 @@ constexpr std::array<Vec3, 6> JOINT_AXES{{
   {0.0, 0.0, -1.0},
   {1.0, 0.0, 0.0}}};
 constexpr Vec3 TCP_IN_LINK6{0.156062, 0.0, 0.0};
-// config/workspace.yaml lutin-ballpoint-dot working tip (2026-09-19 palette calibration) transformed through
-// urdf/tatbot.urdf right/left_carriage_joint and right/tool_mount_joint into
-// link_6 at carriage=0. The carriage adds link_6-local +Y translation.
-constexpr Vec3 BALLPOINT_TIP_IN_LINK6{0.20498692817078468, 0.012312678895000949, -0.0005439999999999881};
+// Every compatible WXAI tool mount rides a +Y carriage in link 6. The tool's
+// working point is never compiled in: the samples file (or an offline caller)
+// declares it, derived from the URDF and the fitted tool's datasheet.
 constexpr Vec3 CARRIAGE_AXIS_IN_LINK6{0.0, 1.0, 0.0};
 constexpr JointPose JOINT_LOWER{
   -3.0543261909900767, 0.0, 0.0, -1.5707963267948966,
@@ -197,11 +196,6 @@ CarriageKinematicState evaluate_tool(
   return CarriageKinematicState{arm.position, arm.rotation, jacobian};
 }
 
-CarriageKinematicState evaluate_ballpoint(const JointPose & joints, double carriage_m)
-{
-  return evaluate_tool(joints, carriage_m, ToolModel{BALLPOINT_TIP_IN_LINK6, CARRIAGE_AXIS_IN_LINK6});
-}
-
 Vec3 orientation_error(const Mat3 & current, const Mat3 & target)
 {
   Vec3 error{};
@@ -337,17 +331,6 @@ std::array<double, 3> wxai_tcp_translation(const JointPose & joints)
   return evaluate(joints).position;
 }
 
-std::array<double, 3> wxai_ballpoint_tip_translation(
-  const JointPose & joints, double carriage_m)
-{
-  return evaluate_ballpoint(joints, carriage_m).position;
-}
-
-ToolModel ballpoint_tool_model()
-{
-  return ToolModel{BALLPOINT_TIP_IN_LINK6, CARRIAGE_AXIS_IN_LINK6};
-}
-
 ToolModel declared_wxai_tool_model(const std::array<double, 3> & tip_in_link6)
 {
   // The compatible WXAI tool mount rides a +Y carriage in link 6. The
@@ -355,7 +338,7 @@ ToolModel declared_wxai_tool_model(const std::array<double, 3> & tip_in_link6)
   // mimicking -Y carriage on 2026-09-17; with the old axis the seven-axis
   // solve trailed a leader hover route by 0.85 mm and snapped 33 urad off
   // the rest seed on its first sample, which the hover contract refused).
-  return ToolModel{tip_in_link6, Vec3{0.0, 1.0, 0.0}};
+  return ToolModel{tip_in_link6, CARRIAGE_AXIS_IN_LINK6};
 }
 
 std::array<double, 3> wxai_tool_tip_translation(
@@ -619,18 +602,10 @@ PathFile load_path_file(
       throw std::runtime_error("samples file: tip model differs from the independently bound tool model");
     }
     out.tool = declared_wxai_tool_model(*expected_tip_in_link6);
-  } else if (out.arm == "right") {
-    const double tip_error = norm(subtract(out.tip_in_link6, BALLPOINT_TIP_IN_LINK6));
-    if (tip_error > 1e-4) {
-      throw std::runtime_error(
-              "samples file: tip model differs from the executor's ballpoint constant by " +
-              std::to_string(tip_error * 1e3) + " mm; re-derive one of them");
-    }
-    out.tool = ballpoint_tool_model();
   } else {
-    // No other arm tool has a compiled constant: the file declares it (the Python
-    // side derives it from the URDF and the datasheet), bounded to a working
-    // point that is plausibly on a hand-held tool past the wrist.
+    // No tool has a compiled constant: the file declares it (the writer derives
+    // it from the URDF and the fitted tool's datasheet), bounded to a working
+    // point that is plausibly on a tool past the wrist.
     const double reach = norm(out.tip_in_link6);
     if (!std::isfinite(reach) || reach < 0.05 || reach > 0.45) {
       throw std::runtime_error(

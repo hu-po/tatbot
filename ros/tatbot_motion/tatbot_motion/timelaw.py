@@ -137,8 +137,12 @@ def _distance_blend(u):
     return 2.5 * u4 - 3.0 * u4 * u + u4 * u * u
 
 
-def time_law(path_length_m: float, duration_s: float, ease_s: float, period_s: float):
-    """Quintic ease-in / cruise / ease-out over arc length: (t, s, sdot), t = k*period for k = 1..ticks."""
+def time_law(path_length_m: float, duration_s: float, ease_s: float, period_s: float,
+             ease_out_s: float | None = None):
+    """Quintic ease-in / cruise / ease-out over arc length: (t, s, sdot), t = k*period for k = 1..ticks. The ease-out
+    lasts `ease_out_s` when given (a stroke whose two ends are eased differently), else `ease_s` like the ease-in."""
+    if ease_out_s is not None and ease_out_s != ease_s:
+        return _time_law_uneven(path_length_m, duration_s, ease_s, float(ease_out_s), period_s)
     if not (math.isfinite(duration_s) and duration_s > 0.0 and math.isfinite(ease_s) and ease_s > 0.0
             and ease_s * 2.0 < duration_s and math.isfinite(period_s) and period_s > 0.0):
         raise ValueError("time law needs 0 < 2*ease < duration and a positive period")
@@ -161,6 +165,35 @@ def time_law(path_length_m: float, duration_s: float, ease_s: float, period_s: f
     tail = t > duration_s - ease_s
     u = (duration_s - t[tail]) / ease_s
     s[tail] = path_length_m - cruise * ease_s * _distance_blend(u)
+    sdot[tail] = cruise * _quintic(u)
+    return t, np.clip(s, 0.0, path_length_m), sdot
+
+
+def _time_law_uneven(path_length_m: float, duration_s: float, ease_in_s: float, ease_out_s: float, period_s: float):
+    """time_law with an ease-in and an ease-out of different lengths: each covers half its cruise distance."""
+    if not (math.isfinite(duration_s) and math.isfinite(ease_in_s) and math.isfinite(ease_out_s)
+            and ease_in_s > 0.0 and ease_out_s > 0.0 and ease_in_s + ease_out_s < duration_s
+            and math.isfinite(period_s) and period_s > 0.0):
+        raise ValueError("time law needs positive eases that sum to less than the duration, and a positive period")
+    if not (math.isfinite(path_length_m) and path_length_m > 0.0):
+        raise ValueError("path length must be positive")
+    ticks = int(math.ceil(duration_s / period_s))
+    if ticks > MAX_TICKS:
+        raise ValueError(f"{ticks} ticks is outside the planner's range")
+    cruise = path_length_m / (duration_s - 0.5 * (ease_in_s + ease_out_s))
+    t = np.minimum(duration_s, np.arange(1, ticks + 1, dtype=float) * period_s)
+    s = np.empty(ticks)
+    sdot = np.empty(ticks)
+    head = t < ease_in_s
+    u = t[head] / ease_in_s
+    s[head] = cruise * ease_in_s * _distance_blend(u)
+    sdot[head] = cruise * _quintic(u)
+    body = ~head & (t <= duration_s - ease_out_s)
+    s[body] = 0.5 * cruise * ease_in_s + cruise * (t[body] - ease_in_s)
+    sdot[body] = cruise
+    tail = t > duration_s - ease_out_s
+    u = (duration_s - t[tail]) / ease_out_s
+    s[tail] = path_length_m - cruise * ease_out_s * _distance_blend(u)
     sdot[tail] = cruise * _quintic(u)
     return t, np.clip(s, 0.0, path_length_m), sdot
 
@@ -350,8 +383,9 @@ def hermite_arclength(t_knots, s_knots, v_knots, t):
     return s, np.where(h > 0.0, ds / safe, 0.0)
 
 
-def corner_time_law(poly: np.ndarray, cruise: float, ease_s: float, period_s: float, retime: Retime):
-    """The stroke law (quintic ease / cruise / ease over arc length) dilated at corners.
+def corner_time_law(poly: np.ndarray, cruise: float, ease_s: float, period_s: float, retime: Retime,
+                    ease_out_s: float | None = None):
+    """The stroke law (quintic ease / cruise / ease over arc length) dilated at corners; `ease_out_s` as time_law's.
 
     Returns (t, s, sdot, info) at t = k*period like `time_law`. Where the polyline turns, the speed is held
     to `corner_speed_limits` with ramps at `retime.corner_accel_m_s2`; elsewhere the plain law comes back
@@ -359,8 +393,11 @@ def corner_time_law(poly: np.ndarray, cruise: float, ease_s: float, period_s: fl
     poly = np.asarray(poly, float)
     arc, turn = polyline_turn_angles(poly)
     length = float(arc[-1])
-    duration = max(length / cruise + ease_s, 2.0 * ease_s + period_s)
-    t, s, sdot = time_law(length, duration, ease_s, period_s)
+    if ease_out_s is None or ease_out_s == ease_s:
+        duration = max(length / cruise + ease_s, 2.0 * ease_s + period_s)
+    else:
+        duration = max(length / cruise + 0.5 * (ease_s + ease_out_s), ease_s + ease_out_s + period_s)
+    t, s, sdot = time_law(length, duration, ease_s, period_s, ease_out_s)
     info = {"duration_s": float(t[-1]), "added_s": 0.0, "limited_vertices": 0}
     caps = corner_speed_limits(arc, turn, cruise, retime.corner_accel_m_s2, retime.window_s)
     knots, knot_caps = _refine_knots(arc, caps, KNOT_STEP_M, cruise)

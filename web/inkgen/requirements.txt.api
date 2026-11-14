@@ -1,0 +1,7 @@
+# API-only local serving; no model weights or GPU libraries required.
+# Keep these shared pins aligned with requirements.txt and requirements.txt.local.
+gradio==6.30.0
+fastapi==0.141.1
+uvicorn==0.52.4
+httpx==0.28.1
+pillow==12.3.0

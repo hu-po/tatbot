@@ -24,10 +24,10 @@ async function journey(page, width, height, label) {
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `${label}: horizontal overflow`);
   await noOverflow();
   // 1. choose
-  const tile = page.getByRole("button", { name: "dbv3-sprout", exact: true });
+  const tile = page.getByRole("button", { name: "Sun and moon", exact: true });
   if (!(await tile.count())) { await tap(page.getByRole("button", { name: "Add artwork", exact: true })); }
   await tap(tile);
-  await page.waitForFunction(() => window.__inkmap.getState().placing === "dbv3-sprout");
+  await page.waitForFunction(() => window.__inkmap.getState().placing === "sun-and-moon");
   let canvas = await rect(page, "canvas");
   assert.ok(canvas.h >= height * 0.35, `${label}: placing leaves ${canvas.h} px of body in ${height}`);
   assert.ok(!overlaps(await rect(page, ".hud"), await rect(page, ".dock")), `${label}: hint overlaps the tray`);

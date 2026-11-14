@@ -87,8 +87,8 @@ def check_plan_effects(repo: Path) -> list[str]:
 
 
 def check_help_and_dry_run(repo: Path) -> list[str]:
-    """Every verb answers --help and its example dry-runs; 229 verbs is ~460
-    isolated CLI processes, so they run concurrently -- the probes share
+    """Every verb answers --help and its example dry-runs; that is two isolated
+    CLI processes per verb, so they run concurrently -- the probes share
     nothing but the read-only checkout."""
     nmap = nodes.load(repo)
     public_checkout = not (repo / "config" / "profiles" / "tatbot.json").is_file()
@@ -108,7 +108,7 @@ def _verb_problems(repo: Path, v, nmap, public_checkout: bool) -> list[str]:
     role = example_role(v)
     role_nodes = nodes.nodes_with(nmap, role) if role else []
     node = role_nodes[0] if role_nodes else (next(iter(nmap), "") or "localnode")
-    env = {"TATBOT_NODE": node, "TATBOT_EE_TOOL": "lutin-ballpoint-dot", "TATBOT_TRAIN_ROOT": "/nonexistent"}
+    env = {"TATBOT_NODE": node, "TATBOT_EE_TOOL": "lutin-3rl-bugpin", "TATBOT_TRAIN_ROOT": "/nonexistent"}
     if public_checkout:
         env["TATBOT_PROFILE"] = "example"
     if any(a.startswith("<") for a in v.example):

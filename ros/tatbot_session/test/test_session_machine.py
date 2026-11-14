@@ -26,6 +26,15 @@ def _free_ports(n):
     return ports
 
 
+def _until(condition, timeout_s=1.0):
+    end = time.monotonic() + timeout_s
+    while not condition():
+        if time.monotonic() > end:
+            return False
+        time.sleep(0.005)
+    return True
+
+
 @pytest.fixture
 def pi():
     """The machine relay on loopback with an emulated line, and an e-stop relay feeding it at 100 Hz."""
@@ -60,6 +69,7 @@ def pi():
 
 def test_the_switch_runs_the_machine_only_while_asked_and_released_and_never_restarts_it_by_itself(pi):
     switch, line, released, button_on, stop = pi
+    assert _until(lambda: "it was asked off" in switch.why_off())   # an off the Pi took hearing the e-stop arms it
     assert switch.wait(False, 0.5) and not any(line) and machine.reply(switch)[0] is False
     assert switch.wait(True, 0.5) and line[-1] is True
     powered, age = machine.reply(switch)
@@ -74,7 +84,8 @@ def test_the_switch_runs_the_machine_only_while_asked_and_released_and_never_res
     button_on.clear()   # the e-stop relay went silent
     time.sleep(0.3)
     assert line[-1] is False and "hears no e-stop" in switch.why_off()
-    button_on.set()
+    button_on.set()   # heard again: asked off only once the Pi hears it, as an off taken before arms nothing
+    assert _until(lambda: "holds it off" in switch.why_off())
     assert switch.wait(False, 0.5) and switch.wait(True, 0.5)
     switch._stop.set()   # the session dies with the machine asked on
     time.sleep(0.35)
@@ -82,18 +93,17 @@ def test_the_switch_runs_the_machine_only_while_asked_and_released_and_never_res
     assert machine.reply(switch)[1] >= 0.3   # the newest reply is the one before the silence, and it ages
 
 
-def test_the_stack_names_the_switch_and_its_arm():
-    assert machine.from_stack({"machine": {"switch": "none", "arm": "right"}}, "right") is None
-    assert machine.from_stack({"machine": {"switch": "sim", "arm": "right"}}, "left") is None
-    assert machine.from_stack({}, "right") is None
-    sim = machine.from_stack({"machine": {"switch": "sim", "arm": "right"}}, "right")
+def test_the_stack_names_the_switch():
+    assert machine.from_stack({"machine": {"switch": "none"}}) is None
+    assert machine.from_stack({}) is None
+    sim = machine.from_stack({"machine": {"switch": "sim"}})
     assert sim.is_off()
     sim.set(True)
     assert not sim.is_off()
     assert sim.wait(True, 0.0) and sim.on
-    for bad in ({"switch": "relay", "arm": "right"}, {"switch": "pi", "arm": "right", "addr": ""}):
+    for bad in ({"switch": "relay"}, {"switch": "pi", "addr": ""}):
         with pytest.raises(ValueError):
-            machine.from_stack({"machine": bad}, "right")
+            machine.from_stack({"machine": bad})
 
 
 @pytest.mark.parametrize('condition', ['off', 'asked-on', 'reported-on', 'powered', 'old-sequence', 'stale', 'missing'])

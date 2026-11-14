@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -27,7 +30,9 @@ os.environ.pop("SPACE_ID", None)
 
 import app  # noqa: E402
 import gradio as gr  # noqa: E402
+import providers  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
+from provider_http import ProviderError  # noqa: E402
 
 
 def api() -> FastAPI:
@@ -178,3 +183,86 @@ def test_a_full_line_is_refused_busy_not_parked():
         run(scenario())
     finally:
         app.ENGINE.render_hook = None
+
+
+def test_hosted_cloud_requires_visitor_key_even_with_operator_secret(monkeypatch):
+    monkeypatch.setattr(app, "PUBLIC_SERVICE", True)
+    monkeypatch.setitem(app.CONFIG, "OPENAI_API_KEY", "dummy-operator-key")
+    monkeypatch.setattr(providers, "generate", lambda *args: pytest.fail("missing visitor key must not spend"))
+
+    async def scenario():
+        async with client() as c:
+            reply = await c.post("/api/generate", json={"provider": "openai", "subject": "a moth"})
+            assert reply.status_code == 400 and "enter your openai API key" in reply.json()["error"]
+            assert "dummy-operator-key" not in reply.text
+    run(scenario())
+
+
+def test_concurrent_visitor_keys_are_isolated_and_never_exported(monkeypatch):
+    monkeypatch.setattr(app, "PUBLIC_SERVICE", True)
+    environment = dict(os.environ)
+    seen = []
+    png = app.ENGINE.render(app.normalize_request({"subject": "a moth"}, defaults=app.ENGINE.settings)).data
+
+    def generate(request, key):
+        seen.append((request.provider, key))
+        metadata = {"provider": request.provider, "model": request.model, "seed": None, "model_revision": None,
+                    "seconds": 0, "png_sha256": "a" * 64, "source_media_type": "image/png"}
+        return providers.RemoteResult(png, png, "image/png", metadata)
+
+    monkeypatch.setattr(providers, "generate", generate)
+
+    async def scenario():
+        async with client() as c:
+            replies = await asyncio.gather(*[
+                c.post("/api/generate", json={"provider": "openai", "subject": "a moth"},
+                       headers={"X-Provider-Key": f"dummy-visitor-{n}", "X-Forwarded-For": f"198.51.100.2{n}"})
+                for n in range(2)])
+            assert all(reply.status_code == 200 for reply in replies)
+            assert all("dummy-visitor" not in reply.text for reply in replies)
+            assert all(reply.json()["seed"] is None and reply.json()["source_base64"] for reply in replies)
+    run(scenario())
+    assert sorted(seen) == [("openai", "dummy-visitor-0"), ("openai", "dummy-visitor-1")]
+    page = app.page_generate("a moth", True, None, page_request("198.51.100.23"),
+                             "openai", providers.MODELS["openai"][0], "dummy-page-key")
+    assert "dummy-page-key" not in json.dumps(page[2])
+    assert "dummy-page-key" not in Path(page[4].value["path"]).read_text()
+    assert Path(page[7].value["path"]).read_bytes() == png
+    assert dict(os.environ) == environment
+
+
+@pytest.mark.parametrize("status", [401, 402])
+def test_provider_failure_is_returned_without_fallback_or_local_draw(monkeypatch, status):
+    calls = len(app.ENGINE.calls)
+
+    def fail(request, key):
+        raise ProviderError("provider requires account access or credits", status)
+
+    monkeypatch.setattr(providers, "generate", fail)
+
+    async def scenario():
+        async with client() as c:
+            reply = await c.post("/api/generate", json={"provider": "fal", "subject": "a moth"},
+                                 headers={"X-Provider-Key": "dummy-invalid-key", "X-Forwarded-For": "198.51.100.24"})
+            assert reply.status_code == status and "dummy-invalid-key" not in reply.text
+    run(scenario())
+    assert len(app.ENGINE.calls) == calls
+
+
+def test_provider_change_clears_the_password_and_preserves_its_type():
+    update = app.provider_controls("openai")
+    assert update[1]["value"] == "" and update[1]["visible"] is True
+    assert "type" not in update[1], "a partial update must not change password into a text field"
+    assert app.api_key.type == "password" and app.api_key.value == ""
+    assert app.key_timer.value == 900
+
+
+def test_api_only_startup_does_not_load_local_weights():
+    env = dict(os.environ, INKGEN_PROVIDER="openai", GRADIO_ANALYTICS_ENABLED="False")
+    env.pop("INKGEN_FAKE_ENGINE", None)
+    env.pop("SPACE_ID", None)
+    command = ("import app; assert app.DEFAULT_PROVIDER == 'openai'; "
+               "assert not app.ENGINE.loaded; assert not app.FAKE_ENGINE; print('api-only startup passed')")
+    result = subprocess.run([sys.executable, "-c", command], cwd=Path(app.__file__).parent,
+                            env=env, capture_output=True, text=True, timeout=15, check=True)
+    assert "api-only startup passed" in result.stdout

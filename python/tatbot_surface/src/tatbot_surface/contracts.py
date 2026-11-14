@@ -1,4 +1,4 @@
-"""Strict reader for v6 body placements bound to the reference SOMA surface.
+"""Strict reader for v7 body placements bound to the reference SOMA surface.
 
 A placement addresses the body by canonical face and barycentric point. The
 shared helpers here (body binding, anchors, affine matrices) are the one
@@ -13,7 +13,8 @@ import math
 from pathlib import Path
 from typing import Any, NoReturn
 
-from tatbot_surface.artwork import validate_artwork_record
+from tatbot_contracts.art import validate_art_record
+
 from tatbot_surface.gltf_surface import (
     MODEL_ID,
     MODEL_SPEC_SHA256,
@@ -21,7 +22,7 @@ from tatbot_surface.gltf_surface import (
     TOPOLOGY_SHA256,
 )
 
-PLACEMENT_CURRENT = 6
+PLACEMENT_CURRENT = 7
 IDENTITY_SHA256 = "ed4b000260e5e5598ea00848b6f664a828a241e1791afa292e12b8db54d1a993"
 REST_ASSET_PATH = "bodies/mhr-soma-v1.glb"
 REST_ASSET_SHA256 = "e0431426524852e6e9822b9fef8401537da8887796aed5521f1abfccb4a9a716"
@@ -145,7 +146,7 @@ def _designs(value: object, kind: str) -> dict[str, Any]:
     for design_id, artwork in value.items():
         if not isinstance(design_id, str) or not design_id:
             _fail(kind, "design entries need nonempty IDs")
-        validate_artwork_record(artwork)
+        validate_art_record(artwork)
     return value
 
 

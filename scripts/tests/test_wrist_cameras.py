@@ -31,18 +31,19 @@ def write_config(root, entries):
 
 @pytest.fixture
 def rig(tmp_path):
-    # The pink wrist's two D405s (2026-10-23), here on two USB owners.
+    # The WXAI wrist's two D405s (2026-10-23), here on two USB owners.
     entries = [
-        {'name': 'depth-a', 'serial': 'device-a', 'role': 'wrist_lower', 'group': 'd405', 'arm': 'right',
+        {'name': 'depth-a', 'serial': 'device-a', 'role': 'wrist_1', 'group': 'd405', 'arm': 'right',
          'owner_role': 'lower-cameras', 'optical_frame': 'right/realsense_lower_color_optical_frame',
          'depth_optical_frame': 'right/realsense_lower_depth_optical_frame'},
-        {'name': 'depth-b', 'serial': 'device-b', 'role': 'wrist_upper', 'group': 'd405', 'arm': 'right',
+        {'name': 'depth-b', 'serial': 'device-b', 'role': 'wrist_2', 'group': 'd405', 'arm': 'right',
          'owner_role': 'realsense', 'optical_frame': 'right/realsense_color_optical_frame',
          'depth_optical_frame': 'right/realsense_depth_optical_frame'},
     ]
     write_config(tmp_path, entries)
     (tmp_path / 'config').mkdir()
     shutil.copyfile(REPO / 'config/arms.json', tmp_path / 'config/arms.json')
+    shutil.copytree(REPO / 'config/arm-models', tmp_path / 'config/arm-models')   # each arm's model names its URDF
     (tmp_path / 'urdf').mkdir()
     shutil.copyfile(REPO / 'urdf/tatbot.urdf', tmp_path / 'urdf/tatbot.urdf')
     (tmp_path / 'config/nodes.json').write_text(json.dumps({
@@ -64,7 +65,7 @@ def test_descriptions_resolve_without_device_ownership_and_keep_physical_arms(ri
     root, _ = rig
     (root / 'config/nodes.json').unlink()
     lower, upper = cameras.describe(root)
-    assert (upper.role, upper.arm, lower.role, lower.arm) == ('wrist_upper', 'right', 'wrist_lower', 'right')
+    assert (upper.role, upper.arm, lower.role, lower.arm) == ('wrist_2', 'right', 'wrist_1', 'right')
     assert upper.optical_frame == 'right/realsense_color_optical_frame'
     assert lower.optical_frame == 'right/realsense_lower_color_optical_frame'
     assert (upper.width, upper.height, upper.fps) == (640, 480, 30)
@@ -95,16 +96,16 @@ def test_remote_checkpoint_needs_its_config_before_any_action_query(tmp_path):
         cameras.read_checkpoint_config('/server-only/model')
     config = tmp_path / 'config.json'
     config.write_text(json.dumps({'input_features': {
-        'observation.images.wrist_upper': {'shape': [3, 480, 640]},
+        'observation.images.wrist_2': {'shape': [3, 480, 640]},
     }}))
     path, value = cameras.read_checkpoint_config('/server-only/model', config)
     assert path == config
-    cameras.validate_checkpoint_views(value, ('wrist_upper',), use_depth=False)
+    cameras.validate_checkpoint_views(value, ('wrist_2',), use_depth=False)
     with pytest.raises(ValueError, match='camera shape'):
-        cameras.validate_checkpoint_views(value, ('wrist_upper',), use_depth=False,
-                                          image_shapes={'wrist_upper': (3, 240, 320)})
+        cameras.validate_checkpoint_views(value, ('wrist_2',), use_depth=False,
+                                          image_shapes={'wrist_2': (3, 240, 320)})
     with pytest.raises(ValueError, match='no view substitution'):
-        cameras.validate_checkpoint_views(value, ('wrist_upper', 'wrist_lower'), use_depth=False)
+        cameras.validate_checkpoint_views(value, ('wrist_2', 'wrist_1'), use_depth=False)
 
 
 def test_an_arms_recording_needs_every_one_of_its_cameras_on_this_host(rig):
@@ -158,11 +159,11 @@ def checkpoint(*roles):
 def test_checkpoint_must_match_the_actual_local_view_set(rig):
     root, _ = rig
     roles = tuple(c['role'] for c in cameras.mounted_for_arm(root, 'right'))
-    cameras.validate_checkpoint_views(checkpoint('wrist_lower', 'wrist_upper'), roles, use_depth=False)
-    cameras.validate_checkpoint_views(checkpoint('wrist_lower', 'wrist_upper', 'wrist_lower_depth', 'wrist_upper_depth'),
+    cameras.validate_checkpoint_views(checkpoint('wrist_1', 'wrist_2'), roles, use_depth=False)
+    cameras.validate_checkpoint_views(checkpoint('wrist_1', 'wrist_2', 'wrist_1_depth', 'wrist_2_depth'),
                                       roles, use_depth=True)
-    for policy in [checkpoint('wrist_upper'), checkpoint('wrist_left'), checkpoint(),
-                   checkpoint('wrist_lower', 'wrist_upper', 'wrist_upper_depth')]:
+    for policy in [checkpoint('wrist_2'), checkpoint('wrist_left'), checkpoint(),
+                   checkpoint('wrist_1', 'wrist_2', 'wrist_2_depth')]:
         with pytest.raises(ValueError, match='no view substitution'):
             cameras.validate_checkpoint_views(policy, roles, use_depth=False)
 
@@ -185,7 +186,7 @@ def test_session_capture_refuses_an_arm_whose_cameras_another_host_owns(rig, mon
         capture.registry_cameras('right')
     entries[0]['owner_role'] = 'realsense'
     write_config(root, entries)
-    assert capture.registry_cameras('right') == {'wrist_lower': 'device-a', 'wrist_upper': 'device-b'}
+    assert capture.registry_cameras('right') == {'wrist_1': 'device-a', 'wrist_2': 'device-b'}
 
 
 def test_session_capture_names_the_arm_whose_wrist_cameras_answer(rig, monkeypatch):
@@ -198,8 +199,8 @@ def test_session_capture_names_the_arm_whose_wrist_cameras_answer(rig, monkeypat
     entries[0].update(owner_role='realsense', role='wrist_probe')
     write_config(root, entries)
     monkeypatch.setenv('TATBOT_NODE', 'capture-b')
-    assert capture.registry_cameras('right') == {'wrist_probe': 'device-a', 'wrist_upper': 'device-b'}
-    assert capture.ROLES == ('wrist_lower', 'wrist_upper')   # the live registry's, both on the pink wrist
+    assert capture.registry_cameras('right') == {'wrist_probe': 'device-a', 'wrist_2': 'device-b'}
+    assert capture.ROLES == ('wrist_1', 'wrist_2')   # the live registry's, both on the xArm
     with pytest.raises(SystemExit, match='not configured'):
         capture.registry_cameras('centre')
     with pytest.raises(ValueError, match='not configured'):
@@ -209,8 +210,8 @@ def test_session_capture_names_the_arm_whose_wrist_cameras_answer(rig, monkeypat
     assert capture.main(['once', str(out), '--fake', '--arm', 'right']) == 0
     assert (out / 'capture-1.done').is_file()
     with np.load(out / 'capture-1.npz') as arrays:
-        assert json.loads(str(arrays['camera_roles'])) == ['wrist_probe', 'wrist_upper']
-        assert 'depth_wrist_probe' in arrays.files and 'depth_wrist_lower' not in arrays.files
+        assert json.loads(str(arrays['camera_roles'])) == ['wrist_probe', 'wrist_2']
+        assert 'depth_wrist_probe' in arrays.files and 'depth_wrist_1' not in arrays.files
     with pytest.raises(SystemExit):
         capture.main(['once', str(root / 'fake-none'), '--fake'])
 
@@ -247,16 +248,19 @@ def test_service_passes_an_exact_sensor_selection_before_running_capture(rig, no
     assert argv[argv.index('--group') + 1] == 'd405'
 
 
-def test_live_manifest_puts_both_wrist_cameras_on_the_pink_arm_under_one_owner():
-    """Both D405s are on the pink wrist since 2026-10-23, upper and lower, on one node's USB; the blue arm has none."""
+def test_live_manifest_puts_both_wrist_cameras_on_the_xarm_under_one_owner():
+    """Both D405s ride the xArm's dual-D405 bracket since 2026-11-08 (the WXAI wrist's from 2026-10-23), upper and
+    lower, on one node's USB; the WXAI follower and the blue arm have none."""
     entries = cameras.registry(REPO)
     mapping = cameras.nodes.load(REPO)
-    assert {c['arm'] for c in entries} == {'right'}
+    assert {c['arm'] for c in entries} == {'xarm'}
     assert len({cameras.owner(c, mapping) for c in entries}) == 1
-    assert sorted(cameras.CAPTURE_ROLES['right']) == ['wrist_lower', 'wrist_upper']
-    assert cameras.CAPTURE_ROLES['left'] == ()
-    assert cameras.capture_arm(['wrist_upper']) == 'right'
-    assert cameras.capture_arm(['wrist_lower', 'wrist_upper']) == 'right'
-    for roles in ([], ['wrist_left'], ['wrist_upper', 'wrist_upper'], ['wrist_probe']):
+    assert sorted(cameras.CAPTURE_ROLES['xarm']) == ['wrist_1', 'wrist_2']
+    assert cameras.CAPTURE_ROLES['right'] == cameras.CAPTURE_ROLES['left'] == ()
+    assert cameras.capture_arm(['wrist_2']) == 'xarm'
+    assert cameras.capture_arm(['wrist_1', 'wrist_2']) == 'xarm'
+    assert cameras.optical_frames(REPO, arm='xarm', stream='color') == {
+        'wrist_2': 'xarm/realsense2_color_optical_frame', 'wrist_1': 'xarm/realsense1_color_optical_frame'}
+    for roles in ([], ['wrist_left'], ['wrist_2', 'wrist_2'], ['wrist_probe']):
         with pytest.raises(ValueError, match='camera roles'):
             cameras.capture_arm(roles)

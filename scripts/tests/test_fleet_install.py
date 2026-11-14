@@ -313,14 +313,11 @@ def test_a_full_install_brings_the_checkout_to_the_release_and_stamps_its_receip
 
 
 def test_a_full_install_prepares_the_arm_checkouts_artwork_runtime(tmp_path, monkeypatch):
-    """The design stage of `session new` runs the shared SVG adapter with the
-    checkout's `web/inkmap/node_modules`, gitignored and so empty after the
-    ff-merge that brings the checkout to the built revision: a fresh deploy's
-    first `session new` failed `artwork_runtime_unavailable` until an operator
-    ran npm ci by hand. The install prepares it (`artwork_runtime.prepare`, once
-    per lock digest) with npm resolved as the build resolved it — the release's
-    private runtime first — so the first session pays no install; a camera
-    node or a `--service` deploy leaves the checkout's runtime alone."""
+    """The checkout's `web/inkmap/node_modules` is gitignored and so empty after
+    the ff-merge that brings the checkout to the built revision. The install
+    prepares it (`artwork_runtime.prepare`, once per lock digest) with npm
+    resolved as the build resolved it — the release's private runtime first; a
+    camera node or a `--service` deploy leaves the checkout's runtime alone."""
     import artwork_runtime
     sha = SHAS[2]
     stage = tmp_path / 'releases' / sha

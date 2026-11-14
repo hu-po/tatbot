@@ -44,6 +44,9 @@ kind,orbit | path
 frame,arm/base_link
 period_s,0.0025
 constants_sha,<config/motion_constants.json short SHA>
+tip_x_m,<the tool's working point in the final link at carriage zero, metres>
+tip_y_m,...
+tip_z_m,...
 sample_count,N
 capture_count,K
 start_tolerance_m,<profile-derived tolerance>
@@ -51,6 +54,9 @@ columns,t_s,px,py,pz,vx,vy,vz,r00,r01,r02,r10,r11,r12,r20,r21,r22,pen,capture,di
 ...
 ```
 
+- `tip_*_m` declare the tool the planner steers. No tool is compiled into the
+  planner: the writer derives the tip from the URDF and the fitted tool's
+  datasheet.
 - `p` is the tool-tip position and `v` the feedforward velocity.
 - `r` is the row-major target rotation of the final link.
 - `pen` is zero for retracted travel and one for a drawing segment.
@@ -69,6 +75,7 @@ dwell, the retract, and the travel back. Pen-down rows are checked against
 The parser ignores unknown header keys. It refuses:
 
 - a malformed schema, or a missing or mismatched `constants_sha`;
+- a declared tip outside 50–450 mm of the final link;
 - non-finite values or discontinuities;
 - profile-limit violations or excessive model error;
 - an invalid starting pose.
@@ -114,5 +121,4 @@ the projected robot-root X hint, or Y when that is degenerate. A cylinder's
 physical registration.
 
 An optional `surface.json` sidecar records provenance and fit statistics
-without changing the numeric contract. The NumPy reader is
-`scripts/lib/surface_model.py`.
+without changing the numeric contract.

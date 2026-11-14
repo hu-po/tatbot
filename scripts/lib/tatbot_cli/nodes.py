@@ -12,33 +12,29 @@ import subprocess
 from pathlib import Path
 
 
-def load(repo: Path) -> dict:
-    """The node map, or {} where no fleet is described (a public clone has
-    no config/nodes.json — single-machine use needs no map; see
+def _document(repo: Path) -> dict:
+    """config/nodes.json as written, or {} where no fleet is described (a public
+    clone has none — single-machine use needs no map; see
     config/examples/nodes.json to describe one)."""
     path = repo / "config" / "nodes.json"
     if not path.is_file():
         return {}
     with open(path) as fh:
-        data = json.load(fh)
-    return {k: v for k, v in data.items() if not k.startswith("//") and not k.startswith("__")}
+        return json.load(fh)
+
+
+def load(repo: Path) -> dict:
+    """The node map: the document without its comments and `__` stanzas."""
+    return {k: v for k, v in _document(repo).items() if not k.startswith("//") and not k.startswith("__")}
 
 
 def cameras(repo: Path) -> dict[str, str]:
-    path = repo / "config" / "nodes.json"
-    if not path.is_file():
-        return {}
-    with open(path) as fh:
-        return dict(json.load(fh).get("__cameras__", {}))
+    return dict(_document(repo).get("__cameras__", {}))
 
 
 def rig(repo: Path) -> dict:
     """The `__rig__` stanza (subnet, gateway) — the rig's own address space — or {}."""
-    path = repo / "config" / "nodes.json"
-    if not path.is_file():
-        return {}
-    with open(path) as fh:
-        stanza = json.load(fh).get("__rig__", {})
+    stanza = _document(repo).get("__rig__", {})
     return dict(stanza) if isinstance(stanza, dict) else {}
 
 
@@ -187,9 +183,13 @@ def _quote_remote(arg: str) -> str:
 
     cli._home_relative rewrites this node's $HOME paths to `~/…` for the hop;
     shlex.quote would single-quote the tilde and the remote tool would open a
-    literal '~/tatbot-logs/…' (teleop analyze did, 2026-09-03)."""
+    literal '~/tatbot-logs/…' (teleop analyze did, 2026-09-03). The shell expands
+    no tilde inside `--flag=~/…`, so that spelling carries $HOME instead."""
     if arg.startswith("~/"):
         return "~/" + shlex.quote(arg[2:]) if len(arg) > 2 else "~/"
+    flag, assigned, value = arg.partition("=")
+    if arg.startswith("--") and assigned and value.startswith("~/"):
+        return f'{shlex.quote(flag)}="$HOME"/{shlex.quote(value[2:])}'
     return shlex.quote(arg)
 
 

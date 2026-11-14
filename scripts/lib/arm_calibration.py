@@ -1,9 +1,9 @@
 """Per-arm identities, the native arm owner's build and telemetry, and the retained per-arm captures.
 
-The physical arm behind an operator label (pink: the drawing arm; the blue
-leader is teleop's alone and is not calibrated here), its controller role
-and wrist tag target resolve here for `tatbot calib pose` and `tatbot calib
-joint-measure`, with the native owner's build inputs and its seven-axis
+The physical arm behind an operator label (pink: the WXAI follower, `right`;
+the blue leader is teleop's alone and is not calibrated here), its controller
+role and wrist tag target resolve here for `tatbot calib pose` and `tatbot
+calib joint-measure`, with the native owner's build inputs and its seven-axis
 telemetry record. The hand-guided per-arm recipe that captured tip, wrist and
 palette against the three-tip fixture is retired with the fixture, and the rig
 bundle solve that read its retained captures went with the overhead cameras
@@ -34,6 +34,9 @@ WRIST_TARGET = {"right": "wrist"}   # the drawing arm's wrist tags
 # controller mode (0 idle, 1 position, 2 fault, 3 hand-guiding), e-stop word, flags.
 TELEMETRY_RECORD = struct.Struct("<QQQ21dBiB")
 TELEMETRY_MAGIC = b"TBGUIDE1"
+# Its seven axes are the WXAI driver's, as the guide writes them whatever config/arm-models says: the revolute
+# chain (rad), then the tool carriage (m).
+GUIDE_CHAIN, GUIDE_CARRIAGE = slice(0, 6), 6
 
 
 def native_estop_device(repo: Path, device: str) -> str:
@@ -211,9 +214,9 @@ def _bind_stamps(rows, stamps):
             'basis': 'nearest native host-time telemetry to normalized owner exposure',
             'physical_accuracy_bound_m': None, 'world_registration': 'unmeasured',
             'pairs': pairs, 'maximum_skew_ms': max(pair['skew_ms'] for pair in pairs),
-            'capture_joint_span_rad': [max(r['positions'][i] for r in interval)-min(r['positions'][i] for r in interval)
-                                       for i in range(6)],
-            'capture_max_measured_velocity_rad_s': max(abs(v) for r in interval for v in r['velocities'][:6])}
+            'capture_joint_span_rad': [max(axis)-min(axis)
+                                       for axis in zip(*(r['positions'][GUIDE_CHAIN] for r in interval), strict=True)],
+            'capture_max_measured_velocity_rad_s': max(abs(v) for r in interval for v in r['velocities'][GUIDE_CHAIN])}
 
 
 def _bind_exposure(rows, wall, role, kind, sequence, stamp):
@@ -226,5 +229,5 @@ def _bind_exposure(rows, wall, role, kind, sequence, stamp):
             'bracket_wall_ns': [before['wall_ns'], after['wall_ns']],
             'bracket_gap_ms': (after['wall_ns']-before['wall_ns'])/1e6,
             'telemetry_tick': row['tick'], 'measured_wall_ns': row['wall_ns'],
-            'skew_ms': abs(row['wall_ns']-stamp)/1e6, 'joints_rad': row['positions'][:6],
-            'carriage_m': row['positions'][6], 'mode': row['mode'], 'estop': row['estop']}
+            'skew_ms': abs(row['wall_ns']-stamp)/1e6, 'joints_rad': row['positions'][GUIDE_CHAIN],
+            'carriage_m': row['positions'][GUIDE_CARRIAGE], 'mode': row['mode'], 'estop': row['estop']}

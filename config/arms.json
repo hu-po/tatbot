@@ -1,7 +1,8 @@
 {
-  "schema": "tatbot.arms/1",
+  "schema": "tatbot.arms/2",
   "arms": {
     "left": {
+      "model": "trossen-wxai",
       "control_role": "arm",
       "profile_ip_field": "leader_ip",
       "controller_config": "config/trossen/leader.yaml",
@@ -10,12 +11,22 @@
       "urdf_prefix": "left"
     },
     "right": {
+      "model": "trossen-wxai",
       "control_role": "arm",
       "profile_ip_field": "follower_ip",
       "controller_config": "config/trossen/follower.yaml",
       "sdk_end_effector": "wxai_v0_follower_20250509",
       "workspace_section": "right",
       "urdf_prefix": "right"
+    },
+    "xarm": {
+      "model": "ufactory-xarm7",
+      "control_role": "arm",
+      "profile_ip_field": "xarm_ip",
+      "controller_config": null,
+      "sdk_end_effector": null,
+      "workspace_section": "xarm",
+      "urdf_prefix": "xarm"
     }
   }
 }

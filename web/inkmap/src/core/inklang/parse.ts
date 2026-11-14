@@ -22,14 +22,14 @@ import {
   type SitePhrase,
 } from "./types.ts";
 
-const UNITS = new Map<string, number>([
+export const UNITS = new Map<string, number>([
   ["inch", 0.0254], ["inches", 0.0254],
   ["cm", 0.01], ["centimeter", 0.01], ["centimeters", 0.01],
   ["centimetre", 0.01], ["centimetres", 0.01],
   ["mm", 0.001], ["millimeter", 0.001], ["millimeters", 0.001],
   ["millimetre", 0.001], ["millimetres", 0.001],
 ]);
-const NUMBER_WORDS = new Map<string, number>([
+export const NUMBER_WORDS = new Map<string, number>([
   ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5], ["six", 6],
   ["seven", 7], ["eight", 8], ["nine", 9], ["ten", 10], ["eleven", 11], ["twelve", 12],
 ]);
@@ -83,6 +83,17 @@ function parseSiteWords(input: string[]): SitePhrase {
   if (leadingLaterality) {
     laterality = leadingLaterality;
     first++;
+  }
+  // A side can sit inside a compound, as in "the back of the left arm".
+  const inside = tokens.findIndex((token, index) => index > 0 && LATERALITY_WORDS.has(token));
+  if (inside > 0) {
+    const [before, after] = [tokens.slice(0, inside), tokens.slice(inside + 1)];
+    const compound = exactSiteHit([...before, ...after]) ?? exactSiteHit([...before, "the", ...after]);
+    if (compound) {
+      const site: SitePhrase = { id: compound.id, laterality: LATERALITY_WORDS.get(tokens[inside])!, aspect: compound.aspect, level: compound.level };
+      validateSitePhrase(site);
+      return site;
+    }
   }
   let match = findSiteSuffix(tokens, first);
   if (!match && first > 0) {
